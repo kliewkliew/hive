@@ -55,9 +55,12 @@ import org.apache.hadoop.hive.common.JavaUtils;
 import org.apache.hadoop.hive.common.StatsSetupConst;
 import org.apache.hadoop.hive.conf.HiveConf;
 import org.apache.hadoop.hive.metastore.HiveMetaStore.HMSHandler;
+import org.apache.hadoop.hive.metastore.api.ColumnStatistics;
+import org.apache.hadoop.hive.metastore.api.ColumnStatisticsObj;
 import org.apache.hadoop.hive.metastore.api.Database;
 import org.apache.hadoop.hive.metastore.api.EnvironmentContext;
 import org.apache.hadoop.hive.metastore.api.FieldSchema;
+import org.apache.hadoop.hive.metastore.api.InvalidObjectException;
 import org.apache.hadoop.hive.metastore.api.InvalidOperationException;
 import org.apache.hadoop.hive.metastore.api.MetaException;
 import org.apache.hadoop.hive.metastore.api.Partition;
@@ -65,6 +68,8 @@ import org.apache.hadoop.hive.metastore.api.SerDeInfo;
 import org.apache.hadoop.hive.metastore.api.StorageDescriptor;
 import org.apache.hadoop.hive.metastore.api.Table;
 import org.apache.hadoop.hive.metastore.api.hive_metastoreConstants;
+import org.apache.hadoop.hive.metastore.hbase.stats.merge.ColumnStatsMerger;
+import org.apache.hadoop.hive.metastore.hbase.stats.merge.ColumnStatsMergerFactory;
 import org.apache.hadoop.hive.metastore.partition.spec.PartitionSpecProxy;
 import org.apache.hadoop.hive.serde.serdeConstants;
 import org.apache.hadoop.hive.serde2.Deserializer;
@@ -81,6 +86,7 @@ import org.apache.hadoop.hive.serde2.typeinfo.TypeInfo;
 import org.apache.hadoop.hive.serde2.typeinfo.TypeInfoUtils;
 import org.apache.hadoop.hive.shims.ShimLoader;
 import org.apache.hadoop.hive.thrift.HadoopThriftAuthBridge;
+import org.apache.hive.common.util.HiveStringUtils;
 import org.apache.hive.common.util.ReflectionUtil;
 
 import javax.annotation.Nullable;
@@ -1007,8 +1013,38 @@ public class MetaStoreUtils {
     return schema;
   }
 
-  public static Properties getSchema(
-      org.apache.hadoop.hive.metastore.api.StorageDescriptor sd,
+  public static Properties addCols(Properties schema, List<FieldSchema> cols) {
+
+    StringBuilder colNameBuf = new StringBuilder();
+    StringBuilder colTypeBuf = new StringBuilder();
+    StringBuilder colComment = new StringBuilder();
+
+    boolean first = true;
+    for (FieldSchema col : cols) {
+      if (!first) {
+        colNameBuf.append(",");
+        colTypeBuf.append(":");
+        colComment.append('\0');
+      }
+      colNameBuf.append(col.getName());
+      colTypeBuf.append(col.getType());
+      colComment.append((null != col.getComment()) ? col.getComment() : "");
+      first = false;
+    }
+    schema.setProperty(
+        org.apache.hadoop.hive.metastore.api.hive_metastoreConstants.META_TABLE_COLUMNS,
+        colNameBuf.toString());
+    String colTypes = colTypeBuf.toString();
+    schema.setProperty(
+        org.apache.hadoop.hive.metastore.api.hive_metastoreConstants.META_TABLE_COLUMN_TYPES,
+        colTypes);
+    schema.setProperty("columns.comments", colComment.toString());
+
+    return schema;
+
+  }
+
+  public static Properties getSchemaWithoutCols(org.apache.hadoop.hive.metastore.api.StorageDescriptor sd,
       org.apache.hadoop.hive.metastore.api.StorageDescriptor tblsd,
       Map<String, String> parameters, String databaseName, String tableName,
       List<FieldSchema> partitionKeys) {
@@ -1058,30 +1094,7 @@ public class MetaStoreUtils {
                 .getSerdeInfo().getSerializationLib());
       }
     }
-    StringBuilder colNameBuf = new StringBuilder();
-    StringBuilder colTypeBuf = new StringBuilder();
-    StringBuilder colComment = new StringBuilder();
-    boolean first = true;
-    for (FieldSchema col : tblsd.getCols()) {
-      if (!first) {
-        colNameBuf.append(",");
-        colTypeBuf.append(":");
-        colComment.append('\0');
-      }
-      colNameBuf.append(col.getName());
-      colTypeBuf.append(col.getType());
-      colComment.append((null != col.getComment()) ? col.getComment() : "");
-      first = false;
-    }
-    String colNames = colNameBuf.toString();
-    String colTypes = colTypeBuf.toString();
-    schema.setProperty(
-        org.apache.hadoop.hive.metastore.api.hive_metastoreConstants.META_TABLE_COLUMNS,
-        colNames);
-    schema.setProperty(
-        org.apache.hadoop.hive.metastore.api.hive_metastoreConstants.META_TABLE_COLUMN_TYPES,
-        colTypes);
-    schema.setProperty("columns.comments", colComment.toString());
+
     if (sd.getCols() != null) {
       schema.setProperty(
           org.apache.hadoop.hive.serde.serdeConstants.SERIALIZATION_DDL,
@@ -1123,6 +1136,15 @@ public class MetaStoreUtils {
     }
 
     return schema;
+  }
+
+  public static Properties getSchema(
+      org.apache.hadoop.hive.metastore.api.StorageDescriptor sd,
+      org.apache.hadoop.hive.metastore.api.StorageDescriptor tblsd,
+      Map<String, String> parameters, String databaseName, String tableName,
+      List<FieldSchema> partitionKeys) {
+
+    return addCols(getSchemaWithoutCols(sd, tblsd, parameters, databaseName, tableName, partitionKeys), tblsd.getCols());
   }
 
   /**
@@ -1610,7 +1632,7 @@ public class MetaStoreUtils {
       Pattern partitionValidationPattern) throws MetaException {
 
     String invalidPartitionVal =
-        getPartitionValWithInvalidCharacter(partVals, partitionValidationPattern);
+        HiveStringUtils.getPartitionValWithInvalidCharacter(partVals, partitionValidationPattern);
     if (invalidPartitionVal != null) {
       throw new MetaException("Partition value '" + invalidPartitionVal +
           "' contains a character " + "not matched by whitelist pattern '" +
@@ -1621,7 +1643,7 @@ public class MetaStoreUtils {
 
   public static boolean partitionNameHasValidCharacters(List<String> partVals,
       Pattern partitionValidationPattern) {
-    return getPartitionValWithInvalidCharacter(partVals, partitionValidationPattern) == null;
+    return HiveStringUtils.getPartitionValWithInvalidCharacter(partVals, partitionValidationPattern) == null;
   }
 
   /**
@@ -1670,21 +1692,6 @@ public class MetaStoreUtils {
     return ShimLoader.getHadoopThriftAuthBridge().getHadoopSaslProperties(conf);
   }
 
-
-  public static String getPartitionValWithInvalidCharacter(List<String> partVals,
-      Pattern partitionValidationPattern) {
-    if (partitionValidationPattern == null) {
-      return null;
-    }
-
-    for (String partVal : partVals) {
-      if (!partitionValidationPattern.matcher(partVal).matches()) {
-        return partVal;
-      }
-    }
-
-    return null;
-  }
 
   public static String ARCHIVING_LEVEL = "archiving_level";
   public static int getArchivingLevel(Partition part) throws MetaException {
@@ -1811,4 +1818,36 @@ public class MetaStoreUtils {
     return ret;
   }
 
+  // this function will merge csOld into csNew.
+  public static void mergeColStats(ColumnStatistics csNew, ColumnStatistics csOld)
+      throws InvalidObjectException {
+    List<ColumnStatisticsObj> list = new ArrayList<>();
+    if (csNew.getStatsObj().size() != csOld.getStatsObjSize()) {
+      // Some of the columns' stats are missing
+      // This implies partition schema has changed. We will merge columns
+      // present in both, overwrite stats for columns absent in metastore and
+      // leave alone columns stats missing from stats task. This last case may
+      // leave stats in stale state. This will be addressed later.
+      LOG.debug("New ColumnStats size is " + csNew.getStatsObj().size()
+          + ". But old ColumnStats size is " + csOld.getStatsObjSize());
+    }
+    // In this case, we have to find out which columns can be merged.
+    Map<String, ColumnStatisticsObj> map = new HashMap<>();
+    // We build a hash map from colName to object for old ColumnStats.
+    for (ColumnStatisticsObj obj : csOld.getStatsObj()) {
+      map.put(obj.getColName(), obj);
+    }
+    for (int index = 0; index < csNew.getStatsObj().size(); index++) {
+      ColumnStatisticsObj statsObjNew = csNew.getStatsObj().get(index);
+      ColumnStatisticsObj statsObjOld = map.get(statsObjNew.getColName());
+      if (statsObjOld != null) {
+        // If statsObjOld is found, we can merge.
+        ColumnStatsMerger merger = ColumnStatsMergerFactory.getColumnStatsMerger(statsObjNew,
+            statsObjOld);
+        merger.merge(statsObjNew, statsObjOld);
+      }
+      list.add(statsObjNew);
+    }
+    csNew.setStatsObj(list);
+  }
 }

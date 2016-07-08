@@ -16,6 +16,7 @@
  */
 package org.apache.hadoop.hive.llap.ext;
 
+import java.io.Closeable;
 import java.io.IOException;
 import java.net.InetSocketAddress;
 import java.util.ArrayList;
@@ -27,15 +28,20 @@ import java.util.concurrent.ConcurrentMap;
 import java.util.concurrent.ScheduledThreadPoolExecutor;
 import java.util.concurrent.TimeUnit;
 
-import com.google.common.base.Preconditions;
+import com.google.common.collect.Lists;
+import com.google.protobuf.InvalidProtocolBufferException;
+
 import org.apache.commons.collections4.ListUtils;
 import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.hive.conf.HiveConf;
-import org.apache.hadoop.hive.llap.daemon.rpc.LlapDaemonProtocolProtos;
+import org.apache.hadoop.hive.llap.daemon.rpc.LlapDaemonProtocolProtos.QueryIdentifierProto;
 import org.apache.hadoop.hive.llap.daemon.rpc.LlapDaemonProtocolProtos.SignableVertexSpec;
+import org.apache.hadoop.hive.llap.daemon.rpc.LlapDaemonProtocolProtos.SubmissionStateProto;
 import org.apache.hadoop.hive.llap.daemon.rpc.LlapDaemonProtocolProtos.SubmitWorkRequestProto;
-import org.apache.hadoop.hive.llap.daemon.rpc.LlapDaemonProtocolProtos.VertexIdentifier;
+import org.apache.hadoop.hive.llap.daemon.rpc.LlapDaemonProtocolProtos.SubmitWorkResponseProto;
+import org.apache.hadoop.hive.llap.daemon.rpc.LlapDaemonProtocolProtos.VertexOrBinary;
 import org.apache.hadoop.hive.llap.protocol.LlapTaskUmbilicalProtocol;
+import org.apache.hadoop.hive.llap.security.LlapTokenIdentifier;
 import org.apache.hadoop.hive.llap.tez.Converters;
 import org.apache.hadoop.hive.llap.tez.LlapProtocolClientProxy;
 import org.apache.hadoop.hive.llap.tezplugins.helpers.LlapTaskUmbilicalServer;
@@ -43,12 +49,9 @@ import org.apache.hadoop.io.Text;
 import org.apache.hadoop.ipc.ProtocolSignature;
 import org.apache.hadoop.security.token.Token;
 import org.apache.hadoop.service.AbstractService;
-import org.apache.hadoop.yarn.api.records.ContainerId;
-import org.apache.hadoop.yarn.util.ConverterUtils;
 import org.apache.tez.common.security.JobTokenIdentifier;
 import org.apache.tez.dag.api.TezException;
 import org.apache.tez.dag.records.TezTaskAttemptID;
-import org.apache.tez.runtime.api.Event;
 import org.apache.tez.runtime.api.impl.EventType;
 import org.apache.tez.runtime.api.impl.TezEvent;
 import org.apache.tez.runtime.api.impl.TezHeartbeatRequest;
@@ -57,7 +60,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 
-public class LlapTaskUmbilicalExternalClient extends AbstractService {
+public class LlapTaskUmbilicalExternalClient extends AbstractService implements Closeable {
 
   private static final Logger LOG = LoggerFactory.getLogger(LlapTaskUmbilicalExternalClient.class);
 
@@ -100,7 +103,8 @@ public class LlapTaskUmbilicalExternalClient extends AbstractService {
   }
 
   public LlapTaskUmbilicalExternalClient(Configuration conf, String tokenIdentifier,
-      Token<JobTokenIdentifier> sessionToken, LlapTaskUmbilicalExternalResponder responder) {
+      Token<JobTokenIdentifier> sessionToken, LlapTaskUmbilicalExternalResponder responder,
+      Token<LlapTokenIdentifier> llapToken) {
     super(LlapTaskUmbilicalExternalClient.class.getName());
     this.conf = conf;
     this.umbilical = new LlapTaskUmbilicalExternalImpl();
@@ -110,8 +114,8 @@ public class LlapTaskUmbilicalExternalClient extends AbstractService {
     this.timer = new ScheduledThreadPoolExecutor(1);
     this.connectionTimeout = 3 * HiveConf.getTimeVar(conf,
         HiveConf.ConfVars.LLAP_DAEMON_AM_LIVENESS_CONNECTION_TIMEOUT_MS, TimeUnit.MILLISECONDS);
-    // No support for the LLAP token yet. Add support for configurable threads, however 1 should always be enough.
-    this.communicator = new LlapProtocolClientProxy(1, conf, null);
+    // Add support for configurable threads, however 1 should always be enough.
+    this.communicator = new LlapProtocolClientProxy(1, conf, llapToken);
     this.communicator.init(conf);
   }
 
@@ -139,33 +143,39 @@ public class LlapTaskUmbilicalExternalClient extends AbstractService {
 
   /**
    * Submit the work for actual execution.
-   * @param submitWorkRequestProto
+   * @throws InvalidProtocolBufferException 
    */
-  public void submitWork(final SubmitWorkRequestProto submitWorkRequestProto, String llapHost, int llapPort, List<TezEvent> tezEvents) {
+  public void submitWork(SubmitWorkRequestProto request, String llapHost, int llapPort) {
     // Register the pending events to be sent for this spec.
-    SignableVertexSpec vertex = submitWorkRequestProto.getWorkSpec().getVertex();
-    VertexIdentifier vId = vertex.getVertexIdentifier();
-    TezTaskAttemptID attemptId = Converters.createTaskAttemptId(
-        vId, submitWorkRequestProto.getFragmentNumber(), submitWorkRequestProto.getAttemptNumber());
+    VertexOrBinary vob = request.getWorkSpec();
+    assert vob.hasVertexBinary() != vob.hasVertex();
+    SignableVertexSpec vertex = null;
+    try {
+      vertex = vob.hasVertex() ? vob.getVertex()
+          : SignableVertexSpec.parseFrom(vob.getVertexBinary());
+    } catch (InvalidProtocolBufferException e) {
+      throw new RuntimeException(e);
+    }
+    QueryIdentifierProto queryIdentifierProto = vertex.getQueryIdentifier();
+    TezTaskAttemptID attemptId = Converters.createTaskAttemptId(queryIdentifierProto,
+        vertex.getVertexIndex(), request.getFragmentNumber(), request.getAttemptNumber());
     final String fragmentId = attemptId.toString();
 
-    PendingEventData pendingEventData = new PendingEventData(
-        new TaskHeartbeatInfo(fragmentId, llapHost, llapPort),
-        tezEvents);
-    pendingEvents.putIfAbsent(fragmentId, pendingEventData);
+    pendingEvents.putIfAbsent(fragmentId, new PendingEventData(
+        new TaskHeartbeatInfo(fragmentId, llapHost, llapPort), Lists.<TezEvent>newArrayList()));
 
     // Setup timer task to check for hearbeat timeouts
     timer.scheduleAtFixedRate(new HeartbeatCheckTask(),
         connectionTimeout, connectionTimeout, TimeUnit.MILLISECONDS);
 
     // Send out the actual SubmitWorkRequest
-    communicator.sendSubmitWork(submitWorkRequestProto, llapHost, llapPort,
-        new LlapProtocolClientProxy.ExecuteRequestCallback<LlapDaemonProtocolProtos.SubmitWorkResponseProto>() {
+    communicator.sendSubmitWork(request, llapHost, llapPort,
+        new LlapProtocolClientProxy.ExecuteRequestCallback<SubmitWorkResponseProto>() {
 
           @Override
-          public void setResponse(LlapDaemonProtocolProtos.SubmitWorkResponseProto response) {
+          public void setResponse(SubmitWorkResponseProto response) {
             if (response.hasSubmissionState()) {
-              if (response.getSubmissionState().equals(LlapDaemonProtocolProtos.SubmissionStateProto.REJECTED)) {
+              if (response.getSubmissionState().equals(SubmissionStateProto.REJECTED)) {
                 String msg = "Fragment: " + fragmentId + " rejected. Server Busy.";
                 LOG.info(msg);
                 if (responder != null) {

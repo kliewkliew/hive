@@ -33,6 +33,7 @@ import org.apache.hadoop.fs.CommonConfigurationKeysPublic;
 import org.apache.hadoop.hive.conf.HiveConf;
 import org.apache.hadoop.hive.conf.HiveConf.ConfVars;
 import org.apache.hadoop.hive.llap.DaemonId;
+import org.apache.hadoop.hive.llap.LlapUtil;
 import org.apache.hadoop.hive.llap.daemon.rpc.LlapDaemonProtocolProtos;
 import org.apache.hadoop.hive.llap.daemon.rpc.LlapDaemonProtocolProtos.GetTokenRequestProto;
 import org.apache.hadoop.hive.llap.daemon.rpc.LlapDaemonProtocolProtos.GetTokenResponseProto;
@@ -44,14 +45,12 @@ import org.apache.hadoop.hive.llap.daemon.rpc.LlapDaemonProtocolProtos.SubmitWor
 import org.apache.hadoop.hive.llap.daemon.rpc.LlapDaemonProtocolProtos.SubmitWorkResponseProto;
 import org.apache.hadoop.hive.llap.daemon.rpc.LlapDaemonProtocolProtos.TerminateFragmentRequestProto;
 import org.apache.hadoop.hive.llap.daemon.rpc.LlapDaemonProtocolProtos.TerminateFragmentResponseProto;
-import org.apache.hadoop.io.Text;
 import org.apache.hadoop.ipc.ProtobufRpcEngine;
 import org.apache.hadoop.ipc.RPC;
 import org.apache.hadoop.net.NetUtils;
 import org.apache.hadoop.security.UserGroupInformation;
 import org.apache.hadoop.security.authorize.AccessControlList;
 import org.apache.hadoop.security.token.Token;
-import org.apache.hadoop.hive.llap.security.LlapSecurityHelper;
 import org.apache.hadoop.hive.llap.security.LlapTokenIdentifier;
 import org.apache.hadoop.hive.llap.security.SecretManager;
 import org.apache.hadoop.service.AbstractService;
@@ -64,22 +63,28 @@ public class LlapProtocolServerImpl extends AbstractService
     implements LlapProtocolBlockingPB, LlapManagementProtocolPB {
 
   private static final Logger LOG = LoggerFactory.getLogger(LlapProtocolServerImpl.class);
+  private enum TokenRequiresSigning {
+    TRUE, FALSE, EXCEPT_OWNER
+  }
 
   private final int numHandlers;
   private final ContainerRunner containerRunner;
   private final int srvPort, mngPort;
   private RPC.Server server, mngServer;
   private final AtomicReference<InetSocketAddress> srvAddress, mngAddress;
-  private SecretManager zkSecretManager;
-  private String restrictedToUser = null;
+  private final SecretManager secretManager;
+  private String clusterUser = null;
+  private boolean isRestrictedToClusterUser = false;
   private final DaemonId daemonId;
+  private TokenRequiresSigning isSigningRequiredConfig = TokenRequiresSigning.TRUE;
 
-  public LlapProtocolServerImpl(int numHandlers, ContainerRunner containerRunner,
-      AtomicReference<InetSocketAddress> srvAddress, AtomicReference<InetSocketAddress> mngAddress,
-      int srvPort, int mngPort, DaemonId daemonId) {
+  public LlapProtocolServerImpl(SecretManager secretManager, int numHandlers,
+      ContainerRunner containerRunner, AtomicReference<InetSocketAddress> srvAddress,
+      AtomicReference<InetSocketAddress> mngAddress, int srvPort, int mngPort, DaemonId daemonId) {
     super("LlapDaemonProtocolServerImpl");
     this.numHandlers = numHandlers;
     this.containerRunner = containerRunner;
+    this.secretManager = secretManager;
     this.srvAddress = srvAddress;
     this.srvPort = srvPort;
     this.mngAddress = mngAddress;
@@ -132,6 +137,7 @@ public class LlapProtocolServerImpl extends AbstractService
   @Override
   public void serviceStart() {
     final Configuration conf = getConfig();
+    isSigningRequiredConfig = getSigningConfig(conf);
     final BlockingService daemonImpl =
         LlapDaemonProtocolProtos.LlapDaemonProtocol.newReflectiveBlockingService(this);
     final BlockingService managementImpl =
@@ -140,22 +146,22 @@ public class LlapProtocolServerImpl extends AbstractService
       startProtocolServers(conf, daemonImpl, managementImpl);
       return;
     }
+    try {
+      this.clusterUser = UserGroupInformation.getCurrentUser().getShortUserName();
+    } catch (IOException e) {
+      throw new RuntimeException(e);
+    }
     if (isPermissiveManagementAcl(conf)) {
       LOG.warn("Management protocol has a '*' ACL.");
-      try {
-        this.restrictedToUser = UserGroupInformation.getCurrentUser().getShortUserName();
-      } catch (IOException e) {
-        throw new RuntimeException(e);
-      }
+      isRestrictedToClusterUser = true;
     }
     String llapPrincipal = HiveConf.getVar(conf, ConfVars.LLAP_KERBEROS_PRINCIPAL),
         llapKeytab = HiveConf.getVar(conf, ConfVars.LLAP_KERBEROS_KEYTAB_FILE);
-    zkSecretManager = SecretManager.createSecretManager(conf, llapPrincipal, llapKeytab, daemonId);
 
     // Start the protocol server after properly authenticating with daemon keytab.
     UserGroupInformation daemonUgi = null;
     try {
-      daemonUgi = LlapSecurityHelper.loginWithKerberos(llapPrincipal, llapKeytab);
+      daemonUgi = LlapUtil.loginWithKerberos(llapPrincipal, llapKeytab);
     } catch (IOException e) {
       throw new RuntimeException(e);
     }
@@ -166,6 +172,20 @@ public class LlapProtocolServerImpl extends AbstractService
          return null;
       }
     });
+  }
+
+  private static TokenRequiresSigning getSigningConfig(final Configuration conf) {
+    String signSetting = HiveConf.getVar(
+        conf, ConfVars.LLAP_REMOTE_TOKEN_REQUIRES_SIGNING).toLowerCase();
+    switch (signSetting) {
+    case "true": return TokenRequiresSigning.TRUE;
+    case "except_llap_owner": return TokenRequiresSigning.EXCEPT_OWNER;
+    case "false": return TokenRequiresSigning.FALSE;
+    default: {
+      throw new RuntimeException("Invalid value for "
+          + ConfVars.LLAP_REMOTE_TOKEN_REQUIRES_SIGNING.varname + ": " + signSetting);
+    }
+    }
   }
 
   private static boolean isPermissiveManagementAcl(Configuration conf) {
@@ -248,8 +268,8 @@ public class LlapProtocolServerImpl extends AbstractService
         .setBindAddress(addr.getHostName())
         .setPort(addr.getPort())
         .setNumHandlers(numHandlers);
-    if (zkSecretManager != null) {
-      builder = builder.setSecretManager(zkSecretManager);
+    if (secretManager != null) {
+      builder = builder.setSecretManager(secretManager);
     }
     RPC.Server server = builder.build();
     if (isSecurityEnabled) {
@@ -262,36 +282,28 @@ public class LlapProtocolServerImpl extends AbstractService
   @Override
   public GetTokenResponseProto getDelegationToken(RpcController controller,
       GetTokenRequestProto request) throws ServiceException {
-    if (zkSecretManager == null) {
+    if (secretManager == null) {
       throw new ServiceException("Operation not supported on unsecure cluster");
     }
-    UserGroupInformation ugi;
+    UserGroupInformation callingUser = null;
+    Token<LlapTokenIdentifier> token = null;
     try {
-      ugi = UserGroupInformation.getCurrentUser();
+      callingUser = UserGroupInformation.getCurrentUser();
+      // Determine if the user would need to sign fragments.
+      boolean isSigningRequired = determineIfSigningIsRequired(callingUser);
+      token = secretManager.createLlapToken(
+          request.hasAppId() ? request.getAppId() : null, null, isSigningRequired);
     } catch (IOException e) {
       throw new ServiceException(e);
     }
-    if (restrictedToUser != null && !restrictedToUser.equals(ugi.getShortUserName())) {
+    if (isRestrictedToClusterUser && !clusterUser.equals(callingUser.getShortUserName())) {
       throw new ServiceException("Management protocol ACL is too permissive. The access has been"
-          + " automatically restricted to " + restrictedToUser + "; " + ugi.getShortUserName()
+          + " automatically restricted to " + clusterUser + "; " + callingUser.getShortUserName()
           + " is denied acccess. Please set " + ConfVars.LLAP_VALIDATE_ACLS.varname + " to false,"
           + " or adjust " + ConfVars.LLAP_MANAGEMENT_ACL.varname + " and "
           + ConfVars.LLAP_MANAGEMENT_ACL_DENY.varname + " to a more restrictive ACL.");
     }
-    String user = ugi.getUserName();
-    Text owner = new Text(user);
-    Text realUser = null;
-    if (ugi.getRealUser() != null) {
-      realUser = new Text(ugi.getRealUser().getUserName());
-    }
-    Text renewer = new Text(ugi.getShortUserName());
-    LlapTokenIdentifier llapId = new LlapTokenIdentifier(owner, renewer, realUser,
-        daemonId.getClusterString(), request.hasAppId() ? request.getAppId() : null);
-    // TODO: note that the token is not renewable right now and will last for 2 weeks by default.
-    Token<LlapTokenIdentifier> token = new Token<LlapTokenIdentifier>(llapId, zkSecretManager);
-    if (LOG.isInfoEnabled()) {
-      LOG.info("Created LLAP token " + token);
-    }
+
     ByteArrayDataOutput out = ByteStreams.newDataOutput();
     try {
       token.write(out);
@@ -301,5 +313,17 @@ public class LlapProtocolServerImpl extends AbstractService
     ByteString bs = ByteString.copyFrom(out.toByteArray());
     GetTokenResponseProto response = GetTokenResponseProto.newBuilder().setToken(bs).build();
     return response;
+  }
+
+  private boolean determineIfSigningIsRequired(UserGroupInformation callingUser) {
+    switch (isSigningRequiredConfig) {
+    case FALSE: return false;
+    case TRUE: return true;
+    // Note that this uses short user name without consideration for Kerberos realm.
+    // This seems to be the common approach (e.g. for HDFS permissions), but it may be
+    // better to consider the realm (although not the host, so not the full name).
+    case EXCEPT_OWNER: return !clusterUser.equals(callingUser.getShortUserName());
+    default: throw new AssertionError("Unknown value " + isSigningRequiredConfig);
+    }
   }
 }

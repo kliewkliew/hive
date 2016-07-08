@@ -28,22 +28,26 @@ import org.apache.hadoop.io.Text;
 import org.apache.hadoop.security.token.Token;
 import org.apache.hadoop.security.token.delegation.AbstractDelegationTokenIdentifier;
 
-/** For now, a LLAP token gives access to any LLAP server. */
+import com.google.common.base.Preconditions;
+
 public class LlapTokenIdentifier extends AbstractDelegationTokenIdentifier {
   private static final String KIND = "LLAP_TOKEN";
   public static final Text KIND_NAME = new Text(KIND);
   private String clusterId;
   private String appId;
+  private boolean isSigningRequired;
 
   public LlapTokenIdentifier() {
     super();
   }
 
   public LlapTokenIdentifier(Text owner, Text renewer, Text realUser,
-      String clusterId, String appId) {
+      String clusterId, String appId, boolean isSigningRequired) {
     super(owner, renewer, realUser);
+    Preconditions.checkNotNull(clusterId);
     this.clusterId = clusterId;
     this.appId = appId == null ? "" : appId;
+    this.isSigningRequired = isSigningRequired;
   }
 
   @Override
@@ -51,13 +55,17 @@ public class LlapTokenIdentifier extends AbstractDelegationTokenIdentifier {
     super.write(out);
     out.writeUTF(clusterId);
     out.writeUTF(appId);
+    out.writeBoolean(isSigningRequired);
   }
 
   @Override
   public void readFields(DataInput in) throws IOException {
     super.readFields(in);
     clusterId = in.readUTF();
+    Preconditions.checkNotNull(clusterId);
     appId = in.readUTF();
+    isSigningRequired = in.readBoolean();
+    appId = appId == null ? "" : appId;
   }
 
   @Override
@@ -73,10 +81,15 @@ public class LlapTokenIdentifier extends AbstractDelegationTokenIdentifier {
     return clusterId;
   }
 
+  public boolean isSigningRequired() {
+    return isSigningRequired;
+  }
+
   @Override
   public int hashCode() {
     final int prime = 31;
-    int result = prime * super.hashCode() + ((appId == null) ? 0 : appId.hashCode());
+    int result = prime * super.hashCode() + (StringUtils.isBlank(appId) ? 0 : appId.hashCode());
+    result = prime * result + (isSigningRequired ? 1231 : 1237);
     return prime * result + ((clusterId == null) ? 0 : clusterId.hashCode());
   }
 
@@ -85,14 +98,14 @@ public class LlapTokenIdentifier extends AbstractDelegationTokenIdentifier {
     if (this == obj) return true;
     if (!(obj instanceof LlapTokenIdentifier) || !super.equals(obj)) return false;
     LlapTokenIdentifier other = (LlapTokenIdentifier) obj;
-    return (appId == null ? other.appId == null : appId.equals(other.appId))
+    return isSigningRequired == other.isSigningRequired && (StringUtils.isBlank(appId)
+        ? StringUtils.isBlank(other.appId) : appId.equals(other.appId))
         && (clusterId == null ? other.clusterId == null : clusterId.equals(other.clusterId));
   }
 
   @Override
   public String toString() {
-    return KIND + "; " + super.toString() + ", cluster " + clusterId + ", app secret hash "
-        + (StringUtils.isBlank(appId) ? 0 : appId.hashCode());
+    return KIND + "; " + super.toString() + ", cluster " + clusterId + ", app ID " + appId;
   }
 
   @InterfaceAudience.Private

@@ -195,21 +195,30 @@ public class LlapServiceDriver {
       // if needed, use --hiveconf llap.daemon.service.hosts=@llap0 to dynamically switch between
       // instances
       conf.set(ConfVars.LLAP_DAEMON_SERVICE_HOSTS.varname, "@" + options.getName());
-      propsDirectOptions.setProperty(ConfVars.LLAP_DAEMON_SERVICE_HOSTS.varname, "@" + options.getName());
+      propsDirectOptions.setProperty(ConfVars.LLAP_DAEMON_SERVICE_HOSTS.varname,
+          "@" + options.getName());
     }
 
     if (options.getSize() != -1) {
       if (options.getCache() != -1) {
-        Preconditions.checkArgument(options.getCache() < options.getSize(),
-            "Cache has to be smaller than the container sizing");
+        if (HiveConf.getBoolVar(conf, HiveConf.ConfVars.LLAP_ALLOCATOR_MAPPED) == false) {
+          // direct heap allocations need to be safer
+          Preconditions.checkArgument(options.getCache() < options.getSize(),
+              "Cache has to be smaller than the container sizing");
+        } else if (options.getCache() < options.getSize()) {
+          LOG.warn("Note that this might need YARN physical memory monitoring to be turned off "
+              + "(yarn.nodemanager.pmem-check-enabled=false)");
+        }
       }
       if (options.getXmx() != -1) {
         Preconditions.checkArgument(options.getXmx() < options.getSize(),
             "Working memory has to be smaller than the container sizing");
       }
-      if (HiveConf.getBoolVar(conf, HiveConf.ConfVars.LLAP_ALLOCATOR_DIRECT)) {
+      if (HiveConf.getBoolVar(conf, HiveConf.ConfVars.LLAP_ALLOCATOR_DIRECT)
+          && false == HiveConf.getBoolVar(conf, HiveConf.ConfVars.LLAP_ALLOCATOR_MAPPED)) {
+        // direct and not memory mapped
         Preconditions.checkArgument(options.getXmx() + options.getCache() < options.getSize(),
-            "Working memory + cache has to be smaller than the containing sizing ");
+            "Working memory + cache has to be smaller than the container sizing ");
       }
     }
 
@@ -248,10 +257,11 @@ public class LlapServiceDriver {
       // Needs more explanation here
       // Xmx is not the max heap value in JDK8. You need to subtract 50% of the survivor fraction
       // from this, to get actual usable  memory before it goes into GC
-      xmx = (long) (options.getXmx() / (1024 * 1024));
-      conf.setLong(ConfVars.LLAP_DAEMON_MEMORY_PER_INSTANCE_MB.varname, xmx);
+      xmx = options.getXmx();
+      long xmxMb = (long)(xmx / (1024 * 1024));
+      conf.setLong(ConfVars.LLAP_DAEMON_MEMORY_PER_INSTANCE_MB.varname, xmxMb);
       propsDirectOptions.setProperty(ConfVars.LLAP_DAEMON_MEMORY_PER_INSTANCE_MB.varname,
-          String.valueOf(xmx));
+          String.valueOf(xmxMb));
     }
 
     if (options.getLlapQueueName() != null && !options.getLlapQueueName().isEmpty()) {
@@ -320,6 +330,12 @@ public class LlapServiceDriver {
 
     for (String className : DEFAULT_AUX_CLASSES) {
       localizeJarForClass(lfs, libDir, className, false);
+    }
+    Collection<String> codecs = conf.getStringCollection("io.compression.codecs");
+    if (codecs != null) {
+      for (String codecClassName : codecs) {
+        localizeJarForClass(lfs, libDir, codecClassName, false);
+      }
     }
 
     if (options.getIsHBase()) {
@@ -532,10 +548,9 @@ public class LlapServiceDriver {
         throw (t instanceof IOException) ? (IOException)t : new IOException(t);
       }
       hasException = true;
-      String err =
-          "Cannot find a jar for [" + className + "] due to an exception (" + t.getMessage()
-              + "); not packaging the jar";
-      LOG.error(err, t);
+      String err = "Cannot find a jar for [" + className + "] due to an exception ("
+          + t.getMessage() + "); not packaging the jar";
+      LOG.error(err);
       System.err.println(err);
     }
     if (jarPath != null) {

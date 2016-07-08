@@ -349,6 +349,12 @@ public class DummyRawStoreForJdoConnection implements RawStore {
   }
 
   @Override
+  public int getNumPartitionsByExpr(String dbName, String tblName, byte[] expr)
+      throws MetaException, NoSuchObjectException {
+    return -1;
+  }
+
+  @Override
   public Table markPartitionForEvent(String dbName, String tblName, Map<String, String> partVals,
       PartitionEventType evtType) throws MetaException, UnknownTableException,
       InvalidPartitionException, UnknownPartitionException {
@@ -859,6 +865,18 @@ public class DummyRawStoreForJdoConnection implements RawStore {
   @Override
   public void dropConstraint(String dbName, String tableName,
   String constraintName) throws NoSuchObjectException {
+    // TODO Auto-generated method stub
+  }
+
+  @Override
+  public void addPrimaryKeys(List<SQLPrimaryKey> pks)
+    throws InvalidObjectException, MetaException {
+    // TODO Auto-generated method stub
+  }
+
+  @Override
+  public void addForeignKeys(List<SQLForeignKey> fks)
+    throws InvalidObjectException, MetaException {
     // TODO Auto-generated method stub
   }
 }

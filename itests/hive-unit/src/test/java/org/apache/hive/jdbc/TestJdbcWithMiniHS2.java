@@ -24,7 +24,9 @@ import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertTrue;
 import static org.junit.Assert.fail;
 
+import java.lang.reflect.Constructor;
 import java.lang.reflect.Field;
+import java.lang.reflect.Modifier;
 import java.sql.Connection;
 import java.sql.DriverManager;
 import java.sql.ResultSet;
@@ -46,6 +48,9 @@ import java.util.concurrent.ThreadPoolExecutor;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
 
+import com.google.common.cache.Cache;
+import com.google.common.cache.CacheBuilder;
+
 import org.apache.commons.lang.StringUtils;
 import org.apache.hadoop.fs.FileSystem;
 import org.apache.hadoop.fs.Path;
@@ -54,6 +59,7 @@ import org.apache.hadoop.hive.conf.HiveConf;
 import org.apache.hadoop.hive.conf.HiveConf.ConfVars;
 import org.apache.hadoop.hive.metastore.ObjectStore;
 import org.apache.hadoop.hive.ql.exec.FunctionRegistry;
+import org.apache.hive.common.util.ReflectionUtil;
 import org.apache.hive.jdbc.miniHS2.MiniHS2;
 import org.datanucleus.ClassLoaderResolver;
 import org.datanucleus.NucleusContext;
@@ -86,9 +92,8 @@ public class TestJdbcWithMiniHS2 {
     miniHS2.start(confOverlay);
   }
 
-  @Before
-  public void setUp() throws Exception {
-    hs2Conn = getConnection(miniHS2.getJdbcURL(), System.getProperty("user.name"), "bar");
+  private Connection getConnection() throws Exception {
+    return getConnection(miniHS2.getJdbcURL(), System.getProperty("user.name"), "bar");
   }
 
   private Connection getConnection(String jdbcURL, String user, String pwd) throws SQLException {
@@ -99,7 +104,9 @@ public class TestJdbcWithMiniHS2 {
 
   @After
   public void tearDown() throws Exception {
-    hs2Conn.close();
+    if (hs2Conn != null) {
+      hs2Conn.close();
+    }
   }
 
   @AfterClass
@@ -112,6 +119,7 @@ public class TestJdbcWithMiniHS2 {
   @Test
   public void testConnection() throws Exception {
     String tableName = "testTab1";
+    hs2Conn = getConnection();
     Statement stmt = hs2Conn.createStatement();
 
     // create table
@@ -131,8 +139,69 @@ public class TestJdbcWithMiniHS2 {
   }
 
   @Test
+  public void testParallelCompilation() throws Exception {
+    final String tableName = "testParallelCompilation";
+    hs2Conn = getConnection();
+    Statement stmt = hs2Conn.createStatement();
+
+    // create table
+    stmt.execute("DROP TABLE IF EXISTS " + tableName);
+    stmt.execute("CREATE TABLE " + tableName
+        + " (under_col INT COMMENT 'the under column', value STRING) COMMENT ' test table'");
+
+    // load data
+    stmt.execute("load data local inpath '"
+        + kvDataFilePath.toString() + "' into table " + tableName);
+
+    ResultSet res = stmt.executeQuery("SELECT * FROM " + tableName);
+    assertTrue(res.next());
+    res.close();
+
+    stmt.execute("SET hive.driver.parallel.compilation=true");
+    stmt.execute("SET hive.server2.async.exec.async.compile=true");
+
+    stmt.close();
+
+    startConcurrencyTest(hs2Conn, tableName, 10);
+    Connection conn2 = getConnection();
+    startConcurrencyTest(conn2, tableName, 10);
+    conn2.close();
+  }
+
+  @Test
+  public void testParallelCompilation2() throws Exception {
+    final String tableName = "testParallelCompilation2";
+    hs2Conn = getConnection();
+    Statement stmt = hs2Conn.createStatement();
+
+    // create table
+    stmt.execute("DROP TABLE IF EXISTS " + tableName);
+    stmt.execute("CREATE TABLE " + tableName
+        + " (under_col INT COMMENT 'the under column', value STRING) COMMENT ' test table'");
+
+    // load data
+    stmt.execute("load data local inpath '"
+        + kvDataFilePath.toString() + "' into table " + tableName);
+
+    ResultSet res = stmt.executeQuery("SELECT * FROM " + tableName);
+    assertTrue(res.next());
+    res.close();
+
+    stmt.execute("SET hive.driver.parallel.compilation=false");
+    stmt.execute("SET hive.server2.async.exec.async.compile=true");
+
+    stmt.close();
+
+    startConcurrencyTest(hs2Conn, tableName, 10);
+    Connection conn2 = getConnection();
+    startConcurrencyTest(conn2, tableName, 10);
+    conn2.close();
+  }
+
+  @Test
   public void testConcurrentStatements() throws Exception {
     String tableName = "testConcurrentStatements";
+    hs2Conn = getConnection();
     Statement stmt = hs2Conn.createStatement();
 
     // create table
@@ -149,9 +218,13 @@ public class TestJdbcWithMiniHS2 {
     res.close();
     stmt.close();
 
+    startConcurrencyTest(hs2Conn, tableName, 300);
+  }
+
+  private static void startConcurrencyTest(Connection conn, String tableName, int numTasks) {
     // Start concurrent testing
     int POOL_SIZE = 100;
-    int TASK_COUNT = 300;
+    int TASK_COUNT = numTasks;
 
     SynchronousQueue<Runnable> executorQueue = new SynchronousQueue<Runnable>();
     ExecutorService workers = new ThreadPoolExecutor(1, POOL_SIZE, 20, TimeUnit.SECONDS, executorQueue);
@@ -159,7 +232,7 @@ public class TestJdbcWithMiniHS2 {
     int i = 0;
     while(i < TASK_COUNT) {
       try {
-        Future<Boolean> future = workers.submit(new JDBCTask(hs2Conn, i, tableName));
+        Future<Boolean> future = workers.submit(new JDBCTask(conn, i, tableName));
         list.add(future);
         i++;
       } catch (RejectedExecutionException ree) {
@@ -311,6 +384,7 @@ public class TestJdbcWithMiniHS2 {
     stmt.execute(" drop table if exists table_in_non_default_schema");
     expected = stmt.execute("DROP DATABASE "+ dbName);
     stmt.close();
+    hs2Conn.close();
 
     hs2Conn  = getConnection(jdbcUri+"default",System.getProperty("user.name"),"bar");
     stmt = hs2Conn .createStatement();
@@ -344,6 +418,7 @@ public class TestJdbcWithMiniHS2 {
      * get/set Schema are new in JDK7 and not available in java.sql.Connection in JDK6.
      * Hence the test uses HiveConnection object to call these methods so that test will run with older JDKs
      */
+    hs2Conn = getConnection();
     HiveConnection hiveConn = (HiveConnection)hs2Conn;
 
     assertEquals("default", hiveConn.getSchema());
@@ -377,6 +452,7 @@ public class TestJdbcWithMiniHS2 {
    */
   private void verifyCurrentDB(String expectedDbName, Connection hs2Conn) throws Exception {
     String verifyTab = "miniHS2DbVerificationTable";
+    hs2Conn = getConnection();
     Statement stmt = hs2Conn.createStatement();
     stmt.execute("DROP TABLE IF EXISTS " + expectedDbName + "." + verifyTab);
     stmt.execute("CREATE TABLE " + expectedDbName + "." + verifyTab + "(id INT)");
@@ -582,6 +658,7 @@ public class TestJdbcWithMiniHS2 {
     // Downloaded resources dir
     scratchDirPath = new Path(HiveConf.getVar(conf, HiveConf.ConfVars.DOWNLOADED_RESOURCES_DIR));
     verifyScratchDir(conf, fs, scratchDirPath, expectedFSPermission, userName, true);
+    hs2Conn.close();
 
     // 2. Test with doAs=true
     // Restart HiveServer2 with doAs=true
@@ -608,6 +685,7 @@ public class TestJdbcWithMiniHS2 {
     // Downloaded resources dir
     scratchDirPath = new Path(HiveConf.getVar(conf, HiveConf.ConfVars.DOWNLOADED_RESOURCES_DIR));
     verifyScratchDir(conf, fs, scratchDirPath, expectedFSPermission, userName, true);
+    hs2Conn.close();
 
     // Test for user "trinity"
     userName = "trinity";
@@ -639,6 +717,7 @@ public class TestJdbcWithMiniHS2 {
     HiveConf testConf = new HiveConf();
     assertTrue(testConf.getVar(ConfVars.HIVE_SERVER2_BUILTIN_UDF_WHITELIST).isEmpty());
     // verify that udf in default whitelist can be executed
+    hs2Conn = getConnection();
     Statement stmt = hs2Conn.createStatement();
     stmt.executeQuery("SELECT substr('foobar', 4) ");
     hs2Conn.close();
@@ -680,10 +759,11 @@ public class TestJdbcWithMiniHS2 {
   public void testUdfBlackList() throws Exception {
     HiveConf testConf = new HiveConf();
     assertTrue(testConf.getVar(ConfVars.HIVE_SERVER2_BUILTIN_UDF_BLACKLIST).isEmpty());
-
+    hs2Conn = getConnection();
     Statement stmt = hs2Conn.createStatement();
     // verify that udf in default whitelist can be executed
     stmt.executeQuery("SELECT substr('foobar', 4) ");
+    hs2Conn.close();
 
     miniHS2.stop();
     testConf.setVar(ConfVars.HIVE_SERVER2_BUILTIN_UDF_BLACKLIST, "reflect");
@@ -705,6 +785,9 @@ public class TestJdbcWithMiniHS2 {
    */
   @Test
   public void testUdfBlackListOverride() throws Exception {
+    if (miniHS2.isStarted()) {
+      miniHS2.stop();
+    }
     // setup whitelist
     HiveConf testConf = new HiveConf();
 
@@ -759,6 +842,8 @@ public class TestJdbcWithMiniHS2 {
     // HDFS scratch dir
     scratchDirPath = new Path(HiveConf.getVar(conf, HiveConf.ConfVars.SCRATCHDIR));
     verifyScratchDir(conf, fs, scratchDirPath, expectedFSPermission, userName, false);
+    hs2Conn.close();
+
     // Test with multi-level scratch dir path
     // Stop HiveServer2
     if (miniHS2.isStarted()) {
@@ -808,6 +893,10 @@ public class TestJdbcWithMiniHS2 {
       hs2Conn = getConnection(miniHS2.getJdbcURL(), userName, "password");
     } catch (Exception e) {
       fail("Not expecting exception: " + e);
+    } finally {
+      if (hs2Conn != null) {
+        hs2Conn.close();
+      }
     }
 
     // This should fail with given HTTP response code 413 in error message, since header is more
@@ -818,6 +907,10 @@ public class TestJdbcWithMiniHS2 {
     } catch (Exception e) {
       assertTrue("Header exception thrown", e != null);
       assertTrue(e.getMessage().contains("HTTP Response code: 413"));
+    } finally {
+      if (hs2Conn != null) {
+        hs2Conn.close();
+      }
     }
 
     // Stop HiveServer2 to increase header size
@@ -834,6 +927,10 @@ public class TestJdbcWithMiniHS2 {
       hs2Conn = getConnection(miniHS2.getJdbcURL(), userName, "password");
     } catch (Exception e) {
       fail("Not expecting exception: " + e);
+    } finally {
+      if (hs2Conn != null) {
+        hs2Conn.close();
+      }
     }
   }
 
@@ -913,6 +1010,146 @@ public class TestJdbcWithMiniHS2 {
       } catch (Exception e) {
         System.out.println(e);
       }
+    }
+    return -1;
+  }
+
+  /**
+   * Tests ADD JAR uses Hives ReflectionUtil.CONSTRUCTOR_CACHE
+   *
+   * @throws Exception
+   */
+  @Test
+  public void testAddJarConstructorUnCaching() throws Exception {
+    // This test assumes the hive-contrib JAR has been built as part of the Hive build.
+    // Also dependent on the UDFExampleAdd class within that JAR.
+    setReflectionUtilCache();
+    String udfClassName = "org.apache.hadoop.hive.contrib.udf.example.UDFExampleAdd";
+    String mvnRepo = System.getProperty("maven.local.repository");
+    String hiveVersion = System.getProperty("hive.version");
+    String jarFileName = "hive-contrib-" + hiveVersion + ".jar";
+    String[] pathParts = {
+        "org", "apache", "hive",
+        "hive-contrib", hiveVersion, jarFileName
+    };
+
+    // Create path to hive-contrib JAR on local filesystem
+    Path jarFilePath = new Path(mvnRepo);
+    for (String pathPart : pathParts) {
+      jarFilePath = new Path(jarFilePath, pathPart);
+    }
+
+    Connection conn = getConnection(miniHS2.getJdbcURL(), "foo", "bar");
+    String tableName = "testAddJar";
+    Statement stmt = conn.createStatement();
+    stmt.execute("SET hive.support.concurrency = false");
+    // Create table
+    stmt.execute("DROP TABLE IF EXISTS " + tableName);
+    stmt.execute("CREATE TABLE " + tableName + " (key INT, value STRING)");
+    // Load data
+    stmt.execute("LOAD DATA LOCAL INPATH '" + kvDataFilePath.toString() + "' INTO TABLE "
+        + tableName);
+    ResultSet res = stmt.executeQuery("SELECT * FROM " + tableName);
+    // Ensure table is populated
+    assertTrue(res.next());
+
+    long cacheBeforeAddJar, cacheAfterAddJar, cacheAfterClose;
+    // Force the cache clear so we know its empty
+    invalidateReflectionUtlCache();
+    cacheBeforeAddJar = getReflectionUtilCacheSize();
+    System.out.println("CONSTRUCTOR_CACHE size before add jar: " + cacheBeforeAddJar);
+    System.out.println("CONSTRUCTOR_CACHE as map before add jar:" + getReflectionUtilCache().asMap());
+    Assert.assertTrue("FAILED: CONSTRUCTOR_CACHE size before add jar: " + cacheBeforeAddJar,
+            cacheBeforeAddJar == 0);
+
+    // Add the jar file
+    stmt.execute("ADD JAR " + jarFilePath.toString());
+    // Create a temporary function using the jar
+    stmt.execute("CREATE TEMPORARY FUNCTION func AS '" + udfClassName + "'");
+    // Execute the UDF
+    res = stmt.executeQuery("SELECT func(value) from " + tableName);
+    assertTrue(res.next());
+
+    // Check to make sure the cache is now being used
+    cacheAfterAddJar = getReflectionUtilCacheSize();
+    System.out.println("CONSTRUCTOR_CACHE size after add jar: " + cacheAfterAddJar);
+    Assert.assertTrue("FAILED: CONSTRUCTOR_CACHE size after connection close: " + cacheAfterAddJar,
+            cacheAfterAddJar > 0);
+    conn.close();
+    TimeUnit.SECONDS.sleep(10);
+    // Have to force a cleanup of all expired entries here because its possible that the
+    // expired entries will still be counted in Cache.size().
+    // Taken from:
+    // http://docs.guava-libraries.googlecode.com/git/javadoc/com/google/common/cache/CacheBuilder.html
+    cleanUpReflectionUtlCache();
+    cacheAfterClose = getReflectionUtilCacheSize();
+    System.out.println("CONSTRUCTOR_CACHE size after connection close: " + cacheAfterClose);
+    Assert.assertTrue("FAILED: CONSTRUCTOR_CACHE size after connection close: " + cacheAfterClose,
+            cacheAfterClose == 0);
+  }
+
+  private void setReflectionUtilCache() {
+    Field constructorCacheField;
+    Cache<Class<?>, Constructor<?>> tmp;
+    try {
+      constructorCacheField = ReflectionUtil.class.getDeclaredField("CONSTRUCTOR_CACHE");
+      if (constructorCacheField != null) {
+        constructorCacheField.setAccessible(true);
+        Field modifiersField = Field.class.getDeclaredField("modifiers");
+        modifiersField.setAccessible(true);
+        modifiersField.setInt(constructorCacheField, constructorCacheField.getModifiers() & ~Modifier.FINAL);
+        tmp = CacheBuilder.newBuilder().expireAfterAccess(5, TimeUnit.SECONDS).concurrencyLevel(64).weakKeys().weakValues().build();
+        constructorCacheField.set(tmp.getClass(), tmp);
+      }
+    } catch (Exception e) {
+      System.out.println("Error when setting the CONSTRUCTOR_CACHE to expire: " + e);
+    }
+  }
+
+  private Cache getReflectionUtilCache() {
+    Field constructorCacheField;
+    try {
+      constructorCacheField = ReflectionUtil.class.getDeclaredField("CONSTRUCTOR_CACHE");
+      if (constructorCacheField != null) {
+        constructorCacheField.setAccessible(true);
+        return (Cache) constructorCacheField.get(null);
+      }
+    } catch (Exception e) {
+      System.out.println("Error when getting the CONSTRUCTOR_CACHE var: " + e);
+    }
+    return null;
+  }
+
+  private void invalidateReflectionUtlCache() {
+    try {
+        Cache constructorCache = getReflectionUtilCache();
+        if ( constructorCache != null ) {
+          constructorCache.invalidateAll();
+        }
+    } catch (Exception e) {
+      System.out.println("Error when trying to invalidate the cache: " + e);
+    }
+  }
+
+  private void cleanUpReflectionUtlCache() {
+    try {
+      Cache constructorCache = getReflectionUtilCache();
+      if ( constructorCache != null ) {
+        constructorCache.cleanUp();
+      }
+    } catch (Exception e) {
+      System.out.println("Error when trying to cleanUp the cache: " + e);
+    }
+  }
+
+  private long getReflectionUtilCacheSize() {
+    try {
+        Cache constructorCache = getReflectionUtilCache();
+        if ( constructorCache != null ) {
+          return constructorCache.size();
+        }
+    } catch (Exception e) {
+      System.out.println(e);
     }
     return -1;
   }

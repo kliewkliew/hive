@@ -39,7 +39,7 @@ import org.apache.hadoop.fs.Path;
 import org.apache.hadoop.hive.common.FileUtils;
 import org.apache.hadoop.hive.common.StatsSetupConst;
 import org.apache.hadoop.hive.conf.HiveConf;
-import org.apache.hadoop.hive.metastore.MetaStoreUtils;
+import org.apache.hadoop.hive.conf.HiveConf.ConfVars;
 import org.apache.hadoop.hive.ql.CompilationOpContext;
 import org.apache.hadoop.hive.ql.ErrorMsg;
 import org.apache.hadoop.hive.ql.io.AcidUtils;
@@ -49,6 +49,7 @@ import org.apache.hadoop.hive.ql.io.HiveOutputFormat;
 import org.apache.hadoop.hive.ql.io.HivePartitioner;
 import org.apache.hadoop.hive.ql.io.RecordUpdater;
 import org.apache.hadoop.hive.ql.io.StatsProvidingRecordWriter;
+import org.apache.hadoop.hive.ql.io.StreamingOutputFormat;
 import org.apache.hadoop.hive.ql.metadata.HiveException;
 import org.apache.hadoop.hive.ql.metadata.HiveFatalException;
 import org.apache.hadoop.hive.ql.plan.DynamicPartitionCtx;
@@ -79,6 +80,7 @@ import org.apache.hadoop.io.LongWritable;
 import org.apache.hadoop.io.Writable;
 import org.apache.hadoop.mapred.JobConf;
 import org.apache.hadoop.util.ReflectionUtils;
+import org.apache.hive.common.util.HiveStringUtils;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -111,7 +113,6 @@ public class FileSinkOperator extends TerminalOperator<FileSinkDesc> implements
   protected transient int maxPartitions;
   protected transient ListBucketingCtx lbCtx;
   protected transient boolean isSkewedStoredAsSubDirectories;
-  protected transient boolean statsCollectRawDataSize;
   protected transient boolean[] statsFromRecordWriter;
   protected transient boolean isCollectRWStats;
   private transient FSPaths prevFsp;
@@ -183,14 +184,6 @@ public class FileSinkOperator extends TerminalOperator<FileSinkDesc> implements
       }
     }
 
-    public void setOutWriters(RecordWriter[] out) {
-      outWriters = out;
-    }
-
-    public RecordWriter[] getOutWriters() {
-      return outWriters;
-    }
-
     public void closeWriters(boolean abort) throws HiveException {
       for (int idx = 0; idx < outWriters.length; idx++) {
         if (outWriters[idx] != null) {
@@ -229,12 +222,14 @@ public class FileSinkOperator extends TerminalOperator<FileSinkDesc> implements
             // then skip the rename.  If it does try it.  We could just blindly try the rename
             // and avoid the extra stat, but that would mask other errors.
             try {
-              FileStatus stat = fs.getFileStatus(outPaths[idx]);
+              if (outPaths[idx] != null) {
+                FileStatus stat = fs.getFileStatus(outPaths[idx]);
+              }
             } catch (FileNotFoundException fnfe) {
               needToRename = false;
             }
           }
-          if (needToRename && !fs.rename(outPaths[idx], finalPaths[idx])) {
+          if (needToRename && outPaths[idx] != null && !fs.rename(outPaths[idx], finalPaths[idx])) {
             throw new HiveException("Unable to rename output from: " +
                 outPaths[idx] + " to: " + finalPaths[idx]);
           }
@@ -360,7 +355,6 @@ public class FileSinkOperator extends TerminalOperator<FileSinkDesc> implements
       }
       isCompressed = conf.getCompressed();
       parent = Utilities.toTempPath(conf.getDirName());
-      statsCollectRawDataSize = conf.isStatsCollectRawDataSize();
       statsFromRecordWriter = new boolean[numFiles];
       serializer = (Serializer) conf.getTableInfo().getDeserializerClass().newInstance();
       serializer.initialize(hconf, conf.getTableInfo().getProperties());
@@ -702,7 +696,7 @@ public class FileSinkOperator extends TerminalOperator<FileSinkDesc> implements
         }
 
         String invalidPartitionVal;
-        if((invalidPartitionVal = MetaStoreUtils.getPartitionValWithInvalidCharacter(dpVals, dpCtx.getWhiteListPattern()))!=null) {
+        if((invalidPartitionVal = HiveStringUtils.getPartitionValWithInvalidCharacter(dpVals, dpCtx.getWhiteListPattern()))!=null) {
           throw new HiveFatalException("Partition value '" + invalidPartitionVal +
               "' contains a character not matched by whitelist pattern '" +
               dpCtx.getWhiteListPattern().toString() + "'.  " + "(configure with " +
@@ -732,11 +726,9 @@ public class FileSinkOperator extends TerminalOperator<FileSinkDesc> implements
       // of gathering stats
       isCollectRWStats = areAllTrue(statsFromRecordWriter);
       if (conf.isGatherStats() && !isCollectRWStats) {
-        if (statsCollectRawDataSize) {
-          SerDeStats stats = serializer.getSerDeStats();
-          if (stats != null) {
-            fpaths.stat.addToStat(StatsSetupConst.RAW_DATA_SIZE, stats.getRawDataSize());
-          }
+        SerDeStats stats = serializer.getSerDeStats();
+        if (stats != null) {
+          fpaths.stat.addToStat(StatsSetupConst.RAW_DATA_SIZE, stats.getRawDataSize());
         }
         fpaths.stat.addToStat(StatsSetupConst.ROW_COUNT, 1);
       }
@@ -938,7 +930,8 @@ public class FileSinkOperator extends TerminalOperator<FileSinkDesc> implements
           // we cannot proceed and need to tell the hive client that retries won't succeed either
           throw new HiveFatalException(
                ErrorMsg.DYNAMIC_PARTITIONS_TOO_MANY_PER_NODE_ERROR.getErrorCodedMsg()
-               + "Maximum was set to: " + maxPartitions);
+               + "Maximum was set to " + maxPartitions + " partitions per node"
+               + ", number of dynamic partitions on this node: " + valToPaths.size());
         }
 
         if (!conf.getDpSortState().equals(DPSortState.NONE) && prevFsp != null) {
@@ -1013,7 +1006,15 @@ public class FileSinkOperator extends TerminalOperator<FileSinkDesc> implements
     LOG.info(toString() + ": records written - " + numRows);
 
     if (!bDynParts && !filesCreated) {
-      createBucketFiles(fsp);
+      boolean skipFiles = "tez".equalsIgnoreCase(
+          HiveConf.getVar(hconf, ConfVars.HIVE_EXECUTION_ENGINE));
+      if (skipFiles) {
+        Class<?> clazz = conf.getTableInfo().getOutputFileFormatClass();
+        skipFiles = !StreamingOutputFormat.class.isAssignableFrom(clazz);
+      }
+      if (!skipFiles) {
+        createBucketFiles(fsp);
+      }
     }
 
     lastProgressReport = System.currentTimeMillis();

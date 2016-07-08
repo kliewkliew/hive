@@ -31,6 +31,7 @@ import java.io.Serializable;
 import java.io.Writer;
 import java.net.URI;
 import java.net.URISyntaxException;
+import java.nio.charset.StandardCharsets;
 import java.sql.SQLException;
 import java.util.AbstractList;
 import java.util.ArrayList;
@@ -84,6 +85,7 @@ import org.apache.hadoop.hive.metastore.api.SQLPrimaryKey;
 import org.apache.hadoop.hive.metastore.api.SerDeInfo;
 import org.apache.hadoop.hive.metastore.api.ShowCompactResponse;
 import org.apache.hadoop.hive.metastore.api.ShowCompactResponseElement;
+import org.apache.hadoop.hive.metastore.api.ShowLocksRequest;
 import org.apache.hadoop.hive.metastore.api.ShowLocksResponse;
 import org.apache.hadoop.hive.metastore.api.ShowLocksResponseElement;
 import org.apache.hadoop.hive.metastore.api.SkewedInfo;
@@ -231,7 +233,6 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.stringtemplate.v4.ST;
 
-import com.google.common.collect.ImmutableList;
 import com.google.common.collect.Iterables;
 
 /**
@@ -362,6 +363,8 @@ public class DDLTask extends Task<DDLWork> implements Serializable {
       if (alterTbl != null) {
         if (alterTbl.getOp() == AlterTableTypes.DROPCONSTRAINT ) {
           return dropConstraint(db, alterTbl);
+        } else if (alterTbl.getOp() == AlterTableTypes.ADDCONSTRAINT) {
+          return addConstraint(db, alterTbl);
         } else {
           return alterTable(db, alterTbl);
         }
@@ -883,11 +886,20 @@ public class DDLTask extends Task<DDLWork> implements Serializable {
   }
 
   private int dropIndex(Hive db, DropIndexDesc dropIdx) throws HiveException {
+
+    if (HiveConf.getVar(conf, HiveConf.ConfVars.HIVE_EXECUTION_ENGINE).equals("tez")) {
+      throw new UnsupportedOperationException("Indexes unsupported for Tez execution engine");
+    }
+
     db.dropIndex(dropIdx.getTableName(), dropIdx.getIndexName(), dropIdx.isThrowException(), true);
     return 0;
   }
 
   private int createIndex(Hive db, CreateIndexDesc crtIndex) throws HiveException {
+
+    if (HiveConf.getVar(conf, HiveConf.ConfVars.HIVE_EXECUTION_ENGINE).equals("tez")) {
+      throw new UnsupportedOperationException("Indexes unsupported for Tez execution engine");
+    }
 
     if( crtIndex.getSerde() != null) {
       validateSerDe(crtIndex.getSerde());
@@ -916,6 +928,11 @@ public class DDLTask extends Task<DDLWork> implements Serializable {
   }
 
   private int alterIndex(Hive db, AlterIndexDesc alterIndex) throws HiveException {
+
+    if (HiveConf.getVar(conf, HiveConf.ConfVars.HIVE_EXECUTION_ENGINE).equals("tez")) {
+      throw new UnsupportedOperationException("Indexes unsupported for Tez execution engine");
+    }
+
     String baseTableName = alterIndex.getBaseTableName();
     String indexName = alterIndex.getIndexName();
     Index idx = db.getIndex(baseTableName, indexName);
@@ -1786,7 +1803,7 @@ public class DDLTask extends Task<DDLWork> implements Serializable {
       }
       partName = partitions.get(0).getName();
     }
-    db.compact(tbl.getDbName(), tbl.getTableName(), partName, desc.getCompactionType());
+    db.compact(tbl.getDbName(), tbl.getTableName(), partName, desc.getCompactionType(), desc.getProps());
     console.printInfo("Compaction enqueued.");
     return 0;
   }
@@ -2073,7 +2090,7 @@ public class DDLTask extends Task<DDLWork> implements Serializable {
 
       if (tbl.isView()) {
         String createTab_stmt = "CREATE VIEW `" + tableName + "` AS " + tbl.getViewExpandedText();
-        outStream.writeBytes(createTab_stmt.toString());
+        outStream.write(createTab_stmt.getBytes(StandardCharsets.UTF_8));
         return 0;
       }
 
@@ -2206,6 +2223,7 @@ public class DDLTask extends Task<DDLWork> implements Serializable {
       String tbl_location = "  '" + escapeHiveCommand(sd.getLocation()) + "'";
 
       // Table properties
+      duplicateProps.addAll(Arrays.asList(StatsSetupConst.TABLE_PARAMS_STATS_KEYS));
       String tbl_properties = propertiesToString(tbl.getParameters(), duplicateProps);
 
       createTab_stmt.add(TEMPORARY, tbl_temp);
@@ -2221,7 +2239,7 @@ public class DDLTask extends Task<DDLWork> implements Serializable {
       }
       createTab_stmt.add(TBL_PROPERTIES, tbl_properties);
 
-      outStream.writeBytes(createTab_stmt.render());
+      outStream.write(createTab_stmt.render().getBytes(StandardCharsets.UTF_8));
     } catch (IOException e) {
       LOG.info("show create table: " + stringifyException(e));
       return 1;
@@ -2284,14 +2302,14 @@ public class DDLTask extends Task<DDLWork> implements Serializable {
     try {
       if (showIndexes.isFormatted()) {
         // column headers
-        outStream.writeBytes(MetaDataFormatUtils.getIndexColumnsHeader());
+        outStream.write(MetaDataFormatUtils.getIndexColumnsHeader().getBytes(StandardCharsets.UTF_8));
         outStream.write(terminator);
         outStream.write(terminator);
       }
 
       for (Index index : indexes)
       {
-        outStream.writeBytes(MetaDataFormatUtils.getAllColumnsInformation(index));
+        outStream.write(MetaDataFormatUtils.getAllColumnsInformation(index).getBytes(StandardCharsets.UTF_8));
       }
     } catch (FileNotFoundException e) {
       LOG.info("show indexes: " + stringifyException(e));
@@ -2574,6 +2592,8 @@ public class DDLTask extends Task<DDLWork> implements Serializable {
     os.writeBytes("User");
     os.write(separator);
     os.writeBytes("Hostname");
+    os.write(separator);
+    os.writeBytes("Agent Info");
     os.write(terminator);
 
     List<ShowLocksResponseElement> locks = rsp.getLocks();
@@ -2613,6 +2633,8 @@ public class DDLTask extends Task<DDLWork> implements Serializable {
         os.write(separator);
         os.writeBytes(lock.getHostname());
         os.write(separator);
+        os.writeBytes(lock.getAgentInfo() == null ? "NULL" : lock.getAgentInfo());
+        os.write(separator);
         os.write(terminator);
       }
     }
@@ -2626,7 +2648,29 @@ public class DDLTask extends Task<DDLWork> implements Serializable {
     }
     lockMgr = (DbLockManager)lm;
 
-    ShowLocksResponse rsp = lockMgr.getLocks();
+    String dbName = showLocks.getDbName();
+    String tblName = showLocks.getTableName();
+    Map<String, String> partSpec = showLocks.getPartSpec();
+    if (dbName == null && tblName != null) {
+      dbName = SessionState.get().getCurrentDatabase();
+    }
+
+    ShowLocksRequest rqst = new ShowLocksRequest();
+    rqst.setDbname(dbName);
+    rqst.setTablename(tblName);
+    if (partSpec != null) {
+      List<String> keyList = new ArrayList<String>();
+      List<String> valList = new ArrayList<String>();
+      for (String partKey : partSpec.keySet()) {
+        String partVal = partSpec.remove(partKey);
+        keyList.add(partKey);
+        valList.add(partVal);
+      }
+      String partName = FileUtils.makePartName(keyList, valList);
+      rqst.setPartname(partName);
+    }
+
+    ShowLocksResponse rsp = lockMgr.getLocks(rqst);
 
     // write the results in the file
     DataOutputStream os = getOutputStream(showLocks.getResFile());
@@ -3631,6 +3675,21 @@ public class DDLTask extends Task<DDLWork> implements Serializable {
      return 0;
    }
 
+   private int addConstraint(Hive db, AlterTableDesc alterTbl)
+    throws SemanticException, HiveException {
+    try {
+    // This is either an alter table add foreign key or add primary key command.
+    if (!alterTbl.getForeignKeyCols().isEmpty()) {
+       db.addForeignKey(alterTbl.getForeignKeyCols());
+     } else if (!alterTbl.getPrimaryKeyCols().isEmpty()) {
+       db.addPrimaryKey(alterTbl.getPrimaryKeyCols());
+     }
+    } catch (NoSuchObjectException e) {
+      throw new HiveException(e);
+    }
+    return 0;
+  }
+
    /**
    * Drop a given table or some partitions. DropTableDesc is currently used for both.
    *
@@ -4081,6 +4140,12 @@ public class DDLTask extends Task<DDLWork> implements Serializable {
       makeLocationQualified(tbl.getDbName(), tbl.getTTable().getSd(), tbl.getTableName(), conf);
     }
 
+    if (crtTbl.getLocation() == null && !tbl.isPartitioned()
+        && conf.getBoolVar(HiveConf.ConfVars.HIVESTATSAUTOGATHER)) {
+      StatsSetupConst.setBasicStatsStateForCreateTable(tbl.getTTable().getParameters(),
+          StatsSetupConst.TRUE);
+    }
+
     // create the table
     db.createTable(tbl, crtTbl.getIfNotExists());
     work.getOutputs().add(new WriteEntity(tbl, WriteEntity.WriteType.DDL_NO_LOCK));
@@ -4113,6 +4178,12 @@ public class DDLTask extends Task<DDLWork> implements Serializable {
         oldview.getTTable().getParameters().putAll(crtView.getTblProps());
       }
       oldview.setPartCols(crtView.getPartCols());
+      if (crtView.getInputFormat() != null) {
+        oldview.setInputFormatClass(crtView.getInputFormat());
+      }
+      if (crtView.getOutputFormat() != null) {
+        oldview.setOutputFormatClass(crtView.getOutputFormat());
+      }
       oldview.checkValidity(null);
       try {
         db.alterTable(crtView.getViewName(), oldview, null);
@@ -4138,6 +4209,13 @@ public class DDLTask extends Task<DDLWork> implements Serializable {
 
       if (crtView.getPartCols() != null) {
         tbl.setPartCols(crtView.getPartCols());
+      }
+
+      if (crtView.getInputFormat() != null) {
+        tbl.setInputFormatClass(crtView.getInputFormat());
+      }
+      if (crtView.getOutputFormat() != null) {
+        tbl.setOutputFormatClass(crtView.getOutputFormat());
       }
 
       db.createTable(tbl, crtView.getIfNotExists());
@@ -4173,10 +4251,12 @@ public class DDLTask extends Task<DDLWork> implements Serializable {
       for (Path location : getLocations(db, table, partSpec)) {
         FileSystem fs = location.getFileSystem(conf);
         HdfsUtils.HadoopFileStatus status = new HdfsUtils.HadoopFileStatus(conf, fs, location);
+        FileStatus targetStatus = fs.getFileStatus(location);
+        String targetGroup = targetStatus == null ? null : targetStatus.getGroup();
         fs.delete(location, true);
         fs.mkdirs(location);
         try {
-          HdfsUtils.setFullFileStatus(conf, status, fs, location);
+          HdfsUtils.setFullFileStatus(conf, status, targetGroup, fs, location, false);
         } catch (Exception e) {
           LOG.warn("Error setting permissions of " + location, e);
         }

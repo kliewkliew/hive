@@ -30,12 +30,12 @@ import org.apache.hadoop.fs.PathFilter;
 import org.apache.hadoop.hive.conf.HiveConf;
 import org.apache.hadoop.hive.ql.QueryPlan;
 import org.apache.hadoop.hive.ql.exec.FetchTask;
-import org.apache.hadoop.hive.ql.io.FileFormatException;
-import org.apache.hadoop.hive.ql.io.orc.FileDump;
+import org.apache.hadoop.hive.ql.io.HdfsUtils;
+import org.apache.orc.tools.FileDump;
+import org.apache.orc.FileFormatException;
 import org.apache.hadoop.hive.ql.io.orc.OrcFile;
 import org.apache.hadoop.hive.ql.plan.FetchWork;
 import org.apache.hadoop.hive.ql.session.SessionState;
-import org.apache.hadoop.hive.shims.ShimLoader;
 
 import com.google.common.collect.Lists;
 
@@ -48,6 +48,7 @@ public class PostExecOrcFileDump implements ExecuteWithHookContext {
   private static final Logger LOG = LoggerFactory.getLogger(PostExecOrcFileDump.class.getName());
 
   private static final PathFilter hiddenFileFilter = new PathFilter() {
+    @Override
     public boolean accept(Path p) {
       String name = p.getName();
       return !name.startsWith("_") && !name.startsWith(".");
@@ -88,7 +89,7 @@ public class PostExecOrcFileDump implements ExecuteWithHookContext {
 
       for (Path dir : directories) {
         FileSystem fs = dir.getFileSystem(conf);
-        List<FileStatus> fileList = ShimLoader.getHadoopShims().listLocatedStatus(fs, dir,
+        List<FileStatus> fileList = HdfsUtils.listLocatedStatus(fs, dir,
             hiddenFileFilter);
 
         for (FileStatus fileStatus : fileList) {
@@ -98,7 +99,7 @@ public class PostExecOrcFileDump implements ExecuteWithHookContext {
               // just creating orc reader is going to do sanity checks to make sure its valid ORC file
               OrcFile.createReader(fs, fileStatus.getPath());
               console.printError("-- BEGIN ORC FILE DUMP --");
-              FileDump.main(new String[]{fileStatus.getPath().toString(), "--rowindex=1"});
+              FileDump.main(new String[]{fileStatus.getPath().toString(), "--rowindex=*"});
               console.printError("-- END ORC FILE DUMP --");
             } catch (FileFormatException e) {
               LOG.warn("File " + fileStatus.getPath() + " is not ORC. Skip printing orc file dump");

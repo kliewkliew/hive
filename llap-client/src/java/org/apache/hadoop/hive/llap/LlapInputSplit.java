@@ -21,30 +21,36 @@ import java.io.DataOutput;
 import java.io.IOException;
 
 import org.apache.hadoop.hive.llap.Schema;
+import org.apache.hadoop.hive.llap.security.LlapTokenIdentifier;
 import org.apache.hadoop.mapred.InputSplitWithLocationInfo;
 import org.apache.hadoop.mapred.SplitLocationInfo;
-import org.apache.thrift.TDeserializer;
-import org.apache.thrift.TSerializer;
+import org.apache.hadoop.security.token.Token;
 
 public class LlapInputSplit implements InputSplitWithLocationInfo {
 
-  int splitNum;
-  byte[] planBytes;
-  byte[] fragmentBytes;
-  SplitLocationInfo[] locations;
-  Schema schema;
-  String llapUser;
+  private int splitNum;
+  private byte[] planBytes;
+  private byte[] fragmentBytes;
+  private SplitLocationInfo[] locations;
+  private Schema schema;
+  private String llapUser;
+  private byte[] fragmentBytesSignature;
+  private byte[] tokenBytes;
 
   public LlapInputSplit() {
   }
 
-  public LlapInputSplit(int splitNum, byte[] planBytes, byte[] fragmentBytes, SplitLocationInfo[] locations, Schema schema, String llapUser) {
+  public LlapInputSplit(int splitNum, byte[] planBytes, byte[] fragmentBytes,
+      byte[] fragmentBytesSignature, SplitLocationInfo[] locations, Schema schema,
+      String llapUser, byte[] tokenBytes) {
     this.planBytes = planBytes;
     this.fragmentBytes = fragmentBytes;
+    this.fragmentBytesSignature = fragmentBytesSignature;
     this.locations = locations;
     this.schema = schema;
     this.splitNum = splitNum;
     this.llapUser = llapUser;
+    this.tokenBytes = tokenBytes;
   }
 
   public Schema getSchema() {
@@ -77,7 +83,13 @@ public class LlapInputSplit implements InputSplitWithLocationInfo {
     return fragmentBytes;
   }
 
+  public byte[] getFragmentBytesSignature() {
+    return fragmentBytesSignature;
+  }
 
+  public byte[] getTokenBytes() {
+    return tokenBytes;
+  }
 
   @Override
   public void write(DataOutput out) throws IOException {
@@ -87,6 +99,12 @@ public class LlapInputSplit implements InputSplitWithLocationInfo {
 
     out.writeInt(fragmentBytes.length);
     out.write(fragmentBytes);
+    if (fragmentBytesSignature != null) {
+      out.writeInt(fragmentBytesSignature.length);
+      out.write(fragmentBytesSignature);
+    } else {
+      out.writeInt(0);
+    }
 
     out.writeInt(locations.length);
     for (int i = 0; i < locations.length; ++i) {
@@ -95,6 +113,12 @@ public class LlapInputSplit implements InputSplitWithLocationInfo {
 
     schema.write(out);
     out.writeUTF(llapUser);
+    if (tokenBytes != null) {
+      out.writeInt(tokenBytes.length);
+      out.write(tokenBytes);
+    } else {
+      out.writeInt(0);
+    }
   }
 
   @Override
@@ -107,6 +131,11 @@ public class LlapInputSplit implements InputSplitWithLocationInfo {
     length = in.readInt();
     fragmentBytes = new byte[length];
     in.readFully(fragmentBytes);
+    length = in.readInt();
+    if (length > 0) {
+      fragmentBytesSignature = new byte[length];
+      in.readFully(fragmentBytesSignature);
+    }
 
     length = in.readInt();
     locations = new SplitLocationInfo[length];
@@ -118,6 +147,11 @@ public class LlapInputSplit implements InputSplitWithLocationInfo {
     schema = new Schema();
     schema.readFields(in);
     llapUser = in.readUTF();
+    length = in.readInt();
+    if (length > 0) {
+      tokenBytes = new byte[length];
+      in.readFully(tokenBytes);
+    }
   }
 
   @Override

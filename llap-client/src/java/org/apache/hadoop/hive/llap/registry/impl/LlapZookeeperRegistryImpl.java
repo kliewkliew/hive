@@ -90,8 +90,11 @@ public class LlapZookeeperRegistryImpl implements ServiceRegistry {
   private static final String IPC_SHUFFLE = "shuffle";
   private static final String IPC_LLAP = "llap";
   private static final String IPC_OUTPUTFORMAT = "llapoutputformat";
-  private final static String ROOT_NAMESPACE = "llap";
+  private final static String SASL_NAMESPACE = "llap-sasl";
+  private final static String UNSECURE_NAMESPACE = "llap-unsecure";
   private final static String USER_SCOPE_PATH_PREFIX = "user-";
+  private static final String DISABLE_MESSAGE =
+      "Set " + ConfVars.LLAP_VALIDATE_ACLS.varname + " to false to disable ACL validation";
 
   private final Configuration conf;
   private final CuratorFramework zooKeeperClient;
@@ -124,33 +127,6 @@ public class LlapZookeeperRegistryImpl implements ServiceRegistry {
     hostname = localhost;
   }
 
-  /**
-   * ACLProvider for providing appropriate ACLs to CuratorFrameworkFactory
-   */
-  private final ACLProvider zooKeeperAclProvider = new ACLProvider() {
-
-    @Override
-    public List<ACL> getDefaultAcl() {
-      // We always return something from getAclForPath so this should not happen.
-      LOG.warn("getDefaultAcl was called");
-      return Lists.newArrayList(ZooDefs.Ids.OPEN_ACL_UNSAFE);
-    }
-
-    @Override
-    public List<ACL> getAclForPath(String path) {
-      if (!UserGroupInformation.isSecurityEnabled() || path == null
-          || !path.contains(userPathPrefix)) {
-        // No security or the path is below the user path - full access.
-        return Lists.newArrayList(ZooDefs.Ids.OPEN_ACL_UNSAFE);
-      }
-      // Read all to the world
-      List<ACL> nodeAcls = new ArrayList<ACL>(ZooDefs.Ids.READ_ACL_UNSAFE);
-      // Create/Delete/Write/Admin to creator
-      nodeAcls.addAll(ZooDefs.Ids.CREATOR_ALL_ACL);
-      return nodeAcls;
-    }
-  };
-
   public LlapZookeeperRegistryImpl(String instanceName, Configuration conf) {
     this.conf = new Configuration(conf);
     this.conf.addResource(YarnConfiguration.YARN_SITE_CONFIGURATION_FILE);
@@ -163,17 +139,7 @@ public class LlapZookeeperRegistryImpl implements ServiceRegistry {
             TimeUnit.MILLISECONDS);
     int maxRetries = HiveConf.getIntVar(conf, ConfVars.HIVE_ZOOKEEPER_CONNECTION_MAX_RETRIES);
 
-    // Create a CuratorFramework instance to be used as the ZooKeeper client
-    // Use the zooKeeperAclProvider to create appropriate ACLs
-    this.zooKeeperClient = CuratorFrameworkFactory.builder()
-        .connectString(zkEnsemble)
-        .sessionTimeoutMs(sessionTimeout)
-        .aclProvider(zooKeeperAclProvider)
-        .namespace(ROOT_NAMESPACE)
-        .retryPolicy(new ExponentialBackoffRetry(baseSleepTime, maxRetries))
-        .build();
-
-    // sample path: /llap/hiveuser/hostname/workers/worker-0000000
+    // sample path: /llap-sasl/hiveuser/hostname/workers/worker-0000000
     // worker-0000000 is the sequence number which will be retained until session timeout. If a
     // worker does not respond due to communication interruptions it will retain the same sequence
     // number when it returns back. If session timeout expires, the node will be deleted and new
@@ -183,7 +149,49 @@ public class LlapZookeeperRegistryImpl implements ServiceRegistry {
     this.instancesCache = null;
     this.instances = null;
     this.stateChangeListeners = new HashSet<>();
+
+    final boolean isSecure = UserGroupInformation.isSecurityEnabled();
+    ACLProvider zooKeeperAclProvider = new ACLProvider() {
+      @Override
+      public List<ACL> getDefaultAcl() {
+        // We always return something from getAclForPath so this should not happen.
+        LOG.warn("getDefaultAcl was called");
+        return Lists.newArrayList(ZooDefs.Ids.OPEN_ACL_UNSAFE);
+      }
+
+      @Override
+      public List<ACL> getAclForPath(String path) {
+        if (!isSecure || path == null || !path.contains(userPathPrefix)) {
+          // No security or the path is below the user path - full access.
+          return Lists.newArrayList(ZooDefs.Ids.OPEN_ACL_UNSAFE);
+        }
+        return createSecureAcls();
+      }
+    };
+    String rootNs = HiveConf.getVar(conf, ConfVars.LLAP_ZK_REGISTRY_NAMESPACE);
+    if (rootNs == null) {
+      rootNs = isSecure ? SASL_NAMESPACE : UNSECURE_NAMESPACE; // The normal path.
+    }
+
+    // Create a CuratorFramework instance to be used as the ZooKeeper client
+    // Use the zooKeeperAclProvider to create appropriate ACLs
+    this.zooKeeperClient = CuratorFrameworkFactory.builder()
+        .connectString(zkEnsemble)
+        .sessionTimeoutMs(sessionTimeout)
+        .aclProvider(zooKeeperAclProvider)
+        .namespace(rootNs)
+        .retryPolicy(new ExponentialBackoffRetry(baseSleepTime, maxRetries))
+        .build();
+
     LOG.info("Llap Zookeeper Registry is enabled with registryid: " + instanceName);
+  }
+
+  private static List<ACL> createSecureAcls() {
+    // Read all to the world
+    List<ACL> nodeAcls = new ArrayList<ACL>(ZooDefs.Ids.READ_ACL_UNSAFE);
+    // Create/Delete/Write/Admin to creator
+    nodeAcls.addAll(ZooDefs.Ids.CREATOR_ALL_ACL);
+    return nodeAcls;
   }
 
   /**
@@ -297,7 +305,11 @@ public class LlapZookeeperRegistryImpl implements ServiceRegistry {
 
       znodePath = znode.getActualPath();
       if (HiveConf.getBoolVar(conf, ConfVars.LLAP_VALIDATE_ACLS)) {
-        checkAcls();
+        try {
+          checkAndSetAcls();
+        } catch (Exception ex) {
+          throw new IOException("Error validating or setting ACLs. " + DISABLE_MESSAGE, ex);
+        }
       }
       // Set a watch on the znode
       if (zooKeeperClient.checkExists().forPath(znodePath) == null) {
@@ -319,7 +331,7 @@ public class LlapZookeeperRegistryImpl implements ServiceRegistry {
     return uniq.toString();
   }
 
-  private void checkAcls() throws Exception {
+  private void checkAndSetAcls() throws Exception {
     if (!UserGroupInformation.isSecurityEnabled()) return;
     String pathToCheck = znodePath;
     // We are trying to check ACLs on the "workers" directory, which noone except us should be
@@ -331,7 +343,9 @@ public class LlapZookeeperRegistryImpl implements ServiceRegistry {
     List<ACL> acls = zooKeeperClient.getACL().forPath(pathToCheck);
     if (acls == null || acls.isEmpty()) {
       // Can there be no ACLs? There's some access (to get ACLs), so assume it means free for all.
-      throw new SecurityException("No ACLs on "  + pathToCheck);
+      LOG.warn("No ACLs on "  + pathToCheck + "; setting up ACLs. " + DISABLE_MESSAGE);
+      setUpAcls(pathToCheck);
+      return;
     }
     // This could be brittle.
     assert userNameFromPrincipal != null;
@@ -340,9 +354,29 @@ public class LlapZookeeperRegistryImpl implements ServiceRegistry {
       if ((acl.getPerms() & ~ZooDefs.Perms.READ) == 0 || currentUser.equals(acl.getId())) {
         continue; // Read permission/no permissions, or the expected user.
       }
-      throw new SecurityException("The ACL " + acl + " is unnacceptable for " + pathToCheck);
+      LOG.warn("The ACL " + acl + " is unnacceptable for " + pathToCheck
+        + "; setting up ACLs. " + DISABLE_MESSAGE);
+      setUpAcls(pathToCheck);
+      return;
     }
   }
+
+  private void setUpAcls(String path) throws Exception {
+    List<ACL> acls = createSecureAcls();
+    LinkedList<String> paths = new LinkedList<>();
+    paths.add(path);
+    while (!paths.isEmpty()) {
+      String currentPath = paths.poll();
+      List<String> children = zooKeeperClient.getChildren().forPath(currentPath);
+      if (children != null) {
+        for (String child : children) {
+          paths.add(currentPath + "/" + child);
+        }
+      }
+      zooKeeperClient.setACL().withACL(acls).forPath(currentPath);
+    }
+  }
+
 
   @Override
   public void unregister() throws IOException {
@@ -471,6 +505,7 @@ public class LlapZookeeperRegistryImpl implements ServiceRegistry {
     @Override
     public Map<String, ServiceInstance> getAll() {
       Map<String, ServiceInstance> instances = new LinkedHashMap<>();
+      // TODO: we could refresh instanceCache here on previous failure
       for (ChildData childData : instancesCache.getCurrentData()) {
         if (childData != null) {
           byte[] data = childData.getData();

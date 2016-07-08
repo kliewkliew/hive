@@ -26,19 +26,18 @@ import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.hive.llap.daemon.FragmentCompletionHandler;
 import org.apache.hadoop.hive.llap.daemon.KilledTaskHandler;
 import org.apache.hadoop.hive.llap.daemon.rpc.LlapDaemonProtocolProtos;
+import org.apache.hadoop.hive.llap.daemon.rpc.LlapDaemonProtocolProtos.QueryIdentifierProto;
 import org.apache.hadoop.hive.llap.daemon.rpc.LlapDaemonProtocolProtos.SignableVertexSpec;
 import org.apache.hadoop.hive.llap.daemon.rpc.LlapDaemonProtocolProtos.SubmitWorkRequestProto;
 import org.apache.hadoop.hive.llap.daemon.rpc.LlapDaemonProtocolProtos.VertexOrBinary;
 import org.apache.hadoop.hive.llap.metrics.LlapDaemonExecutorMetrics;
-import org.apache.hadoop.hive.llap.tez.Converters;
 import org.apache.hadoop.security.Credentials;
 import org.apache.hadoop.yarn.api.records.ApplicationId;
 import org.apache.tez.dag.records.TezDAGID;
-import org.apache.tez.dag.records.TezTaskAttemptID;
-import org.apache.tez.dag.records.TezTaskID;
 import org.apache.tez.dag.records.TezVertexID;
 import org.apache.tez.hadoop.shim.DefaultHadoopShim;
 import org.apache.tez.runtime.api.impl.ExecutionContextImpl;
+import org.apache.tez.runtime.api.impl.TezEvent;
 import org.apache.tez.runtime.task.EndReason;
 import org.apache.tez.runtime.task.TaskRunner2Result;
 import org.slf4j.Logger;
@@ -51,22 +50,21 @@ public class TaskExecutorTestHelpers {
   public static MockRequest createMockRequest(int fragmentNum, int parallelism, long startTime,
                                               boolean canFinish, long workTime) {
     SubmitWorkRequestProto
-        requestProto = createSubmitWorkRequestProto(fragmentNum, parallelism,
-        startTime);
+        request = createSubmitWorkRequestProto(fragmentNum, parallelism, startTime);
+    return createMockRequest(canFinish, workTime, request);
+  }
+
+  private static MockRequest createMockRequest(boolean canFinish,
+      long workTime, SubmitWorkRequestProto request) {
     QueryFragmentInfo queryFragmentInfo = createQueryFragmentInfo(
-        requestProto.getWorkSpec().getVertex(), requestProto.getFragmentNumber());
-    MockRequest mockRequest = new MockRequest(requestProto, queryFragmentInfo, canFinish, workTime);
-    return mockRequest;
+        request.getWorkSpec().getVertex(), request.getFragmentNumber());
+    return new MockRequest(request, queryFragmentInfo, canFinish, workTime, null);
   }
 
   public static TaskExecutorService.TaskWrapper createTaskWrapper(
       SubmitWorkRequestProto request, boolean canFinish, int workTime) {
-    QueryFragmentInfo queryFragmentInfo = createQueryFragmentInfo(
-        request.getWorkSpec().getVertex(), request.getFragmentNumber());
-    MockRequest mockRequest = new MockRequest(request, queryFragmentInfo, canFinish, workTime);
-    TaskExecutorService.TaskWrapper
-        taskWrapper = new TaskExecutorService.TaskWrapper(mockRequest, null);
-    return taskWrapper;
+    return new TaskExecutorService.TaskWrapper(
+        createMockRequest(canFinish, workTime, request), null);
   }
 
   public static QueryFragmentInfo createQueryFragmentInfo(
@@ -79,7 +77,7 @@ public class TaskExecutorTestHelpers {
     QueryInfo queryInfo =
         new QueryInfo(queryIdentifier, "fake_app_id_string", "fake_dag_name", 1, "fakeUser",
             new ConcurrentHashMap<String, LlapDaemonProtocolProtos.SourceStateProto>(),
-            new String[0], null, null, null);
+            new String[0], null, "fakeUser", null);
     return queryInfo;
   }
 
@@ -97,8 +95,6 @@ public class TaskExecutorTestHelpers {
     ApplicationId appId = ApplicationId.newInstance(9999, 72);
     TezDAGID dagId = TezDAGID.getInstance(appId, 1);
     TezVertexID vId = TezVertexID.getInstance(dagId, 35);
-    TezTaskID tId = TezTaskID.getInstance(vId, 389);
-    TezTaskAttemptID taId = TezTaskAttemptID.getInstance(tId, fragmentNumber);
     return SubmitWorkRequestProto
         .newBuilder()
         .setAttemptNumber(0)
@@ -109,7 +105,13 @@ public class TaskExecutorTestHelpers {
                 .setDagName("MockDag")
                 .setUser("MockUser")
                 .setTokenIdentifier("MockToken_1")
-                .setVertexIdentifier(Converters.createVertexIdentifier(taId, 0))
+                .setQueryIdentifier(
+                    QueryIdentifierProto.newBuilder()
+                        .setApplicationIdString(appId.toString())
+                        .setAppAttemptNumber(0)
+                        .setDagIndex(dagId.getId())
+                        .build())
+                .setVertexIndex(vId.getId())
                 .setVertexName("MockVertex")
                 .setProcessorDescriptor(
                     LlapDaemonProtocolProtos.EntityDescriptorProto.newBuilder()
@@ -145,12 +147,13 @@ public class TaskExecutorTestHelpers {
     private final Condition finishedCondition = lock.newCondition();
 
     public MockRequest(SubmitWorkRequestProto requestProto, QueryFragmentInfo fragmentInfo,
-                       boolean canFinish, long workTime) {
+                       boolean canFinish, long workTime, TezEvent initialEvent) {
       super(requestProto, fragmentInfo, new Configuration(),
           new ExecutionContextImpl("localhost"), null, new Credentials(), 0, mock(AMReporter.class), null, mock(
               LlapDaemonExecutorMetrics.class),
           mock(KilledTaskHandler.class), mock(
-              FragmentCompletionHandler.class), new DefaultHadoopShim(), null);
+              FragmentCompletionHandler.class), new DefaultHadoopShim(), null,
+              requestProto.getWorkSpec().getVertex(), initialEvent, null);
       this.workTime = workTime;
       this.canFinish = canFinish;
     }

@@ -24,6 +24,7 @@ import com.google.common.collect.Lists;
 import com.google.protobuf.ByteString;
 import org.apache.hadoop.hive.llap.daemon.rpc.LlapDaemonProtocolProtos.EntityDescriptorProto;
 import org.apache.hadoop.hive.llap.daemon.rpc.LlapDaemonProtocolProtos.IOSpecProto;
+import org.apache.hadoop.hive.llap.daemon.rpc.LlapDaemonProtocolProtos.QueryIdentifierProto;
 import org.apache.hadoop.hive.llap.daemon.rpc.LlapDaemonProtocolProtos.SignableVertexSpec;
 import org.apache.hadoop.hive.llap.daemon.rpc.LlapDaemonProtocolProtos.UserPayloadProto;
 import org.apache.hadoop.yarn.api.records.ApplicationId;
@@ -42,7 +43,7 @@ import org.junit.Test;
 
 public class TestConverters {
 
-  @Test(timeout = 5000)
+  @Test(timeout = 10000)
   public void testTaskSpecToFragmentSpec() {
     ByteBuffer procBb = ByteBuffer.allocate(4);
     procBb.putInt(0, 200);
@@ -77,12 +78,20 @@ public class TestConverters {
         new TaskSpec(tezTaskAttemptId, "dagName", "vertexName", 10, processorDescriptor,
             inputSpecList, outputSpecList, null);
 
-    SignableVertexSpec vertexProto = Converters.convertTaskSpecToProto(taskSpec, 0, "", null, "");
+    QueryIdentifierProto queryIdentifierProto =
+        QueryIdentifierProto.newBuilder().setApplicationIdString(appId.toString())
+            .setAppAttemptNumber(333).setDagIndex(300).build();
+
+    SignableVertexSpec vertexProto = Converters
+        .constructSignableVertexSpec(taskSpec, queryIdentifierProto, "", "", "hiveQueryId").build();
 
     assertEquals("dagName", vertexProto.getDagName());
     assertEquals("vertexName", vertexProto.getVertexName());
-    assertEquals(appId.toString(), vertexProto.getVertexIdentifier().getApplicationIdString());
-    assertEquals(tezDagId.getId(), vertexProto.getVertexIdentifier().getDagId());
+    assertEquals("hiveQueryId", vertexProto.getHiveQueryId());
+    assertEquals(appId.toString(), vertexProto.getQueryIdentifier().getApplicationIdString());
+    assertEquals(tezDagId.getId(), vertexProto.getQueryIdentifier().getDagIndex());
+    assertEquals(333, vertexProto.getQueryIdentifier().getAppAttemptNumber());
+    assertEquals(tezVertexId.getId(), vertexProto.getVertexIndex());
     assertEquals(processorDescriptor.getClassName(),
         vertexProto.getProcessorDescriptor().getClassName());
     assertEquals(processorDescriptor.getUserPayload().getPayload(),
@@ -98,7 +107,7 @@ public class TestConverters {
 
   }
 
-  @Test (timeout = 5000)
+  @Test (timeout = 10000)
   public void testFragmentSpecToTaskSpec() {
 
     ByteBuffer procBb = ByteBuffer.allocate(4);
@@ -116,8 +125,14 @@ public class TestConverters {
     TezTaskID tezTaskId = TezTaskID.getInstance(tezVertexId, 500);
     TezTaskAttemptID tezTaskAttemptId = TezTaskAttemptID.getInstance(tezTaskId, 600);
 
+    QueryIdentifierProto queryIdentifierProto =
+        QueryIdentifierProto.newBuilder().setApplicationIdString(appId.toString())
+            .setAppAttemptNumber(333).setDagIndex(tezDagId.getId()).build();
+
     SignableVertexSpec.Builder builder = SignableVertexSpec.newBuilder();
-    builder.setVertexIdentifier(Converters.createVertexIdentifier(tezTaskAttemptId, 0));
+    builder.setQueryIdentifier(queryIdentifierProto);
+    builder.setHiveQueryId("hiveQueryId");
+    builder.setVertexIndex(tezVertexId.getId());
     builder.setDagName("dagName");
     builder.setVertexName("vertexName");
     builder.setProcessorDescriptor(
@@ -142,7 +157,7 @@ public class TestConverters {
 
     SignableVertexSpec vertexProto = builder.build();
 
-    TaskSpec taskSpec = Converters.getTaskSpecfromProto(vertexProto, 0, 0, null);
+    TaskSpec taskSpec = Converters.getTaskSpecfromProto(vertexProto, 0, 0, tezTaskAttemptId);
 
     assertEquals("dagName", taskSpec.getDAGName());
     assertEquals("vertexName", taskSpec.getVertexName());

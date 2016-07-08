@@ -32,6 +32,7 @@ import org.apache.hadoop.hive.metastore.api.ColumnStatisticsObj;
 import org.apache.hadoop.hive.metastore.api.CompactionType;
 import org.apache.hadoop.hive.metastore.api.ConfigValSecurityException;
 import org.apache.hadoop.hive.metastore.api.CurrentNotificationEventId;
+import org.apache.hadoop.hive.metastore.api.DataOperationType;
 import org.apache.hadoop.hive.metastore.api.Database;
 import org.apache.hadoop.hive.metastore.api.EnvironmentContext;
 import org.apache.hadoop.hive.metastore.api.FieldSchema;
@@ -74,6 +75,7 @@ import org.apache.hadoop.hive.metastore.api.SQLForeignKey;
 import org.apache.hadoop.hive.metastore.api.SQLPrimaryKey;
 import org.apache.hadoop.hive.metastore.api.SetPartitionsStatsRequest;
 import org.apache.hadoop.hive.metastore.api.ShowCompactResponse;
+import org.apache.hadoop.hive.metastore.api.ShowLocksRequest;
 import org.apache.hadoop.hive.metastore.api.ShowLocksResponse;
 import org.apache.hadoop.hive.metastore.api.Table;
 import org.apache.hadoop.hive.metastore.api.TableMeta;
@@ -1374,7 +1376,16 @@ public interface IMetaStoreClient {
    * @return List of currently held and waiting locks.
    * @throws TException
    */
+  @Deprecated
   ShowLocksResponse showLocks() throws TException;
+
+  /**
+   * Show all currently held and waiting locks.
+   * @param showLocksRequest SHOW LOCK request
+   * @return List of currently held and waiting locks.
+   * @throws TException
+   */
+  ShowLocksResponse showLocks(ShowLocksRequest showLocksRequest) throws TException;
 
   /**
    * Send a heartbeat to indicate that the client holding these locks (if
@@ -1425,8 +1436,26 @@ public interface IMetaStoreClient {
    * @param type Whether this is a major or minor compaction.
    * @throws TException
    */
+  @Deprecated
   void compact(String dbname, String tableName, String partitionName,  CompactionType type)
       throws TException;
+
+  /**
+   * Send a request to compact a table or partition.  This will not block until the compaction is
+   * complete.  It will instead put a request on the queue for that table or partition to be
+   * compacted.  No checking is done on the dbname, tableName, or partitionName to make sure they
+   * refer to valid objects.  It is assumed this has already been done by the caller.
+   * @param dbname Name of the database the table is in.  If null, this will be assumed to be
+   *               'default'.
+   * @param tableName Name of the table to be compacted.  This cannot be null.  If partitionName
+   *                  is null, this must be a non-partitioned table.
+   * @param partitionName Name of the partition to be compacted
+   * @param type Whether this is a major or minor compaction.
+   * @param tblproperties the list of tblproperties to override for this compact. Can be null.
+   * @throws TException
+   */
+  void compact(String dbname, String tableName, String partitionName, CompactionType type,
+               Map<String, String> tblproperties) throws TException;
 
   /**
    * Get a list of all current compactions.
@@ -1437,6 +1466,12 @@ public interface IMetaStoreClient {
   ShowCompactResponse showCompactions() throws TException;
 
   /**
+   * @deprecated in Hive 1.3.0/2.1.0 - will be removed in 2 releases
+   */
+  @Deprecated
+  void addDynamicPartitions(long txnId, String dbName, String tableName, List<String> partNames)
+    throws TException;
+  /**
    * Send a list of partitions to the metastore to indicate which partitions were loaded
    * dynamically.
    * @param txnId id of the transaction
@@ -1445,7 +1480,8 @@ public interface IMetaStoreClient {
    * @param partNames partition name, as constructed by Warehouse.makePartName
    * @throws TException
    */
-  void addDynamicPartitions(long txnId, String dbName, String tableName, List<String> partNames)
+  void addDynamicPartitions(long txnId, String dbName, String tableName, List<String> partNames,
+                            DataOperationType operationType)
     throws TException;
 
   /**
@@ -1576,4 +1612,9 @@ public interface IMetaStoreClient {
   void dropConstraint(String dbName, String tableName, String constraintName) throws 
     MetaException, NoSuchObjectException, TException;
 
+  void addPrimaryKey(List<SQLPrimaryKey> primaryKeyCols) throws
+  MetaException, NoSuchObjectException, TException;
+
+  void addForeignKey(List<SQLForeignKey> foreignKeyCols) throws
+  MetaException, NoSuchObjectException, TException;
 }

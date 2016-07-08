@@ -92,6 +92,10 @@ import org.apache.hadoop.fs.FileSystem;
 import org.apache.hadoop.hive.conf.HiveConf;
 import org.apache.hadoop.io.IOUtils;
 import org.apache.hive.beeline.cli.CliOptionsProcessor;
+import org.apache.thrift.transport.TTransportException;
+
+import org.apache.hive.jdbc.Utils;
+import org.apache.hive.jdbc.Utils.JdbcConnectionParams;
 
 /**
  * A console SQL shell with command completion.
@@ -139,7 +143,6 @@ public class BeeLine implements Closeable {
   private static final Options options = new Options();
 
   public static final String BEELINE_DEFAULT_JDBC_DRIVER = "org.apache.hive.jdbc.HiveDriver";
-  public static final String BEELINE_DEFAULT_JDBC_URL = "jdbc:hive2://";
   public static final String DEFAULT_DATABASE_NAME = "default";
 
   private static final String SCRIPT_OUTPUT_PREFIX = ">>>";
@@ -151,6 +154,7 @@ public class BeeLine implements Closeable {
 
   private static final String HIVE_VAR_PREFIX = "--hivevar";
   private static final String HIVE_CONF_PREFIX = "--hiveconf";
+  private static final String PROP_FILE_PREFIX = "--property-file";
   static final String PASSWD_MASK = "[passwd stripped]";
 
   private final Map<Object, Object> formats = map(new Object[] {
@@ -297,6 +301,12 @@ public class BeeLine implements Closeable {
         .withDescription("the JDBC URL to connect to")
         .create('u'));
 
+    // -r
+    options.addOption(OptionBuilder
+        .withLongOpt("reconnect")
+        .withDescription("Reconnect to last saved connect url (in conjunction with !save)")
+        .create('r'));
+
     // -n <username>
     options.addOption(OptionBuilder
         .hasArg()
@@ -369,6 +379,13 @@ public class BeeLine implements Closeable {
         .withArgName("property=value")
         .withLongOpt("hiveconf")
         .withDescription("Use value for given property")
+        .create());
+
+    // --property-file <file>
+    options.addOption(OptionBuilder
+        .hasArg()
+        .withLongOpt("property-file")
+        .withDescription("the file to read configuration properties from")
         .create());
   }
 
@@ -617,7 +634,8 @@ public class BeeLine implements Closeable {
 
     @Override
     protected void processOption(final String arg, final ListIterator iter) throws  ParseException {
-      if ((arg.startsWith("--")) && !(arg.equals(HIVE_VAR_PREFIX) || (arg.equals(HIVE_CONF_PREFIX)) || (arg.equals("--help")))) {
+      if ((arg.startsWith("--")) && !(arg.equals(HIVE_VAR_PREFIX) || (arg.equals(HIVE_CONF_PREFIX))
+          || (arg.equals("--help") || (arg.equals(PROP_FILE_PREFIX))))) {
         String stripped = arg.substring(2, arg.length());
         String[] parts = split(stripped, "=");
         debug(loc("setting-prop", Arrays.asList(parts)));
@@ -695,7 +713,6 @@ public class BeeLine implements Closeable {
 
   int initArgs(String[] args) {
     List<String> commands = Collections.emptyList();
-    List<String> files = Collections.emptyList();
 
     CommandLine cl;
     BeelineParser beelineParser;
@@ -739,10 +756,19 @@ public class BeeLine implements Closeable {
       pass = cl.getOptionValue("p");
     }
     url = cl.getOptionValue("u");
+    if ((url == null) && cl.hasOption("reconnect")){
+      // If url was not specified with -u, but -r was present, use that.
+      url = getOpts().getLastConnectedUrl();
+    }
     getOpts().setInitFiles(cl.getOptionValues("i"));
     getOpts().setScriptFile(cl.getOptionValue("f"));
     if (cl.getOptionValues('e') != null) {
       commands = Arrays.asList(cl.getOptionValues('e'));
+    }
+
+    if (!commands.isEmpty() && getOpts().getScriptFile() != null) {
+      System.err.println("The '-e' and '-f' options cannot be specified simultaneously");
+      return 1;
     }
 
     // TODO: temporary disable this for easier debugging
@@ -756,15 +782,32 @@ public class BeeLine implements Closeable {
     */
 
     if (url != null) {
+      if (user == null) {
+        user = Utils.parsePropertyFromUrl(url, JdbcConnectionParams.AUTH_USER);
+      }
+
+      if (pass == null) {
+        pass = Utils.parsePropertyFromUrl(url, JdbcConnectionParams.AUTH_PASSWD);
+      }
+
       String com = constructCmd(url, user, pass, driver, false);
       String comForDebug = constructCmd(url, user, pass, driver, true);
       debug("issuing: " + comForDebug);
       dispatch(com);
     }
 
-    // now load properties files
-    for (Iterator<String> i = files.iterator(); i.hasNext();) {
-      dispatch("!properties " + i.next());
+    // load property file
+    String propertyFile = cl.getOptionValue("property-file");
+    if (propertyFile != null) {
+      try {
+        this.consoleReader = new ConsoleReader();
+      } catch (IOException e) {
+        handleException(e);
+      }
+      if (!dispatch("!properties " + propertyFile)) {
+        exit = true;
+        return 1;
+      }
     }
 
     int code = 0;
@@ -884,7 +927,7 @@ public class BeeLine implements Closeable {
   }
 
   private int embeddedConnect() {
-    if (!execCommandWithPrefix("!connect " + BEELINE_DEFAULT_JDBC_URL + " '' ''")) {
+    if (!execCommandWithPrefix("!connect " + Utils.URL_PREFIX + " '' ''")) {
       return ERRNO_OTHER;
     } else {
       return ERRNO_OK;
@@ -1733,6 +1776,10 @@ public class BeeLine implements Closeable {
   void handleSQLException(SQLException e) {
     if (e instanceof SQLWarning && !(getOpts().getShowWarnings())) {
       return;
+    }
+
+    if (e.getCause() instanceof TTransportException) {
+      error(loc("hs2-unavailable"));
     }
 
     error(loc(e instanceof SQLWarning ? "Warning" : "Error",

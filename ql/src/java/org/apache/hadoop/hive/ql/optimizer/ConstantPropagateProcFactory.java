@@ -48,6 +48,7 @@ import org.apache.hadoop.hive.ql.lib.Node;
 import org.apache.hadoop.hive.ql.lib.NodeProcessor;
 import org.apache.hadoop.hive.ql.lib.NodeProcessorCtx;
 import org.apache.hadoop.hive.ql.metadata.HiveException;
+import org.apache.hadoop.hive.ql.metadata.VirtualColumn;
 import org.apache.hadoop.hive.ql.optimizer.ConstantPropagateProcCtx.ConstantPropagateOption;
 import org.apache.hadoop.hive.ql.parse.SemanticException;
 import org.apache.hadoop.hive.ql.plan.DynamicPartitionCtx;
@@ -138,7 +139,6 @@ public final class ConstantPropagateProcFactory {
 
   private static final Set<PrimitiveCategory> unSupportedTypes = ImmutableSet
       .<PrimitiveCategory>builder()
-      .add(PrimitiveCategory.DECIMAL)
       .add(PrimitiveCategory.VARCHAR)
       .add(PrimitiveCategory.CHAR).build();
 
@@ -179,20 +179,26 @@ public final class ConstantPropagateProcFactory {
     PrimitiveTypeInfo priti = (PrimitiveTypeInfo) ti;
     PrimitiveTypeInfo descti = (PrimitiveTypeInfo) desc.getTypeInfo();
 
+
     if (unSupportedTypes.contains(priti.getPrimitiveCategory())
         || unSupportedTypes.contains(descti.getPrimitiveCategory())) {
-      // FIXME: support template types. It currently has conflict with
-      // ExprNodeConstantDesc
+      // FIXME: support template types. It currently has conflict with ExprNodeConstantDesc
+      if (LOG.isDebugEnabled()) {
+        LOG.debug("Unsupported types " + priti + "; " + descti);
+      }
       return null;
     }
 
-    // We shouldn't cast strings to other types because that can broke original data in cases of
+    // We shouldn't cast strings to other types because that can break original data in cases of
     // leading zeros or zeros trailing after decimal point.
     // Example: "000126" => 126 => "126"
-
-    boolean brokingDataTypesCombination = (unsafeConversionTypes.contains(priti.getPrimitiveCategory()) &&
-            !unsafeConversionTypes.contains(descti.getPrimitiveCategory()));
-    if (performSafeTypeCast && brokingDataTypesCombination) {
+    boolean brokenDataTypesCombination = unsafeConversionTypes.contains(
+        priti.getPrimitiveCategory()) && !unsafeConversionTypes.contains(
+            descti.getPrimitiveCategory());
+    if (performSafeTypeCast && brokenDataTypesCombination) {
+      if (LOG.isDebugEnabled()) {
+        LOG.debug("Unsupported cast " + priti + "; " + descti);
+      }
       return null;
     }
 
@@ -1096,6 +1102,18 @@ public final class ConstantPropagateProcFactory {
       Map<ColumnInfo, ExprNodeDesc> colToConstants = cppCtx.getPropagatedConstants(op);
       cppCtx.getOpToConstantExprs().put(op, colToConstants);
 
+      RowSchema rs = op.getSchema();
+      if (op.getColumnExprMap() != null && rs != null) {
+        for (ColumnInfo colInfo : rs.getSignature()) {
+          if (!VirtualColumn.isVirtualColumnBasedOnAlias(colInfo)) {
+            ExprNodeDesc expr = op.getColumnExprMap().get(colInfo.getInternalName());
+            if (expr instanceof ExprNodeConstantDesc) {
+              colToConstants.put(colInfo, expr);
+            }
+          }
+        }
+      }
+
       if (colToConstants.isEmpty()) {
         return null;
       }
@@ -1133,6 +1151,17 @@ public final class ConstantPropagateProcFactory {
       Operator<? extends Serializable> op = (Operator<? extends Serializable>) nd;
       Map<ColumnInfo, ExprNodeDesc> constants = cppCtx.getPropagatedConstants(op);
       cppCtx.getOpToConstantExprs().put(op, constants);
+      RowSchema rs = op.getSchema();
+      if (op.getColumnExprMap() != null && rs != null) {
+        for (ColumnInfo colInfo : rs.getSignature()) {
+          if (!VirtualColumn.isVirtualColumnBasedOnAlias(colInfo)) {
+            ExprNodeDesc expr = op.getColumnExprMap().get(colInfo.getInternalName());
+            if (expr instanceof ExprNodeConstantDesc) {
+              constants.put(colInfo, expr);
+            }
+          }
+        }
+      }
       if (constants.isEmpty()) {
         return null;
       }
@@ -1185,7 +1214,10 @@ public final class ConstantPropagateProcFactory {
           }
           colList.set(i, newCol);
           if (newCol instanceof ExprNodeConstantDesc && op.getSchema() != null) {
-            constants.put(op.getSchema().getSignature().get(i), newCol);
+            ColumnInfo colInfo = op.getSchema().getSignature().get(i);
+            if (!VirtualColumn.isVirtualColumnBasedOnAlias(colInfo)) {
+              constants.put(colInfo, newCol);
+            }
           }
           if (columnExprMap != null) {
             columnExprMap.put(columnNames.get(i), newCol);
@@ -1296,6 +1328,17 @@ public final class ConstantPropagateProcFactory {
       Map<ColumnInfo, ExprNodeDesc> constants = cppCtx.getPropagatedConstants(op);
 
       cppCtx.getOpToConstantExprs().put(op, constants);
+      RowSchema rs = op.getSchema();
+      if (op.getColumnExprMap() != null && rs != null) {
+        for (ColumnInfo colInfo : rs.getSignature()) {
+          if (!VirtualColumn.isVirtualColumnBasedOnAlias(colInfo)) {
+            ExprNodeDesc expr = op.getColumnExprMap().get(colInfo.getInternalName());
+            if (expr instanceof ExprNodeConstantDesc) {
+              constants.put(colInfo, expr);
+            }
+          }
+        }
+      }
       if (constants.isEmpty()) {
         return null;
       }

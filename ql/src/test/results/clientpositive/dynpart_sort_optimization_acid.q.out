@@ -164,7 +164,7 @@ STAGE PLANS:
                   value expressions: _col3 (type: string)
       Reduce Operator Tree:
         Select Operator
-          expressions: KEY.reducesinkkey0 (type: struct<transactionid:bigint,bucketid:int,rowid:bigint>), 'foo' (type: string), 'bar' (type: string), VALUE._col2 (type: string)
+          expressions: KEY.reducesinkkey0 (type: struct<transactionid:bigint,bucketid:int,rowid:bigint>), 'foo' (type: string), 'bar' (type: string), VALUE._col1 (type: string)
           outputColumnNames: _col0, _col1, _col2, _col3
           File Output Operator
             compressed: false
@@ -380,9 +380,8 @@ POSTHOOK: query: explain update acid set value = 'bar' where key = 'foo' and ds 
 POSTHOOK: type: QUERY
 STAGE DEPENDENCIES:
   Stage-1 is a root stage
-  Stage-2 depends on stages: Stage-1
-  Stage-0 depends on stages: Stage-2
-  Stage-3 depends on stages: Stage-0
+  Stage-0 depends on stages: Stage-1
+  Stage-2 depends on stages: Stage-0
 
 STAGE PLANS:
   Stage: Stage-1
@@ -396,32 +395,12 @@ STAGE PLANS:
                 expressions: ROW__ID (type: struct<transactionid:bigint,bucketid:int,rowid:bigint>), ds (type: string)
                 outputColumnNames: _col0, _col3
                 Reduce Output Operator
-                  key expressions: _col0 (type: struct<transactionid:bigint,bucketid:int,rowid:bigint>)
-                  sort order: +
-                  value expressions: _col3 (type: string)
+                  key expressions: _col3 (type: string), '_bucket_number' (type: string), _col0 (type: struct<transactionid:bigint,bucketid:int,rowid:bigint>)
+                  sort order: +++
+                  Map-reduce partition columns: _col3 (type: string)
       Reduce Operator Tree:
         Select Operator
-          expressions: KEY.reducesinkkey0 (type: struct<transactionid:bigint,bucketid:int,rowid:bigint>), VALUE._col2 (type: string)
-          outputColumnNames: _col0, _col3
-          File Output Operator
-            compressed: false
-            table:
-                input format: org.apache.hadoop.mapred.SequenceFileInputFormat
-                output format: org.apache.hadoop.hive.ql.io.HiveSequenceFileOutputFormat
-                serde: org.apache.hadoop.hive.serde2.lazybinary.LazyBinarySerDe
-
-  Stage: Stage-2
-    Map Reduce
-      Map Operator Tree:
-          TableScan
-            Reduce Output Operator
-              key expressions: _col3 (type: string), '_bucket_number' (type: string), _col0 (type: struct<transactionid:bigint,bucketid:int,rowid:bigint>)
-              sort order: +++
-              Map-reduce partition columns: _col3 (type: string)
-              value expressions: 'foo' (type: string), 'bar' (type: string)
-      Reduce Operator Tree:
-        Select Operator
-          expressions: KEY._col0 (type: struct<transactionid:bigint,bucketid:int,rowid:bigint>), VALUE._col1 (type: string), VALUE._col2 (type: string), KEY._col3 (type: string), KEY.'_bucket_number' (type: string)
+          expressions: KEY._col0 (type: struct<transactionid:bigint,bucketid:int,rowid:bigint>), 'foo' (type: string), 'bar' (type: string), KEY._col3 (type: string), KEY.'_bucket_number' (type: string)
           outputColumnNames: _col0, _col1, _col2, _col3, '_bucket_number'
           File Output Operator
             compressed: false
@@ -443,7 +422,7 @@ STAGE PLANS:
               serde: org.apache.hadoop.hive.ql.io.orc.OrcSerde
               name: default.acid
 
-  Stage: Stage-3
+  Stage: Stage-2
     Stats-Aggr Operator
 
 PREHOOK: query: update acid set value = 'bar' where key = 'foo' and ds in ('2008-04-08')
@@ -665,7 +644,7 @@ STAGE PLANS:
                   value expressions: _col4 (type: int)
       Reduce Operator Tree:
         Select Operator
-          expressions: KEY.reducesinkkey0 (type: struct<transactionid:bigint,bucketid:int,rowid:bigint>), 'foo' (type: string), 'bar' (type: string), '2008-04-08' (type: string), VALUE._col3 (type: int)
+          expressions: KEY.reducesinkkey0 (type: struct<transactionid:bigint,bucketid:int,rowid:bigint>), 'foo' (type: string), 'bar' (type: string), '2008-04-08' (type: string), VALUE._col2 (type: int)
           outputColumnNames: _col0, _col1, _col2, _col3, _col4
           File Output Operator
             compressed: false
@@ -895,9 +874,8 @@ POSTHOOK: query: explain update acid set value = 'bar' where key = 'foo' and ds=
 POSTHOOK: type: QUERY
 STAGE DEPENDENCIES:
   Stage-1 is a root stage
-  Stage-2 depends on stages: Stage-1
-  Stage-0 depends on stages: Stage-2
-  Stage-3 depends on stages: Stage-0
+  Stage-0 depends on stages: Stage-1
+  Stage-2 depends on stages: Stage-0
 
 STAGE PLANS:
   Stage: Stage-1
@@ -911,32 +889,12 @@ STAGE PLANS:
                 expressions: ROW__ID (type: struct<transactionid:bigint,bucketid:int,rowid:bigint>), hr (type: int)
                 outputColumnNames: _col0, _col4
                 Reduce Output Operator
-                  key expressions: _col0 (type: struct<transactionid:bigint,bucketid:int,rowid:bigint>)
-                  sort order: +
-                  value expressions: _col4 (type: int)
+                  key expressions: '2008-04-08' (type: string), _col4 (type: int), '_bucket_number' (type: string), _col0 (type: struct<transactionid:bigint,bucketid:int,rowid:bigint>)
+                  sort order: ++++
+                  Map-reduce partition columns: '2008-04-08' (type: string), _col4 (type: int)
       Reduce Operator Tree:
         Select Operator
-          expressions: KEY.reducesinkkey0 (type: struct<transactionid:bigint,bucketid:int,rowid:bigint>), VALUE._col3 (type: int)
-          outputColumnNames: _col0, _col4
-          File Output Operator
-            compressed: false
-            table:
-                input format: org.apache.hadoop.mapred.SequenceFileInputFormat
-                output format: org.apache.hadoop.hive.ql.io.HiveSequenceFileOutputFormat
-                serde: org.apache.hadoop.hive.serde2.lazybinary.LazyBinarySerDe
-
-  Stage: Stage-2
-    Map Reduce
-      Map Operator Tree:
-          TableScan
-            Reduce Output Operator
-              key expressions: '2008-04-08' (type: string), _col4 (type: int), '_bucket_number' (type: string), _col0 (type: struct<transactionid:bigint,bucketid:int,rowid:bigint>)
-              sort order: ++++
-              Map-reduce partition columns: '2008-04-08' (type: string), _col4 (type: int)
-              value expressions: 'foo' (type: string), 'bar' (type: string)
-      Reduce Operator Tree:
-        Select Operator
-          expressions: KEY._col0 (type: struct<transactionid:bigint,bucketid:int,rowid:bigint>), VALUE._col1 (type: string), VALUE._col2 (type: string), KEY._col3 (type: string), KEY._col4 (type: int), KEY.'_bucket_number' (type: string)
+          expressions: KEY._col0 (type: struct<transactionid:bigint,bucketid:int,rowid:bigint>), 'foo' (type: string), 'bar' (type: string), '2008-04-08' (type: string), KEY._col4 (type: int), KEY.'_bucket_number' (type: string)
           outputColumnNames: _col0, _col1, _col2, _col3, _col4, '_bucket_number'
           File Output Operator
             compressed: false
@@ -959,7 +917,7 @@ STAGE PLANS:
               serde: org.apache.hadoop.hive.ql.io.orc.OrcSerde
               name: default.acid
 
-  Stage: Stage-3
+  Stage: Stage-2
     Stats-Aggr Operator
 
 PREHOOK: query: update acid set value = 'bar' where key = 'foo' and ds='2008-04-08' and hr>=11
@@ -1093,9 +1051,8 @@ POSTHOOK: query: explain update acid set value = 'bar' where key = 'foo' and ds=
 POSTHOOK: type: QUERY
 STAGE DEPENDENCIES:
   Stage-1 is a root stage
-  Stage-2 depends on stages: Stage-1
-  Stage-0 depends on stages: Stage-2
-  Stage-3 depends on stages: Stage-0
+  Stage-0 depends on stages: Stage-1
+  Stage-2 depends on stages: Stage-0
 
 STAGE PLANS:
   Stage: Stage-1
@@ -1106,32 +1063,13 @@ STAGE PLANS:
             Filter Operator
               predicate: (key = 'foo') (type: boolean)
               Select Operator
-                expressions: ROW__ID (type: struct<transactionid:bigint,bucketid:int,rowid:bigint>), key (type: string), 'bar' (type: string), ds (type: string), hr (type: int)
-                outputColumnNames: _col0, _col1, _col2, _col3, _col4
+                expressions: ROW__ID (type: struct<transactionid:bigint,bucketid:int,rowid:bigint>), key (type: string), ds (type: string), hr (type: int)
+                outputColumnNames: _col0, _col1, _col3, _col4
                 Reduce Output Operator
-                  key expressions: _col0 (type: struct<transactionid:bigint,bucketid:int,rowid:bigint>)
-                  sort order: +
-                  value expressions: _col1 (type: string), _col2 (type: string), _col3 (type: string), _col4 (type: int)
-      Reduce Operator Tree:
-        Select Operator
-          expressions: KEY.reducesinkkey0 (type: struct<transactionid:bigint,bucketid:int,rowid:bigint>), VALUE._col0 (type: string), VALUE._col1 (type: string), VALUE._col2 (type: string), VALUE._col3 (type: int)
-          outputColumnNames: _col0, _col1, _col2, _col3, _col4
-          File Output Operator
-            compressed: false
-            table:
-                input format: org.apache.hadoop.mapred.SequenceFileInputFormat
-                output format: org.apache.hadoop.hive.ql.io.HiveSequenceFileOutputFormat
-                serde: org.apache.hadoop.hive.serde2.lazybinary.LazyBinarySerDe
-
-  Stage: Stage-2
-    Map Reduce
-      Map Operator Tree:
-          TableScan
-            Reduce Output Operator
-              key expressions: _col3 (type: string), _col4 (type: int), '_bucket_number' (type: string), _col0 (type: struct<transactionid:bigint,bucketid:int,rowid:bigint>)
-              sort order: ++++
-              Map-reduce partition columns: _col3 (type: string), _col4 (type: int)
-              value expressions: _col1 (type: string), _col2 (type: string)
+                  key expressions: _col3 (type: string), _col4 (type: int), '_bucket_number' (type: string), _col0 (type: struct<transactionid:bigint,bucketid:int,rowid:bigint>)
+                  sort order: ++++
+                  Map-reduce partition columns: _col3 (type: string), _col4 (type: int)
+                  value expressions: _col1 (type: string), 'bar' (type: string)
       Reduce Operator Tree:
         Select Operator
           expressions: KEY._col0 (type: struct<transactionid:bigint,bucketid:int,rowid:bigint>), VALUE._col1 (type: string), VALUE._col2 (type: string), KEY._col3 (type: string), KEY._col4 (type: int), KEY.'_bucket_number' (type: string)
@@ -1157,7 +1095,7 @@ STAGE PLANS:
               serde: org.apache.hadoop.hive.ql.io.orc.OrcSerde
               name: default.acid
 
-  Stage: Stage-3
+  Stage: Stage-2
     Stats-Aggr Operator
 
 PREHOOK: query: update acid set value = 'bar' where key = 'foo' and ds='2008-04-08' and hr=11
@@ -1187,9 +1125,8 @@ POSTHOOK: query: explain update acid set value = 'bar' where key = 'foo' and ds=
 POSTHOOK: type: QUERY
 STAGE DEPENDENCIES:
   Stage-1 is a root stage
-  Stage-2 depends on stages: Stage-1
-  Stage-0 depends on stages: Stage-2
-  Stage-3 depends on stages: Stage-0
+  Stage-0 depends on stages: Stage-1
+  Stage-2 depends on stages: Stage-0
 
 STAGE PLANS:
   Stage: Stage-1
@@ -1200,32 +1137,13 @@ STAGE PLANS:
             Filter Operator
               predicate: (key = 'foo') (type: boolean)
               Select Operator
-                expressions: ROW__ID (type: struct<transactionid:bigint,bucketid:int,rowid:bigint>), key (type: string), 'bar' (type: string), ds (type: string), hr (type: int)
-                outputColumnNames: _col0, _col1, _col2, _col3, _col4
+                expressions: ROW__ID (type: struct<transactionid:bigint,bucketid:int,rowid:bigint>), key (type: string), ds (type: string), hr (type: int)
+                outputColumnNames: _col0, _col1, _col3, _col4
                 Reduce Output Operator
-                  key expressions: _col0 (type: struct<transactionid:bigint,bucketid:int,rowid:bigint>)
-                  sort order: +
-                  value expressions: _col1 (type: string), _col2 (type: string), _col3 (type: string), _col4 (type: int)
-      Reduce Operator Tree:
-        Select Operator
-          expressions: KEY.reducesinkkey0 (type: struct<transactionid:bigint,bucketid:int,rowid:bigint>), VALUE._col0 (type: string), VALUE._col1 (type: string), VALUE._col2 (type: string), VALUE._col3 (type: int)
-          outputColumnNames: _col0, _col1, _col2, _col3, _col4
-          File Output Operator
-            compressed: false
-            table:
-                input format: org.apache.hadoop.mapred.SequenceFileInputFormat
-                output format: org.apache.hadoop.hive.ql.io.HiveSequenceFileOutputFormat
-                serde: org.apache.hadoop.hive.serde2.lazybinary.LazyBinarySerDe
-
-  Stage: Stage-2
-    Map Reduce
-      Map Operator Tree:
-          TableScan
-            Reduce Output Operator
-              key expressions: _col3 (type: string), _col4 (type: int), '_bucket_number' (type: string), _col0 (type: struct<transactionid:bigint,bucketid:int,rowid:bigint>)
-              sort order: ++++
-              Map-reduce partition columns: _col3 (type: string), _col4 (type: int)
-              value expressions: _col1 (type: string), _col2 (type: string)
+                  key expressions: _col3 (type: string), _col4 (type: int), '_bucket_number' (type: string), _col0 (type: struct<transactionid:bigint,bucketid:int,rowid:bigint>)
+                  sort order: ++++
+                  Map-reduce partition columns: _col3 (type: string), _col4 (type: int)
+                  value expressions: _col1 (type: string), 'bar' (type: string)
       Reduce Operator Tree:
         Select Operator
           expressions: KEY._col0 (type: struct<transactionid:bigint,bucketid:int,rowid:bigint>), VALUE._col1 (type: string), VALUE._col2 (type: string), KEY._col3 (type: string), KEY._col4 (type: int), KEY.'_bucket_number' (type: string)
@@ -1251,7 +1169,7 @@ STAGE PLANS:
               serde: org.apache.hadoop.hive.ql.io.orc.OrcSerde
               name: default.acid
 
-  Stage: Stage-3
+  Stage: Stage-2
     Stats-Aggr Operator
 
 PREHOOK: query: update acid set value = 'bar' where key = 'foo' and ds='2008-04-08' and hr>=11

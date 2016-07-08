@@ -482,8 +482,7 @@ STAGE PLANS:
             Select Operator
               Statistics: Num rows: 50 Data size: 0 Basic stats: PARTIAL Column stats: COMPLETE
               Reduce Output Operator
-                key expressions: 5-5 (type: interval_year_month)
-                sort order: +
+                sort order: 
                 Statistics: Num rows: 50 Data size: 0 Basic stats: PARTIAL Column stats: COMPLETE
                 TopN Hash Memory Usage: 0.1
       Execution mode: vectorized

@@ -44,16 +44,18 @@ import javax.security.auth.login.LoginException;
 
 import org.apache.commons.codec.digest.DigestUtils;
 import org.apache.commons.io.FilenameUtils;
+import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.fs.FileStatus;
 import org.apache.hadoop.fs.FileSystem;
 import org.apache.hadoop.fs.Path;
 import org.apache.hadoop.fs.permission.FsPermission;
 import org.apache.hadoop.hive.conf.HiveConf;
 import org.apache.hadoop.hive.conf.HiveConf.ConfVars;
+import org.apache.hadoop.hive.llap.coordinator.LlapCoordinator;
 import org.apache.hadoop.hive.llap.impl.LlapProtocolClientImpl;
 import org.apache.hadoop.hive.llap.io.api.LlapProxy;
+import org.apache.hadoop.hive.llap.security.LlapTokenClient;
 import org.apache.hadoop.hive.llap.security.LlapTokenIdentifier;
-import org.apache.hadoop.hive.llap.security.LlapTokenProvider;
 import org.apache.hadoop.hive.llap.tez.LlapProtocolClientProxy;
 import org.apache.hadoop.hive.llap.tezplugins.LlapContainerLauncher;
 import org.apache.hadoop.hive.llap.tezplugins.LlapTaskCommunicator;
@@ -274,14 +276,8 @@ public class TezSessionState {
     Credentials llapCredentials = null;
     if (llapMode) {
       if (UserGroupInformation.isSecurityEnabled()) {
-        LlapTokenProvider tp = LlapProxy.getOrInitTokenProvider(conf);
-        // For Tez, we don't use appId to distinguish the tokens; security scope is the user.
-        Token<LlapTokenIdentifier> token = tp.getDelegationToken(null);
-        if (LOG.isInfoEnabled()) {
-          LOG.info("Obtained a LLAP token: " + token);
-        }
         llapCredentials = new Credentials();
-        llapCredentials.addToken(LlapTokenIdentifier.KIND_NAME, token);
+        llapCredentials.addToken(LlapTokenIdentifier.KIND_NAME, getLlapToken(user, tezConfig));
       }
       UserPayload servicePluginPayload = TezUtils.createUserPayloadFromConf(tezConfig);
       // we need plugins to handle llap and uber mode
@@ -334,6 +330,35 @@ public class TezSessionState {
       this.console = console;
       this.sessionFuture = sessionFuture;
     }
+  }
+
+  private static Token<LlapTokenIdentifier> getLlapToken(
+      String user, final Configuration conf) throws IOException {
+    // TODO: parts of this should be moved out of TezSession to reuse the clients, but there's
+    //       no good place for that right now (HIVE-13698).
+    SessionState session = SessionState.get();
+    boolean isInHs2 = session != null && session.isHiveServerQuery();
+    Token<LlapTokenIdentifier> token = null;
+    // For Tez, we don't use appId to distinguish the tokens.
+
+    LlapCoordinator coordinator = null;
+    if (isInHs2) {
+      // We are in HS2, get the token locally.
+      // TODO: coordinator should be passed in; HIVE-13698. Must be initialized for now.
+      coordinator = LlapCoordinator.getInstance();
+      if (coordinator == null) {
+        throw new IOException("LLAP coordinator not initialized; cannot get LLAP tokens");
+      }
+      // Signing is not required for Tez.
+      token = coordinator.getLocalTokenClient(conf, user).createToken(null, null, false);
+    } else {
+      // We are not in HS2; always create a new client for now.
+      token = new LlapTokenClient(conf).getDelegationToken(null);
+    }
+    if (LOG.isInfoEnabled()) {
+      LOG.info("Obtained a LLAP token: " + token);
+    }
+    return token;
   }
 
   private TezClient startSessionAndContainers(TezClient session, HiveConf conf,

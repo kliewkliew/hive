@@ -14,6 +14,7 @@
 package org.apache.hadoop.hive.llap.daemon.impl;
 
 import com.google.common.annotations.VisibleForTesting;
+import com.google.common.base.Preconditions;
 
 import java.util.ArrayList;
 
@@ -22,8 +23,6 @@ import java.util.List;
 import java.io.IOException;
 
 import org.apache.commons.lang3.StringUtils;
-import org.apache.commons.lang3.tuple.ImmutablePair;
-import org.apache.commons.lang3.tuple.Pair;
 import org.apache.hadoop.hive.llap.security.LlapTokenIdentifier;
 import org.apache.hadoop.security.UserGroupInformation;
 import org.apache.hadoop.security.token.TokenIdentifier;
@@ -33,8 +32,20 @@ import org.slf4j.LoggerFactory;
 public final class LlapTokenChecker {
   private static final Logger LOG = LoggerFactory.getLogger(LlapTokenChecker.class);
 
-  private static final ImmutablePair<String, String> NO_SECURITY = new ImmutablePair<>(null, null);
-  public static Pair<String, String> getTokenInfo(String clusterId) throws IOException {
+  public static final class LlapTokenInfo {
+    public final String userName;
+    public final String appId;
+    public final boolean isSigningRequired;
+
+    public LlapTokenInfo(String userName, String appId, boolean isSigningRequired) {
+      this.userName = userName;
+      this.appId = appId;
+      this.isSigningRequired = isSigningRequired;
+    }
+  }
+
+  private static final LlapTokenInfo NO_SECURITY = new LlapTokenInfo(null, null, false);
+  public static LlapTokenInfo getTokenInfo(String clusterId) throws IOException {
     if (!UserGroupInformation.isSecurityEnabled()) return NO_SECURITY;
     UserGroupInformation current = UserGroupInformation.getCurrentUser();
     String kerberosName = current.hasKerberosCredentials() ? current.getShortUserName() : null;
@@ -64,13 +75,14 @@ public final class LlapTokenChecker {
   }
 
   @VisibleForTesting
-  static Pair<String, String> getTokenInfoInternal(
+  static LlapTokenInfo getTokenInfoInternal(
       String kerberosName, List<LlapTokenIdentifier> tokens) {
     assert (tokens != null && !tokens.isEmpty()) || kerberosName != null;
     if (tokens == null) {
-      return new ImmutablePair<String, String>(kerberosName, null);
+      return new LlapTokenInfo(kerberosName, null, true);
     }
     String userName = kerberosName, appId = null;
+    boolean isSigningRequired = false;
     for (LlapTokenIdentifier llapId : tokens) {
       String newUserName = llapId.getRealUser().toString();
       if (userName != null && !userName.equals(newUserName)) {
@@ -87,14 +99,16 @@ public final class LlapTokenChecker {
         }
         appId = newAppId;
       }
+      isSigningRequired = isSigningRequired || llapId.isSigningRequired();
     }
     assert userName != null;
-    return new ImmutablePair<String, String>(userName, appId);
+    return new LlapTokenInfo(userName, appId, isSigningRequired);
   }
 
   public static void checkPermissions(
       String clusterId, String userName, String appId, Object hint) throws IOException {
     if (!UserGroupInformation.isSecurityEnabled()) return;
+    Preconditions.checkNotNull(userName);
     UserGroupInformation current = UserGroupInformation.getCurrentUser();
     String kerberosName = current.hasKerberosCredentials() ? current.getShortUserName() : null;
     List<LlapTokenIdentifier> tokens = getLlapTokens(current, clusterId);
@@ -104,7 +118,7 @@ public final class LlapTokenChecker {
   @VisibleForTesting
   static void checkPermissionsInternal(String kerberosName, List<LlapTokenIdentifier> tokens,
       String userName, String appId, Object hint) {
-    if (kerberosName != null && StringUtils.isEmpty(appId) && kerberosName.equals(userName)) {
+    if (kerberosName != null && StringUtils.isBlank(appId) && kerberosName.equals(userName)) {
       return;
     }
     if (tokens != null) {
@@ -118,12 +132,12 @@ public final class LlapTokenChecker {
   }
 
   public static void checkPermissions(
-      Pair<String, String> prm, String userName, String appId, Object hint) {
+      LlapTokenInfo prm, String userName, String appId, Object hint) {
     if (userName == null) {
       assert StringUtils.isEmpty(appId);
       return;
     }
-    if (!checkTokenPermissions(userName, appId, prm.getLeft(), prm.getRight())) {
+    if (!checkTokenPermissions(userName, appId, prm.userName, prm.appId)) {
       throw new SecurityException("Unauthorized to access "
           + userName + ", " + appId.hashCode() + " (" + hint + ")");
     }
@@ -132,6 +146,6 @@ public final class LlapTokenChecker {
   private static boolean checkTokenPermissions(
       String userName, String appId, String tokenUser, String tokenAppId) {
     return userName.equals(tokenUser)
-        && (StringUtils.isEmpty(appId) || appId.equals(tokenAppId));
+        && (StringUtils.isBlank(appId) || appId.equals(tokenAppId));
   }
 }

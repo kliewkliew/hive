@@ -28,6 +28,7 @@ import java.util.Set;
 
 import org.apache.commons.compress.utils.CharsetNames;
 import org.apache.hadoop.fs.CommonConfigurationKeysPublic;
+import org.apache.hadoop.hive.ql.exec.Utilities;
 import org.apache.hadoop.hive.ql.session.SessionState;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -53,7 +54,7 @@ public class HiveSparkClientFactory {
   private static final String SPARK_DEFAULT_APP_NAME = "Hive on Spark";
   private static final String SPARK_DEFAULT_SERIALIZER = "org.apache.spark.serializer.KryoSerializer";
   private static final String SPARK_DEFAULT_REFERENCE_TRACKING = "false";
-  private static final String SPARK_YARN_REPORT_INTERVAL = "spark.yarn.report.interval";
+  private static final String SPARK_WAIT_APP_COMPLETE = "spark.yarn.submit.waitAppCompletion";
 
   public static HiveSparkClient createHiveSparkClient(HiveConf hiveconf) throws Exception {
     Map<String, String> sparkConf = initiateSparkConf(hiveconf);
@@ -98,7 +99,7 @@ public class HiveSparkClientFactory {
             sparkConf.put(propertyName, properties.getProperty(propertyName));
             LOG.info(String.format(
               "load spark property from %s (%s -> %s).",
-              SPARK_DEFAULT_CONF_FILE, propertyName, value));
+              SPARK_DEFAULT_CONF_FILE, propertyName, Utilities.maskIfPassword(propertyName,value)));
           }
         }
       }
@@ -135,7 +136,7 @@ public class HiveSparkClientFactory {
         sparkConf.put(propertyName, value);
         LOG.info(String.format(
           "load spark property from hive configuration (%s -> %s).",
-          propertyName, value));
+          propertyName, Utilities.maskIfPassword(propertyName,value)));
       } else if (propertyName.startsWith("yarn") &&
         (sparkMaster.equals("yarn-client") || sparkMaster.equals("yarn-cluster"))) {
         String value = hiveConf.get(propertyName);
@@ -145,7 +146,7 @@ public class HiveSparkClientFactory {
         sparkConf.put("spark.hadoop." + propertyName, value);
         LOG.info(String.format(
           "load yarn property from hive configuration in %s mode (%s -> %s).",
-          sparkMaster, propertyName, value));
+          sparkMaster, propertyName, Utilities.maskIfPassword(propertyName,value)));
       } else if (propertyName.equals(CommonConfigurationKeysPublic.FS_DEFAULT_NAME_KEY)) {
         String value = hiveConf.get(propertyName);
         if (value != null && !value.isEmpty()) {
@@ -158,7 +159,7 @@ public class HiveSparkClientFactory {
         String value = hiveConf.get(propertyName);
         sparkConf.put("spark.hadoop." + propertyName, value);
         LOG.info(String.format(
-          "load HBase configuration (%s -> %s).", propertyName, value));
+          "load HBase configuration (%s -> %s).", propertyName, Utilities.maskIfPassword(propertyName,value)));
       }
 
       if (RpcConfiguration.HIVE_SPARK_RSC_CONFIGS.contains(propertyName)) {
@@ -166,7 +167,7 @@ public class HiveSparkClientFactory {
         sparkConf.put(propertyName, value);
         LOG.info(String.format(
           "load RPC property from hive configuration (%s -> %s).",
-          propertyName, value));
+          propertyName, Utilities.maskIfPassword(propertyName,value)));
       }
     }
 
@@ -188,12 +189,9 @@ public class HiveSparkClientFactory {
       }
     }
 
-    //The application reports tend to spam the hive logs.  This is controlled by spark, and the default seems to be 1s.
-    //If it is not specified, set it to a much higher number.  It can always be overriden by user.
-    String sparkYarnReportInterval = sparkConf.get(SPARK_YARN_REPORT_INTERVAL);
-    if (sparkMaster.startsWith("yarn") && sparkYarnReportInterval == null) {
-      //the new version of spark also takes time-units, but old versions do not.
-      sparkConf.put(SPARK_YARN_REPORT_INTERVAL, "60000");
+    // Disable it to avoid verbose app state report in yarn-cluster mode
+    if (sparkMaster.equals("yarn-cluster") && sparkConf.get(SPARK_WAIT_APP_COMPLETE) == null) {
+      sparkConf.put(SPARK_WAIT_APP_COMPLETE, "false");
     }
 
     return sparkConf;

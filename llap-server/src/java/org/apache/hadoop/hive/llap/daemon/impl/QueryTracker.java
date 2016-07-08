@@ -14,13 +14,14 @@
 
 package org.apache.hadoop.hive.llap.daemon.impl;
 
+import com.google.common.base.Preconditions;
 import com.google.common.util.concurrent.ThreadFactoryBuilder;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
 
-import org.apache.commons.lang3.tuple.Pair;
 import org.apache.hadoop.fs.Path;
+import org.apache.hadoop.security.UserGroupInformation;
 import org.apache.hadoop.security.token.Token;
 import org.apache.tez.common.CallableWithNdc;
 
@@ -29,6 +30,7 @@ import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.fs.FileSystem;
 import org.apache.hadoop.hive.conf.HiveConf;
 import org.apache.hadoop.hive.conf.HiveConf.ConfVars;
+import org.apache.hadoop.hive.llap.daemon.impl.LlapTokenChecker.LlapTokenInfo;
 import org.apache.hadoop.hive.llap.daemon.rpc.LlapDaemonProtocolProtos.SignableVertexSpec;
 import org.apache.hadoop.hive.llap.daemon.rpc.LlapDaemonProtocolProtos.SourceStateProto;
 import org.apache.hadoop.hive.llap.shufflehandler.ShuffleHandler;
@@ -115,9 +117,12 @@ public class QueryTracker extends AbstractService {
    * Register a new fragment for a specific query
    */
   QueryFragmentInfo registerFragment(QueryIdentifier queryIdentifier, String appIdString,
-      String dagName, int dagIdentifier, String vertexName, int fragmentNumber, int attemptNumber,
+      String dagName, String hiveQueryIdString, int dagIdentifier, String vertexName, int fragmentNumber, int attemptNumber,
       String user, SignableVertexSpec vertex, Token<JobTokenIdentifier> appToken,
-      String fragmentIdString) throws IOException {
+      String fragmentIdString, LlapTokenInfo tokenInfo) throws IOException {
+    // QueryIdentifier is enough to uniquely identify a fragment. At the moment, it works off of appId and dag index.
+    // At a later point this could be changed to the Hive query identifier.
+    // Sending both over RPC is unnecessary overhead.
     ReadWriteLock dagLock = getDagLock(queryIdentifier);
     dagLock.readLock().lock();
     try {
@@ -130,13 +135,18 @@ public class QueryTracker extends AbstractService {
       }
       // TODO: for now, we get the secure username out of UGI... after signing, we can take it
       //       out of the request provided that it's signed.
-      Pair<String, String> tokenInfo = LlapTokenChecker.getTokenInfo(clusterId);
+      if (tokenInfo == null) {
+        tokenInfo = LlapTokenChecker.getTokenInfo(clusterId);
+      }
       boolean isExistingQueryInfo = true;
       QueryInfo queryInfo = queryInfoMap.get(queryIdentifier);
       if (queryInfo == null) {
+        if (UserGroupInformation.isSecurityEnabled()) {
+          Preconditions.checkNotNull(tokenInfo.userName);
+        }
         queryInfo = new QueryInfo(queryIdentifier, appIdString, dagName, dagIdentifier, user,
             getSourceCompletionMap(queryIdentifier), localDirsBase, localFs,
-            tokenInfo.getLeft(), tokenInfo.getRight());
+            tokenInfo.userName, tokenInfo.appId);
         QueryInfo old = queryInfoMap.putIfAbsent(queryIdentifier, queryInfo);
         if (old != null) {
           queryInfo = old;
@@ -149,6 +159,8 @@ public class QueryTracker extends AbstractService {
         LlapTokenChecker.checkPermissions(tokenInfo, queryInfo.getTokenUserName(),
             queryInfo.getTokenAppId(), queryInfo.getQueryIdentifier());
       }
+
+      queryIdentifierToHiveQueryId.putIfAbsent(queryIdentifier, hiveQueryIdString);
 
       if (LOG.isDebugEnabled()) {
         LOG.debug("Registering request for {} with the ShuffleHandler", queryIdentifier);
@@ -281,11 +293,6 @@ public class QueryTracker extends AbstractService {
     return dagMap;
   }
 
-  public void registerDagQueryId(QueryIdentifier queryIdentifier, String hiveQueryIdString) {
-    if (hiveQueryIdString == null) return;
-    queryIdentifierToHiveQueryId.putIfAbsent(queryIdentifier, hiveQueryIdString);
-  }
-
   @Override
   public void serviceStart() {
     LOG.info(getName() + " started");
@@ -341,8 +348,8 @@ public class QueryTracker extends AbstractService {
   private QueryInfo checkPermissionsAndGetQuery(QueryIdentifier queryId) throws IOException {
     QueryInfo queryInfo = queryInfoMap.get(queryId);
     if (queryInfo == null) return null;
-    LlapTokenChecker.checkPermissions(clusterId, queryInfo.getTokenAppId(),
-        queryInfo.getTokenUserName(), queryInfo.getQueryIdentifier());
+    LlapTokenChecker.checkPermissions(clusterId, queryInfo.getTokenUserName(),
+        queryInfo.getTokenAppId(), queryInfo.getQueryIdentifier());
     return queryInfo;
   }
 

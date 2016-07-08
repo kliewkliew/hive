@@ -128,7 +128,7 @@ public class MapredLocalTask extends Task<MapredLocalWork> implements Serializab
     job = new JobConf(conf, ExecDriver.class);
     execContext = new ExecMapperContext(job);
     //we don't use the HadoopJobExecHooks for local tasks
-    this.jobExecHelper = new HadoopJobExecHelper(queryState, job, console, this, null);
+    this.jobExecHelper = new HadoopJobExecHelper(job, console, this, null);
   }
 
   public static String now() {
@@ -309,7 +309,7 @@ public class MapredLocalTask extends Task<MapredLocalWork> implements Serializab
         String name = entry.getKey();
         String value = entry.getValue();
         env[pos++] = name + "=" + value;
-        LOG.debug("Setting env: " + env[pos-1]);
+        LOG.debug("Setting env: " + name + "=" + Utilities.maskIfPassword(name, value));
       }
 
       LOG.info("Executing: " + cmdLine);

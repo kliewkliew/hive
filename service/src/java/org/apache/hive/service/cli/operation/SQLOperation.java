@@ -54,6 +54,7 @@ import org.apache.hadoop.hive.ql.QueryState;
 import org.apache.hadoop.hive.ql.exec.ExplainTask;
 import org.apache.hadoop.hive.ql.exec.FetchTask;
 import org.apache.hadoop.hive.ql.exec.Task;
+import org.apache.hadoop.hive.ql.log.PerfLogger;
 import org.apache.hadoop.hive.ql.metadata.Hive;
 import org.apache.hadoop.hive.ql.processors.CommandProcessorResponse;
 import org.apache.hadoop.hive.ql.session.OperationLog;
@@ -112,6 +113,12 @@ public class SQLOperation extends ExecuteStatementOperation {
     // TODO: call setRemoteUser in ExecuteStatementOperation or higher.
     super(parentSession, statement, confOverlay, runInBackground);
     this.queryTimeout = queryTimeout;
+    long timeout = HiveConf.getTimeVar(queryState.getConf(),
+        HiveConf.ConfVars.HIVE_QUERY_TIMEOUT_SECONDS, TimeUnit.SECONDS);
+    if (timeout > 0 && (queryTimeout <= 0 || timeout < queryTimeout)) {
+      this.queryTimeout = timeout;
+    }
+
     setupSessionIO(parentSession.getSessionState());
     try {
       sqlOpDisplay = new SQLOperationDisplay(this);
@@ -261,8 +268,14 @@ public class SQLOperation extends ExecuteStatementOperation {
   public void runInternal() throws HiveSQLException {
     setState(OperationState.PENDING);
 
-    prepare(queryState);
-    if (!shouldRunAsync()) {
+    boolean runAsync = shouldRunAsync();
+    final boolean asyncPrepare = runAsync
+      && HiveConf.getBoolVar(queryState.getConf(),
+        HiveConf.ConfVars.HIVE_SERVER2_ASYNC_EXEC_ASYNC_COMPILE);
+    if (!asyncPrepare) {
+      prepare(queryState);
+    }
+    if (!runAsync) {
       runQuery();
     } else {
       // We'll pass ThreadLocals in the background thread from the foreground (handler) thread
@@ -270,6 +283,7 @@ public class SQLOperation extends ExecuteStatementOperation {
       // ThreadLocal Hive object needs to be set in background thread.
       // The metastore client in Hive is associated with right user.
       final Hive parentHive = parentSession.getSessionHive();
+      final PerfLogger parentPerfLogger = SessionState.getPerfLogger();
       // Current UGI will get used by metastore when metsatore is in embedded mode
       // So this needs to get passed to the new background thread
       final UserGroupInformation currentUGI = getCurrentUGI();
@@ -283,10 +297,14 @@ public class SQLOperation extends ExecuteStatementOperation {
             public Object run() throws HiveSQLException {
               Hive.set(parentHive);
               SessionState.setCurrentSessionState(parentSessionState);
+              PerfLogger.setPerfLogger(parentPerfLogger);
               // Set current OperationLog in this async thread for keeping on saving query log.
               registerCurrentOperationLog();
               registerLoggingContext();
               try {
+                if (asyncPrepare) {
+                  prepare(queryState);
+                }
                 runQuery();
               } catch (HiveSQLException e) {
                 setOperationException(e);
@@ -645,5 +663,9 @@ public class SQLOperation extends ExecuteStatementOperation {
         }
       }
     }
+  }
+
+  public String getExecutionEngine() {
+    return queryState.getConf().getVar(HiveConf.ConfVars.HIVE_EXECUTION_ENGINE);
   }
 }

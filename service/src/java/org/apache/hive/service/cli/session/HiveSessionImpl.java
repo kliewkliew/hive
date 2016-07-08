@@ -113,6 +113,7 @@ public class HiveSessionImpl implements HiveSession {
 
   private volatile long lastAccessTime;
   private volatile long lastIdleTime;
+  private volatile int pendingCount = 0;
 
 
   public HiveSessionImpl(SessionHandle sessionHandle, TProtocolVersion protocol, String username, String password,
@@ -336,6 +337,8 @@ public class HiveSessionImpl implements HiveSession {
     // set the thread name with the logging prefix.
     sessionState.updateThreadName();
     Hive.set(sessionHive);
+    pendingCount++;
+    lastIdleTime = 0;
   }
 
   /**
@@ -361,10 +364,11 @@ public class HiveSessionImpl implements HiveSession {
     if (userAccess) {
       lastAccessTime = System.currentTimeMillis();
     }
-    if (opHandleSet.isEmpty()) {
+    pendingCount--;
+    // lastIdleTime is only set by the last one
+    // who calls release with empty opHandleSet.
+    if (pendingCount == 0 && opHandleSet.isEmpty()) {
       lastIdleTime = System.currentTimeMillis();
-    } else {
-      lastIdleTime = 0;
     }
   }
 
@@ -646,6 +650,7 @@ public class HiveSessionImpl implements HiveSession {
         hiveHist.closeStream();
       }
       try {
+        sessionState.resetThreadName();
         sessionState.close();
       } finally {
         sessionState = null;
@@ -655,6 +660,7 @@ public class HiveSessionImpl implements HiveSession {
     } finally {
       if (sessionState != null) {
         try {
+          sessionState.resetThreadName();
           sessionState.close();
         } catch (Throwable t) {
           LOG.warn("Error closing session", t);

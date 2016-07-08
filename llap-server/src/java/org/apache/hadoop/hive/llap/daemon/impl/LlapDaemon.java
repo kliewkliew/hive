@@ -33,6 +33,7 @@ import javax.management.ObjectName;
 
 import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.hive.common.LogUtils;
+import org.apache.hadoop.hive.common.UgiFactory;
 import org.apache.hadoop.hive.conf.HiveConf;
 import org.apache.hadoop.hive.conf.HiveConf.ConfVars;
 import org.apache.hadoop.hive.llap.DaemonId;
@@ -54,6 +55,8 @@ import org.apache.hadoop.hive.llap.metrics.LlapDaemonExecutorMetrics;
 import org.apache.hadoop.hive.llap.metrics.LlapMetricsSystem;
 import org.apache.hadoop.hive.llap.metrics.MetricsUtils;
 import org.apache.hadoop.hive.llap.registry.impl.LlapRegistryService;
+import org.apache.hadoop.hive.llap.security.LlapUgiFactoryFactory;
+import org.apache.hadoop.hive.llap.security.SecretManager;
 import org.apache.hadoop.hive.llap.shufflehandler.ShuffleHandler;
 import org.apache.hadoop.hive.ql.exec.SerializationUtilities;
 import org.apache.hadoop.hive.ql.exec.UDF;
@@ -86,6 +89,7 @@ public class LlapDaemon extends CompositeService implements ContainerRunner, Lla
   public static final String LLAP_HADOOP_METRICS2_PROPERTIES_FILE = "hadoop-metrics2-llapdaemon.properties";
   public static final String HADOOP_METRICS2_PROPERTIES_FILE = "hadoop-metrics2.properties";
   private final Configuration shuffleHandlerConf;
+  private final SecretManager secretManager;
   private final LlapProtocolServerImpl server;
   private final ContainerRunnerImpl containerRunner;
   private final AMReporter amReporter;
@@ -105,12 +109,6 @@ public class LlapDaemon extends CompositeService implements ContainerRunner, Lla
   private final long maxJvmMemory;
   private final String[] localDirs;
   private final DaemonId daemonId;
-
-  private final static Pattern hostsRe = Pattern.compile("[^A-Za-z0-9_-]");
-  private static String generateClusterName(Configuration conf) {
-    String hosts = HiveConf.getTrimmedVar(conf, ConfVars.LLAP_DAEMON_SERVICE_HOSTS);
-    return hostsRe.matcher(hosts.startsWith("@") ? hosts.substring(1) : hosts).replaceAll("_");
-  }
 
   // TODO Not the best way to share the address
   private final AtomicReference<InetSocketAddress> srvAddress = new AtomicReference<>(),
@@ -149,8 +147,8 @@ public class LlapDaemon extends CompositeService implements ContainerRunner, Lla
     }
     String hostName = MetricsUtils.getHostName();
     try {
-      daemonId = new DaemonId(UserGroupInformation.getCurrentUser().getUserName(),
-          generateClusterName(daemonConf), hostName, appName, System.currentTimeMillis());
+      daemonId = new DaemonId(UserGroupInformation.getCurrentUser().getShortUserName(),
+          LlapUtil.generateClusterName(daemonConf), hostName, appName, System.currentTimeMillis());
     } catch (IOException ex) {
       throw new RuntimeException(ex);
     }
@@ -249,12 +247,23 @@ public class LlapDaemon extends CompositeService implements ContainerRunner, Lla
 
     this.amReporter = new AMReporter(srvAddress, new QueryFailedHandlerProxy(), daemonConf);
 
-    this.server = new LlapProtocolServerImpl(
+    SecretManager sm = null;
+    if (UserGroupInformation.isSecurityEnabled()) {
+      sm = SecretManager.createSecretManager(daemonConf, daemonId.getClusterString());
+    }
+    this.secretManager = sm;
+    this.server = new LlapProtocolServerImpl(secretManager,
         numHandlers, this, srvAddress, mngAddress, srvPort, mngPort, daemonId);
 
+    UgiFactory fsUgiFactory = null;
+    try {
+      fsUgiFactory = LlapUgiFactoryFactory.createFsUgiFactory(daemonConf);
+    } catch (IOException e) {
+      throw new RuntimeException(e);
+    }
     this.containerRunner = new ContainerRunnerImpl(daemonConf, numExecutors, waitQueueSize,
         enablePreemption, localDirs, this.shufflePort, srvAddress, executorMemoryBytes, metrics,
-        amReporter, executorClassLoader, daemonId.getClusterString());
+        amReporter, executorClassLoader, daemonId, fsUgiFactory);
     addIfService(containerRunner);
 
     // Not adding the registry as a service, since we need to control when it is initialized - conf used to pickup properties.
@@ -346,7 +355,7 @@ public class LlapDaemon extends CompositeService implements ContainerRunner, Lla
     this.shufflePort.set(ShuffleHandler.get().getPort());
     getConfig()
         .setInt(ConfVars.LLAP_DAEMON_YARN_SHUFFLE_PORT.varname, ShuffleHandler.get().getPort());
-    LlapOutputFormatService.initializeAndStart(getConfig());
+    LlapOutputFormatService.initializeAndStart(getConfig(), secretManager);
     super.serviceStart();
 
     // Setup the actual ports in the configuration.

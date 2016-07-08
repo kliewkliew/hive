@@ -18,6 +18,9 @@
 
 package org.apache.hadoop.hive.ql.io;
 
+import java.util.Arrays;
+import org.apache.hadoop.hive.ql.exec.vector.VectorizedInputFormatInterface;
+
 import java.io.DataInput;
 import java.io.DataOutput;
 import java.io.IOException;
@@ -207,6 +210,11 @@ public class HiveInputFormat<K extends WritableComparable, V extends Writable>
     }
     boolean isSupported = inputFormat instanceof LlapWrappableInputFormatInterface;
     boolean isVectorized = Utilities.getUseVectorizedInputFileFormat(conf);
+    if (!isVectorized) {
+      // Pretend it's vectorized.
+      isVectorized = HiveConf.getBoolVar(conf, ConfVars.LLAP_IO_NONVECTOR_WRAPPER_ENABLED)
+          && (Utilities.getPlanPath(conf) != null);
+    }
     if (!isSupported || !isVectorized) {
       LOG.info("Not using llap for " + inputFormat + ": supported = " + isSupported
           + ", vectorized = " + isVectorized);
@@ -224,12 +232,11 @@ public class HiveInputFormat<K extends WritableComparable, V extends Writable>
     return castInputFormat(llapIo.getInputFormat(inputFormat));
   }
 
-  public static boolean canWrapAnyForLlap(Configuration conf, MapWork mapWork) {
-    return Utilities.getUseVectorizedInputFileFormat(conf, mapWork);
-  }
 
-  public static boolean canWrapForLlap(Class<? extends InputFormat> inputFormatClass) {
-    return LlapWrappableInputFormatInterface.class.isAssignableFrom(inputFormatClass);
+
+  public static boolean canWrapForLlap(Class<? extends InputFormat> clazz, boolean checkVector) {
+    return LlapWrappableInputFormatInterface.class.isAssignableFrom(clazz) &&
+        (!checkVector || BatchToRowInputFormat.class.isAssignableFrom(clazz));
   }
 
   @SuppressWarnings("unchecked")
@@ -501,13 +508,11 @@ public class HiveInputFormat<K extends WritableComparable, V extends Writable>
       final StringBuilder readColumnNamesBuffer) {
     String readColIds = readColumnsBuffer.toString();
     String readColNames = readColumnNamesBuffer.toString();
-    boolean readAllColumns = readColIds.isEmpty() ? true : false;
-    newjob.setBoolean(ColumnProjectionUtils.READ_ALL_COLUMNS, readAllColumns);
+    newjob.setBoolean(ColumnProjectionUtils.READ_ALL_COLUMNS, false);
     newjob.set(ColumnProjectionUtils.READ_COLUMN_IDS_CONF_STR, readColIds);
     newjob.set(ColumnProjectionUtils.READ_COLUMN_NAMES_CONF_STR, readColNames);
 
     if (LOG.isInfoEnabled()) {
-      LOG.info("{} = {}", ColumnProjectionUtils.READ_ALL_COLUMNS, readAllColumns);
       LOG.info("{} = {}", ColumnProjectionUtils.READ_COLUMN_IDS_CONF_STR, readColIds);
       LOG.info("{} = {}", ColumnProjectionUtils.READ_COLUMN_NAMES_CONF_STR, readColNames);
     }

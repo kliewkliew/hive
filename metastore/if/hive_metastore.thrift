@@ -134,6 +134,15 @@ enum GrantRevokeType {
     REVOKE = 2,
 }
 
+enum DataOperationType {
+    SELECT = 1,
+    INSERT = 2
+    UPDATE = 3,
+    DELETE = 4,
+    UNSET = 5,//this is the default to distinguish from NULL from old clients
+    NO_TXN = 6,//drop table, insert overwrite, etc - something non-transactional
+}
+
 // Types of events the client can request that the metastore fire.  For now just support DML operations, as the metastore knows
 // about DDL operations and there's no reason for the client to request such an event.
 enum EventRequestType {
@@ -449,7 +458,8 @@ struct AggrStats {
 }
 
 struct SetPartitionsStatsRequest {
-1: required list<ColumnStatistics> colStats
+1: required list<ColumnStatistics> colStats,
+2: optional bool needMerge //stats need to be merged with the existing stats
 }
 
 // schema of the table/query results etc.
@@ -491,6 +501,14 @@ struct DropConstraintRequest {
   1: required string dbname, 
   2: required string tablename,
   3: required string constraintname
+}
+
+struct AddPrimaryKeyRequest {
+  1: required list<SQLPrimaryKey> primaryKeyCols
+}
+
+struct AddForeignKeyRequest {
+  1: required list<SQLForeignKey> foreignKeyCols
 }
 
 // Return type for get_partitions_by_expr
@@ -648,6 +666,8 @@ struct LockComponent {
     3: required string dbname,
     4: optional string tablename,
     5: optional string partitionname,
+    6: optional DataOperationType operationType = DataOperationType.UNSET,
+    7: optional bool isAcid = false
 }
 
 struct LockRequest {
@@ -724,6 +744,7 @@ struct CompactionRequest {
     3: optional string partitionname,
     4: required CompactionType type,
     5: optional string runas,
+    6: optional map<string, string> properties
 }
 
 struct ShowCompactRequest {
@@ -753,6 +774,7 @@ struct AddDynamicPartitions {
     2: required string dbname,
     3: required string tablename,
     4: required list<string> partitionnames,
+    5: optional DataOperationType operationType = DataOperationType.UNSET
 }
 
 struct NotificationEventRequest {
@@ -994,6 +1016,10 @@ service ThriftHiveMetastore extends fb303.FacebookService
               4:NoSuchObjectException o4)
   void drop_constraint(1:DropConstraintRequest req)
       throws(1:NoSuchObjectException o1, 2:MetaException o3)
+  void add_primary_key(1:AddPrimaryKeyRequest req)
+      throws(1:NoSuchObjectException o1, 2:MetaException o2)
+  void add_foreign_key(1:AddForeignKeyRequest req)
+      throws(1:NoSuchObjectException o1, 2:MetaException o2)  
 
   // drops the table and all the partitions associated with it if the table has partitions
   // delete data (including partitions) if deleteData is set to true

@@ -102,7 +102,7 @@ import org.apache.hadoop.hive.ql.security.authorization.plugin.HiveOperationType
 import org.apache.hadoop.hive.ql.security.authorization.plugin.HivePrivilegeObject;
 import org.apache.hadoop.hive.ql.security.authorization.plugin.HivePrivilegeObject.HivePrivObjectActionType;
 import org.apache.hadoop.hive.ql.security.authorization.plugin.HivePrivilegeObject.HivePrivilegeObjectType;
-import org.apache.hadoop.hive.ql.security.authorization.plugin.QueryContext;
+import org.apache.hadoop.hive.ql.security.authorization.plugin.HiveAuthzContext;
 import org.apache.hadoop.hive.ql.session.OperationLog;
 import org.apache.hadoop.hive.ql.session.OperationLog.LoggingLevel;
 import org.apache.hadoop.hive.ql.session.SessionState;
@@ -299,9 +299,6 @@ public class Driver implements CommandProcessor {
         SessionState.get().getConf() : new HiveConf()), null);
   }
 
-  /**
-   * for backwards compatibility with current tests
-   */
   public Driver(HiveConf conf) {
     this(new QueryState(conf), null);
   }
@@ -337,7 +334,8 @@ public class Driver implements CommandProcessor {
    * @return 0 for ok
    */
   public int compile(String command, boolean resetTaskIds) {
-    PerfLogger perfLogger = SessionState.getPerfLogger();
+    PerfLogger perfLogger = SessionState.getPerfLogger(true);
+    perfLogger.PerfLogBegin(CLASS_NAME, PerfLogger.DRIVER_RUN);
     perfLogger.PerfLogBegin(CLASS_NAME, PerfLogger.COMPILE);
 
     command = new VariableSubstitution(new HiveVariableSource() {
@@ -805,7 +803,8 @@ public class Driver implements CommandProcessor {
     since the insert will get passed the columns from the select.
      */
 
-    QueryContext.Builder authzContextBuilder = new QueryContext.Builder();
+    HiveAuthzContext.Builder authzContextBuilder = new HiveAuthzContext.Builder();
+    authzContextBuilder.setUserIpAddress(ss.getUserIpAddress());
     authzContextBuilder.setForwardedAddresses(ss.getForwardedAddresses());
     authzContextBuilder.setCommandString(command);
 
@@ -1242,18 +1241,20 @@ public class Driver implements CommandProcessor {
       return createProcessorResponse(12);
     }
 
-    // Reset the perf logger
-    PerfLogger perfLogger = SessionState.getPerfLogger(true);
-    perfLogger.PerfLogBegin(CLASS_NAME, PerfLogger.DRIVER_RUN);
-    perfLogger.PerfLogBegin(CLASS_NAME, PerfLogger.TIME_TO_SUBMIT);
+    PerfLogger perfLogger = null;
 
     int ret;
     if (!alreadyCompiled) {
+      // compile internal will automatically reset the perf logger
       ret = compileInternal(command);
+      // then we continue to use this perf logger
+      perfLogger = SessionState.getPerfLogger();
       if (ret != 0) {
         return createProcessorResponse(ret);
       }
     } else {
+      // reuse existing perf logger.
+      perfLogger = SessionState.getPerfLogger();
       // Since we're reusing the compiled plan, we need to update its start time for current run
       plan.setQueryStartTime(perfLogger.getStartTime(PerfLogger.DRIVER_RUN));
     }
@@ -1550,7 +1551,6 @@ public class Driver implements CommandProcessor {
         driverCxt.addToRunnable(tsk);
       }
 
-      perfLogger.PerfLogEnd(CLASS_NAME, PerfLogger.TIME_TO_SUBMIT);
       perfLogger.PerfLogBegin(CLASS_NAME, PerfLogger.RUN_TASKS);
       // Loop while you either have tasks running, or tasks queued up
       while (!destroyed && driverCxt.isRunning()) {
@@ -2027,5 +2027,16 @@ public class Driver implements CommandProcessor {
    */
   public void setOperationId(String opId) {
     this.operationId = opId;
+  }
+
+  /** 
+   * Resets QueryState to get new queryId on Driver reuse.
+   */
+  public void resetQueryState() {
+    // Note: Driver cleanup for reuse at this point is not very clear. The assumption here is that
+    // repeated compile/execute calls create new contexts, plan, etc., so we don't need to worry
+    // propagating queryState into those existing fields, or resetting them.
+    releaseResources();
+    this.queryState = new QueryState(queryState.getConf());
   }
 }

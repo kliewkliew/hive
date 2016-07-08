@@ -123,6 +123,7 @@ public final class TxnDbUtil {
           " CQ_PARTITION varchar(767)," +
           " CQ_STATE char(1) NOT NULL," +
           " CQ_TYPE char(1) NOT NULL," +
+          " CQ_TBLPROPERTIES varchar(2048)," +
           " CQ_WORKER_ID varchar(128)," +
           " CQ_START bigint," +
           " CQ_RUN_AS varchar(128)," +
@@ -140,6 +141,7 @@ public final class TxnDbUtil {
         " CC_PARTITION varchar(767)," +
         " CC_STATE char(1) NOT NULL," +
         " CC_TYPE char(1) NOT NULL," +
+        " CC_TBLPROPERTIES varchar(2048)," +
         " CC_WORKER_ID varchar(128)," +
         " CC_START bigint," +
         " CC_END bigint," +
@@ -289,6 +291,9 @@ public final class TxnDbUtil {
   }
   @VisibleForTesting
   public static String queryToString(String query) throws Exception {
+    return queryToString(query, true);
+  }
+  public static String queryToString(String query, boolean includeHeader) throws Exception {
     Connection conn = null;
     Statement stmt = null;
     ResultSet rs = null;
@@ -298,10 +303,12 @@ public final class TxnDbUtil {
       stmt = conn.createStatement();
       rs = stmt.executeQuery(query);
       ResultSetMetaData rsmd = rs.getMetaData();
-      for(int colPos = 1; colPos <= rsmd.getColumnCount(); colPos++) {
-        sb.append(rsmd.getColumnName(colPos)).append("   ");
+      if(includeHeader) {
+        for (int colPos = 1; colPos <= rsmd.getColumnCount(); colPos++) {
+          sb.append(rsmd.getColumnName(colPos)).append("   ");
+        }
+        sb.append('\n');
       }
-      sb.append('\n');
       while(rs.next()) {
         for (int colPos = 1; colPos <= rsmd.getColumnCount(); colPos++) {
           sb.append(rs.getObject(colPos)).append("   ");

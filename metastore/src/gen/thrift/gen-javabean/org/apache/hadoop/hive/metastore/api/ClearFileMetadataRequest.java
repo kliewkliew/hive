@@ -351,13 +351,13 @@ public class ClearFileMetadataRequest implements org.apache.thrift.TBase<ClearFi
           case 1: // FILE_IDS
             if (schemeField.type == org.apache.thrift.protocol.TType.LIST) {
               {
-                org.apache.thrift.protocol.TList _list600 = iprot.readListBegin();
-                struct.fileIds = new ArrayList<Long>(_list600.size);
-                long _elem601;
-                for (int _i602 = 0; _i602 < _list600.size; ++_i602)
+                org.apache.thrift.protocol.TList _list626 = iprot.readListBegin();
+                struct.fileIds = new ArrayList<Long>(_list626.size);
+                long _elem627;
+                for (int _i628 = 0; _i628 < _list626.size; ++_i628)
                 {
-                  _elem601 = iprot.readI64();
-                  struct.fileIds.add(_elem601);
+                  _elem627 = iprot.readI64();
+                  struct.fileIds.add(_elem627);
                 }
                 iprot.readListEnd();
               }
@@ -383,9 +383,9 @@ public class ClearFileMetadataRequest implements org.apache.thrift.TBase<ClearFi
         oprot.writeFieldBegin(FILE_IDS_FIELD_DESC);
         {
           oprot.writeListBegin(new org.apache.thrift.protocol.TList(org.apache.thrift.protocol.TType.I64, struct.fileIds.size()));
-          for (long _iter603 : struct.fileIds)
+          for (long _iter629 : struct.fileIds)
           {
-            oprot.writeI64(_iter603);
+            oprot.writeI64(_iter629);
           }
           oprot.writeListEnd();
         }
@@ -410,9 +410,9 @@ public class ClearFileMetadataRequest implements org.apache.thrift.TBase<ClearFi
       TTupleProtocol oprot = (TTupleProtocol) prot;
       {
         oprot.writeI32(struct.fileIds.size());
-        for (long _iter604 : struct.fileIds)
+        for (long _iter630 : struct.fileIds)
         {
-          oprot.writeI64(_iter604);
+          oprot.writeI64(_iter630);
         }
       }
     }
@@ -421,13 +421,13 @@ public class ClearFileMetadataRequest implements org.apache.thrift.TBase<ClearFi
     public void read(org.apache.thrift.protocol.TProtocol prot, ClearFileMetadataRequest struct) throws org.apache.thrift.TException {
       TTupleProtocol iprot = (TTupleProtocol) prot;
       {
-        org.apache.thrift.protocol.TList _list605 = new org.apache.thrift.protocol.TList(org.apache.thrift.protocol.TType.I64, iprot.readI32());
-        struct.fileIds = new ArrayList<Long>(_list605.size);
-        long _elem606;
-        for (int _i607 = 0; _i607 < _list605.size; ++_i607)
+        org.apache.thrift.protocol.TList _list631 = new org.apache.thrift.protocol.TList(org.apache.thrift.protocol.TType.I64, iprot.readI32());
+        struct.fileIds = new ArrayList<Long>(_list631.size);
+        long _elem632;
+        for (int _i633 = 0; _i633 < _list631.size; ++_i633)
         {
-          _elem606 = iprot.readI64();
-          struct.fileIds.add(_elem606);
+          _elem632 = iprot.readI64();
+          struct.fileIds.add(_elem632);
         }
       }
       struct.setFileIdsIsSet(true);

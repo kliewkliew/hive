@@ -105,14 +105,13 @@ STAGE PLANS:
                         input vertices:
                           1 Map 3
                         Statistics: Num rows: 1100 Data size: 57543 Basic stats: COMPLETE Column stats: NONE
-                        HybridGraceHashJoin: true
                         Reduce Output Operator
                           key expressions: _col0 (type: int)
                           sort order: +
                           Statistics: Num rows: 1100 Data size: 57543 Basic stats: COMPLETE Column stats: NONE
                           value expressions: _col1 (type: string)
             Execution mode: llap
-            LLAP IO: no inputs
+            LLAP IO: some inputs
         Map 3 
             Map Operator Tree:
                 TableScan

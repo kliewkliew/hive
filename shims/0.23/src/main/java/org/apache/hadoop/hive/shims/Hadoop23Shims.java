@@ -21,6 +21,7 @@ import java.io.DataInputStream;
 import java.io.FileNotFoundException;
 import java.io.IOException;
 import java.io.InputStream;
+import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.Method;
 import java.net.InetSocketAddress;
 import java.net.MalformedURLException;
@@ -35,6 +36,8 @@ import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
 import java.util.TreeMap;
+
+import javax.security.auth.Subject;
 
 import org.apache.commons.lang.StringUtils;
 import org.apache.hadoop.conf.Configuration;
@@ -52,7 +55,6 @@ import org.apache.hadoop.fs.Path;
 import org.apache.hadoop.fs.PathFilter;
 import org.apache.hadoop.fs.ProxyFileSystem;
 import org.apache.hadoop.fs.RemoteIterator;
-import org.apache.hadoop.fs.Trash;
 import org.apache.hadoop.fs.TrashPolicy;
 import org.apache.hadoop.fs.permission.FsAction;
 import org.apache.hadoop.fs.permission.FsPermission;
@@ -102,42 +104,18 @@ import org.apache.tez.test.MiniTezCluster;
 public class Hadoop23Shims extends HadoopShimsSecure {
 
   HadoopShims.MiniDFSShim cluster = null;
-  final boolean zeroCopy;
   final boolean storagePolicy;
-  final boolean fastread;
 
   public Hadoop23Shims() {
-    boolean zcr = false;
+    // in-memory HDFS
     boolean storage = false;
-    boolean fastread = false;
     try {
-      Class.forName("org.apache.hadoop.fs.CacheFlag", false,
-          ShimLoader.class.getClassLoader());
-      zcr = true;
+      Class.forName("org.apache.hadoop.hdfs.protocol.BlockStoragePolicy",
+            false, ShimLoader.class.getClassLoader());
+      storage = true;
     } catch (ClassNotFoundException ce) {
     }
-
-    if (zcr) {
-      // in-memory HDFS is only available after zcr
-      try {
-        Class.forName("org.apache.hadoop.hdfs.protocol.BlockStoragePolicy",
-            false, ShimLoader.class.getClassLoader());
-        storage = true;
-      } catch (ClassNotFoundException ce) {
-      }
-    }
-
-    if (storage) {
-      for (Method m : Text.class.getMethods()) {
-        if ("readWithKnownLength".equals(m.getName())) {
-          fastread = true;
-        }
-      }
-    }
-
     this.storagePolicy = storage;
-    this.zeroCopy = zcr;
-    this.fastread = fastread;
   }
 
   @Override
@@ -688,22 +666,6 @@ public class Hadoop23Shims extends HadoopShimsSecure {
     return new WebHCatJTShim23(conf, ugi);//this has state, so can't be cached
   }
 
-  @Override
-  public List<FileStatus> listLocatedStatus(final FileSystem fs,
-                                            final Path path,
-                                            final PathFilter filter
-                                           ) throws IOException {
-    RemoteIterator<LocatedFileStatus> itr = fs.listLocatedStatus(path);
-    List<FileStatus> result = new ArrayList<FileStatus>();
-    while(itr.hasNext()) {
-      FileStatus stat = itr.next();
-      if (filter == null || filter.accept(stat.getPath())) {
-        result.add(stat);
-      }
-    }
-    return result;
-  }
-
   private static final class HdfsFileStatusWithIdImpl implements HdfsFileStatusWithId {
     private final LocatedFileStatus lfs;
     private final long fileId;
@@ -851,15 +813,6 @@ public class Hadoop23Shims extends HadoopShimsSecure {
   @Override
   public FileSystem createProxyFileSystem(FileSystem fs, URI uri) {
     return new ProxyFileSystem23(fs, uri);
-  }
-
-  @Override
-  public ZeroCopyReaderShim getZeroCopyReader(FSDataInputStream in, ByteBufferPoolShim pool) throws IOException {
-    if(zeroCopy) {
-      return ZeroCopyShims.getZeroCopyReader(in, pool);
-    }
-    /* not supported */
-    return null;
   }
 
   @Override
@@ -1149,7 +1102,12 @@ public class Hadoop23Shims extends HadoopShimsSecure {
       if(!"hdfs".equalsIgnoreCase(path.toUri().getScheme())) {
         return false;
       }
-      return (hdfsAdmin.getEncryptionZoneForPath(fullPath) != null);
+      try {
+        return (hdfsAdmin.getEncryptionZoneForPath(fullPath) != null);
+      } catch (FileNotFoundException fnfe) {
+        LOG.debug("Failed to get EZ for non-existent path: "+ fullPath, fnfe);
+        return false;
+      }
     }
 
     @Override
@@ -1298,25 +1256,44 @@ public class Hadoop23Shims extends HadoopShimsSecure {
     return ensureDfs(fs).getClient().getFileInfo(path).getFileId();
   }
 
-  private final class FastTextReaderShim implements TextReaderShim {
-    private final DataInputStream din;
 
-    public FastTextReaderShim(InputStream in) {
-      this.din = new DataInputStream(in);
+  private final static java.lang.reflect.Method getSubjectMethod;
+  private final static java.lang.reflect.Constructor<UserGroupInformation> ugiCtor;
+  private final static String ugiCloneError;
+  static {
+    Class<UserGroupInformation> clazz = UserGroupInformation.class;
+    java.lang.reflect.Method method = null;
+    java.lang.reflect.Constructor<UserGroupInformation> ctor;
+    String error = null;
+    try {
+      method = clazz.getDeclaredMethod("getSubject");
+      method.setAccessible(true);
+      ctor = clazz.getDeclaredConstructor(Subject.class);
+      ctor.setAccessible(true);
+    } catch (Throwable t) {
+      error = t.getMessage();
+      method = null;
+      ctor = null;
+      LOG.error("Cannot create UGI reflection methods", t);
     }
-
-    @Override
-    public void read(Text txt, int len) throws IOException {
-      txt.readWithKnownLength(din, len);
-    }
+    getSubjectMethod = method;
+    ugiCtor = ctor;
+    ugiCloneError = error;
   }
 
   @Override
-  public TextReaderShim getTextReaderShim(InputStream in) throws IOException {
-    if (!fastread) {
-      return super.getTextReaderShim(in);
+  public UserGroupInformation cloneUgi(UserGroupInformation baseUgi) throws IOException {
+    // Based on UserGroupInformation::createProxyUser.
+    // TODO: use a proper method after we can depend on HADOOP-13081.
+    if (getSubjectMethod == null) {
+      throw new IOException("The UGI method was not found: " + ugiCloneError);
     }
-    return new FastTextReaderShim(in);
+    Subject subject = new Subject();
+    try {
+      subject.getPrincipals().addAll(((Subject)getSubjectMethod.invoke(baseUgi)).getPrincipals());
+      return ugiCtor.newInstance(subject);
+    } catch (InstantiationException | IllegalAccessException | InvocationTargetException e) {
+      throw new IOException(e);
+    }
   }
-
 }

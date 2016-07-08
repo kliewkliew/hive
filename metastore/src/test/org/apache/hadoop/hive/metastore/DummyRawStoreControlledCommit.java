@@ -318,6 +318,12 @@ public class DummyRawStoreControlledCommit implements RawStore, Configurable {
   }
 
   @Override
+  public int getNumPartitionsByExpr(String dbName, String tblName,
+                                      byte[] expr) throws MetaException, NoSuchObjectException {
+    return objectStore.getNumPartitionsByExpr(dbName, tblName, expr);
+  }
+
+  @Override
   public List<Partition> getPartitionsByNames(String dbName, String tblName,
       List<String> partNames) throws MetaException, NoSuchObjectException {
     return objectStore.getPartitionsByNames(dbName, tblName, partNames);
@@ -844,5 +850,17 @@ public class DummyRawStoreControlledCommit implements RawStore, Configurable {
   public void dropConstraint(String dbName, String tableName,
    String constraintName) throws NoSuchObjectException {
    // TODO Auto-generated method stub
+  }
+
+  @Override
+  public void addPrimaryKeys(List<SQLPrimaryKey> pks)
+    throws InvalidObjectException, MetaException {
+    // TODO Auto-generated method stub
+  }
+
+  @Override
+  public void addForeignKeys(List<SQLForeignKey> fks)
+    throws InvalidObjectException, MetaException {
+    // TODO Auto-generated method stub
   }
 }

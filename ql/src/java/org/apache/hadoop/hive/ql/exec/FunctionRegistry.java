@@ -103,8 +103,10 @@ import org.apache.hadoop.hive.ql.udf.UDFToLong;
 import org.apache.hadoop.hive.ql.udf.UDFToShort;
 import org.apache.hadoop.hive.ql.udf.UDFToString;
 import org.apache.hadoop.hive.ql.udf.UDFType;
+import org.apache.hadoop.hive.ql.udf.UDFUUID;
 import org.apache.hadoop.hive.ql.udf.UDFUnbase64;
 import org.apache.hadoop.hive.ql.udf.UDFUnhex;
+import org.apache.hadoop.hive.ql.udf.UDFVersion;
 import org.apache.hadoop.hive.ql.udf.UDFWeekOfYear;
 import org.apache.hadoop.hive.ql.udf.UDFYear;
 import org.apache.hadoop.hive.ql.udf.generic.*;
@@ -238,6 +240,7 @@ public final class FunctionRegistry {
     system.registerUDF("sha", UDFSha1.class, false);
     system.registerGenericUDF("aes_encrypt", GenericUDFAesEncrypt.class);
     system.registerGenericUDF("aes_decrypt", GenericUDFAesDecrypt.class);
+    system.registerUDF("uuid", UDFUUID.class, false);
 
     system.registerGenericUDF("encode", GenericUDFEncode.class);
     system.registerGenericUDF("decode", GenericUDFDecode.class);
@@ -347,6 +350,9 @@ public final class FunctionRegistry {
     system.registerGenericUDF("ewah_bitmap_and", GenericUDFEWAHBitmapAnd.class);
     system.registerGenericUDF("ewah_bitmap_or", GenericUDFEWAHBitmapOr.class);
     system.registerGenericUDF("ewah_bitmap_empty", GenericUDFEWAHBitmapEmpty.class);
+
+    // Utility UDFs
+    system.registerUDF("version", UDFVersion.class, false);
 
     // Aliases for Java Class Names
     // These are used in getImplicitConvertUDFMethod
@@ -900,7 +906,7 @@ public final class FunctionRegistry {
 
     GenericUDAFParameterInfo paramInfo =
         new SimpleGenericUDAFParameterInfo(
-            args, isDistinct, isAllColumns);
+            args, false, isDistinct, isAllColumns);
 
     GenericUDAFEvaluator udafEvaluator;
     if (udafResolver instanceof GenericUDAFResolver2) {

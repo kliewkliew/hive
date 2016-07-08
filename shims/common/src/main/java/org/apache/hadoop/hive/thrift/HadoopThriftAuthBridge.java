@@ -179,9 +179,9 @@ public abstract class HadoopThriftAuthBridge {
 
     public TTransport createClientTransport(
         String principalConfig, String host,
-        String methodStr, String tokenStrForm, TTransport underlyingTransport,
-        Map<String, String> saslProps) throws IOException {
-      AuthMethod method = AuthMethod.valueOf(AuthMethod.class, methodStr);
+        String methodStr, String tokenStrForm, final TTransport underlyingTransport,
+        final Map<String, String> saslProps) throws IOException {
+      final AuthMethod method = AuthMethod.valueOf(AuthMethod.class, methodStr);
 
       TTransport saslTransport = null;
       switch (method) {
@@ -198,21 +198,27 @@ public abstract class HadoopThriftAuthBridge {
 
       case KERBEROS:
         String serverPrincipal = SecurityUtil.getServerPrincipal(principalConfig, host);
-        String names[] = SaslRpcServer.splitKerberosName(serverPrincipal);
+        final String names[] = SaslRpcServer.splitKerberosName(serverPrincipal);
         if (names.length != 3) {
           throw new IOException(
               "Kerberos principal name does NOT have the expected hostname part: "
                   + serverPrincipal);
         }
         try {
-          saslTransport = new TSaslClientTransport(
-              method.getMechanismName(),
-              null,
-              names[0], names[1],
-              saslProps, null,
-              underlyingTransport);
-          return new TUGIAssumingTransport(saslTransport, UserGroupInformation.getCurrentUser());
-        } catch (SaslException se) {
+          return UserGroupInformation.getCurrentUser().doAs(
+              new PrivilegedExceptionAction<TUGIAssumingTransport>() {
+                @Override
+                public TUGIAssumingTransport run() throws IOException {
+                  TTransport saslTransport = new TSaslClientTransport(
+                    method.getMechanismName(),
+                    null,
+                    names[0], names[1],
+                    saslProps, null,
+                    underlyingTransport);
+                  return new TUGIAssumingTransport(saslTransport, UserGroupInformation.getCurrentUser());
+                }
+              });
+        } catch (InterruptedException | SaslException se) {
           throw new IOException("Could not instantiate SASL transport", se);
         }
 
@@ -433,6 +439,18 @@ public abstract class HadoopThriftAuthBridge {
       return remoteUser.get();
     }
 
+    private final static ThreadLocal<String> userAuthMechanism =
+        new ThreadLocal<String>() {
+
+      @Override
+      protected String initialValue() {
+        return AuthMethod.KERBEROS.getMechanismName();
+      }
+    };
+
+    public String getUserAuthMechanism() {
+      return userAuthMechanism.get();
+    }
     /** CallbackHandler for SASL DIGEST-MD5 mechanism */
     // This code is pretty much completely based on Hadoop's
     // SaslRpcServer.SaslDigestCallbackHandler - the only reason we could not
@@ -536,11 +554,21 @@ public abstract class HadoopThriftAuthBridge {
         TSaslServerTransport saslTrans = (TSaslServerTransport)trans;
         SaslServer saslServer = saslTrans.getSaslServer();
         String authId = saslServer.getAuthorizationID();
-        authenticationMethod.set(AuthenticationMethod.KERBEROS);
         LOG.debug("AUTH ID ======>" + authId);
         String endUser = authId;
 
-        if(saslServer.getMechanismName().equals("DIGEST-MD5")) {
+        Socket socket = ((TSocket)(saslTrans.getUnderlyingTransport())).getSocket();
+        remoteAddress.set(socket.getInetAddress());
+
+        String mechanismName = saslServer.getMechanismName();
+        userAuthMechanism.set(mechanismName);
+        if (AuthMethod.PLAIN.getMechanismName().equalsIgnoreCase(mechanismName)) {
+          remoteUser.set(endUser);
+          return wrapped.process(inProt, outProt);
+        }
+
+        authenticationMethod.set(AuthenticationMethod.KERBEROS);
+        if(AuthMethod.TOKEN.getMechanismName().equalsIgnoreCase(mechanismName)) {
           try {
             TokenIdentifier tokenId = SaslRpcServer.getIdentifier(authId,
                 secretManager);
@@ -550,8 +578,7 @@ public abstract class HadoopThriftAuthBridge {
             throw new TException(e.getMessage());
           }
         }
-        Socket socket = ((TSocket)(saslTrans.getUnderlyingTransport())).getSocket();
-        remoteAddress.set(socket.getInetAddress());
+
         UserGroupInformation clientUgi = null;
         try {
           if (useProxy) {

@@ -29,6 +29,7 @@ import java.util.Stack;
 
 import org.apache.hadoop.hive.conf.HiveConf;
 import org.apache.hadoop.hive.ql.ErrorMsg;
+import org.apache.hadoop.hive.ql.exec.AbstractMapJoinOperator;
 import org.apache.hadoop.hive.ql.exec.ColumnInfo;
 import org.apache.hadoop.hive.ql.exec.CommonJoinOperator;
 import org.apache.hadoop.hive.ql.exec.FilterOperator;
@@ -61,6 +62,7 @@ import org.apache.hadoop.hive.ql.plan.ExprNodeFieldDesc;
 import org.apache.hadoop.hive.ql.plan.ExprNodeGenericFuncDesc;
 import org.apache.hadoop.hive.ql.plan.GroupByDesc;
 import org.apache.hadoop.hive.ql.plan.JoinDesc;
+import org.apache.hadoop.hive.ql.plan.MapJoinDesc;
 import org.apache.hadoop.hive.ql.plan.OperatorDesc;
 import org.apache.hadoop.hive.ql.plan.Statistics;
 import org.apache.hadoop.hive.ql.stats.StatsUtils;
@@ -471,7 +473,8 @@ public class StatsRulesProcFactory {
         float columnFactor = dvs == 0 ? 0.5f : ((float)dvs / numRows) * values.get(i).size();
         factor *= columnFactor;
       }
-      return Math.round( (double)numRows * factor);
+      float inFactor = HiveConf.getFloatVar(aspCtx.getConf(), HiveConf.ConfVars.HIVE_STATS_IN_CLAUSE_FACTOR);
+      return Math.round( (double)numRows * factor * inFactor);
     }
 
     private long evaluateNotExpr(Statistics stats, ExprNodeDesc pred,
@@ -1403,6 +1406,14 @@ public class StatsRulesProcFactory {
           stats.updateColumnStatsState(parentStats.getColumnStatsState());
         }
 
+        if (numAttr == 0) {
+          // It is a cartesian product, row count is easy to infer
+          inferredRowCount = 1;
+          for (int pos = 0; pos < parents.size(); pos++) {
+            inferredRowCount = StatsUtils.safeMult(joinStats.get(pos).getNumRows(), inferredRowCount);
+          }
+        }
+
         List<Long> distinctVals = Lists.newArrayList();
         long denom = 1;
         if (inferredRowCount == -1) {
@@ -1470,27 +1481,51 @@ public class StatsRulesProcFactory {
         // worst case when there are no column statistics
         float joinFactor = HiveConf.getFloatVar(conf, HiveConf.ConfVars.HIVE_STATS_JOIN_FACTOR);
         int numParents = parents.size();
-        List<Long> parentRows = Lists.newArrayList();
-        List<Long> parentSizes = Lists.newArrayList();
-        int maxRowIdx = 0;
+        long crossRowCount = 1;
+        long crossDataSize = 1;
         long maxRowCount = 0;
-        int idx = 0;
+        long maxDataSize = 0;
 
         for (Operator<? extends OperatorDesc> op : parents) {
           Statistics ps = op.getStatistics();
           long rowCount = ps.getNumRows();
+          long dataSize = ps.getDataSize();
+          // Update cross size
+          long newCrossRowCount = StatsUtils.safeMult(crossRowCount, rowCount);
+          long newCrossDataSize = StatsUtils.safeAdd(
+                  StatsUtils.safeMult(crossDataSize, rowCount),
+                  StatsUtils.safeMult(dataSize, crossRowCount));
+          crossRowCount = newCrossRowCount;
+          crossDataSize = newCrossDataSize;
+          // Update largest relation
           if (rowCount > maxRowCount) {
             maxRowCount = rowCount;
-            maxRowIdx = idx;
+            maxDataSize = dataSize;
           }
-          parentRows.add(rowCount);
-          parentSizes.add(ps.getDataSize());
-          idx++;
         }
 
-        long maxDataSize = parentSizes.get(maxRowIdx);
-        newNumRows = StatsUtils.safeMult(StatsUtils.safeMult(maxRowCount, (numParents - 1)), joinFactor);
-        long newDataSize = StatsUtils.safeMult(StatsUtils.safeMult(maxDataSize, (numParents - 1)), joinFactor);
+        long newDataSize;
+        // detect if there are attributes in join key
+        boolean cartesianProduct = false;
+        if (jop.getParentOperators().get(0) instanceof ReduceSinkOperator) {
+          ReduceSinkOperator rsOp = (ReduceSinkOperator) jop.getParentOperators().get(0);
+          List<String> keyExprs = StatsUtils.getQualifedReducerKeyNames(rsOp.getConf()
+              .getOutputKeyColumnNames());
+          cartesianProduct = keyExprs.size() == 0;
+        } else if (jop instanceof AbstractMapJoinOperator) {
+          AbstractMapJoinOperator<? extends MapJoinDesc> mjop =
+                  (AbstractMapJoinOperator<? extends MapJoinDesc>) jop;
+          List<ExprNodeDesc> keyExprs = mjop.getConf().getKeys().values().iterator().next();
+          cartesianProduct = keyExprs.size() == 0;
+        }
+        if (cartesianProduct) {
+          // Cartesian product
+          newNumRows = crossRowCount;
+          newDataSize = crossDataSize;
+        } else {
+          newNumRows = StatsUtils.safeMult(StatsUtils.safeMult(maxRowCount, (numParents - 1)), joinFactor);
+          newDataSize = StatsUtils.safeMult(StatsUtils.safeMult(maxDataSize, (numParents - 1)), joinFactor);
+        }
         Statistics wcStats = new Statistics();
         wcStats.setNumRows(newNumRows);
         wcStats.setDataSize(newDataSize);
@@ -1792,6 +1827,7 @@ public class StatsRulesProcFactory {
         }
       }
 
+      denom = denom == 0 ? 1 : denom;
       factor = (double) max / (double) denom;
 
       for (int i = 0; i < rowCountParents.size(); i++) {

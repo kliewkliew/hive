@@ -27,6 +27,7 @@ import java.sql.Timestamp;
 import java.util.HashMap;
 import java.util.Map;
 
+import org.apache.hadoop.hive.ql.util.TimestampUtils;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.apache.hadoop.hive.common.type.HiveChar;
@@ -484,6 +485,7 @@ public final class PrimitiveObjectInspectorUtils {
       return ((TimestampObjectInspector) oi).getPrimitiveWritableObject(o)
           .getDouble();
     case DECIMAL:
+      // TODO: lossy conversion!
       return ((HiveDecimalObjectInspector) oi).getPrimitiveJavaObject(o).doubleValue();
     case DATE:  // unsupported conversion
     default:
@@ -652,7 +654,7 @@ public final class PrimitiveObjectInspectorUtils {
       break;
     case DECIMAL:
       result = ((HiveDecimalObjectInspector) oi)
-          .getPrimitiveJavaObject(o).intValue();
+          .getPrimitiveJavaObject(o).intValue();  // TODO: lossy conversion!
       break;
     case DATE:  // unsupported conversion
     default: {
@@ -716,7 +718,7 @@ public final class PrimitiveObjectInspectorUtils {
       break;
     case DECIMAL:
       result = ((HiveDecimalObjectInspector) oi)
-          .getPrimitiveJavaObject(o).longValue();
+          .getPrimitiveJavaObject(o).longValue();  // TODO: lossy conversion!
       break;
     case DATE:  // unsupported conversion
     default:
@@ -1088,13 +1090,13 @@ public final class PrimitiveObjectInspectorUtils {
       result = TimestampWritable.longToTimestamp(longValue, intToTimestampInSeconds);
       break;
     case FLOAT:
-      result = TimestampWritable.doubleToTimestamp(((FloatObjectInspector) inputOI).get(o));
+      result = TimestampUtils.doubleToTimestamp(((FloatObjectInspector) inputOI).get(o));
       break;
     case DOUBLE:
-      result = TimestampWritable.doubleToTimestamp(((DoubleObjectInspector) inputOI).get(o));
+      result = TimestampUtils.doubleToTimestamp(((DoubleObjectInspector) inputOI).get(o));
       break;
     case DECIMAL:
-      result = TimestampWritable.decimalToTimestamp(((HiveDecimalObjectInspector) inputOI)
+      result = TimestampUtils.decimalToTimestamp(((HiveDecimalObjectInspector) inputOI)
                                                     .getPrimitiveJavaObject(o));
       break;
     case STRING:

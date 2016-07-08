@@ -16,35 +16,28 @@
  */
 package org.apache.hadoop.hive.llap;
 
+import java.io.DataInput;
+import java.io.DataInputStream;
+import java.io.IOException;
+import java.io.OutputStream;
+import java.net.InetAddress;
+import java.net.InetSocketAddress;
+import java.net.Socket;
+import java.nio.ByteBuffer;
+import java.sql.Connection;
+import java.sql.DriverManager;
+import java.sql.ResultSet;
+import java.sql.Statement;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Set;
 import java.util.concurrent.LinkedBlockingQueue;
 
-import java.sql.SQLException;
-import java.sql.Connection;
-import java.sql.ResultSet;
-import java.sql.Statement;
-import java.sql.DriverManager;
-
-import java.io.IOException;
-import java.io.DataInput;
-import java.io.DataOutput;
-import java.io.DataInputStream;
-import java.io.ByteArrayInputStream;
-import java.net.InetAddress;
-import java.net.InetSocketAddress;
-import java.net.Socket;
-import java.nio.ByteBuffer;
-
 import org.apache.commons.collections4.ListUtils;
-
-import org.apache.hadoop.fs.FileSystem;
 import org.apache.hadoop.hive.conf.HiveConf;
-import org.apache.hadoop.hive.llap.LlapBaseRecordReader;
 import org.apache.hadoop.hive.llap.LlapBaseRecordReader.ReaderEvent;
-import org.apache.hadoop.hive.llap.LlapInputSplit;
 import org.apache.hadoop.hive.llap.daemon.rpc.LlapDaemonProtocolProtos.FragmentRuntimeInfo;
+import org.apache.hadoop.hive.llap.daemon.rpc.LlapDaemonProtocolProtos.LlapOutputSocketInitMessage;
 import org.apache.hadoop.hive.llap.daemon.rpc.LlapDaemonProtocolProtos.SignableVertexSpec;
 import org.apache.hadoop.hive.llap.daemon.rpc.LlapDaemonProtocolProtos.SubmitWorkRequestProto;
 import org.apache.hadoop.hive.llap.daemon.rpc.LlapDaemonProtocolProtos.VertexOrBinary;
@@ -53,54 +46,45 @@ import org.apache.hadoop.hive.llap.ext.LlapTaskUmbilicalExternalClient.LlapTaskU
 import org.apache.hadoop.hive.llap.registry.ServiceInstance;
 import org.apache.hadoop.hive.llap.registry.ServiceInstanceSet;
 import org.apache.hadoop.hive.llap.registry.impl.LlapRegistryService;
+import org.apache.hadoop.hive.llap.security.LlapTokenIdentifier;
 import org.apache.hadoop.hive.llap.tez.Converters;
 import org.apache.hadoop.io.DataInputBuffer;
 import org.apache.hadoop.io.DataOutputBuffer;
+import org.apache.hadoop.io.NullWritable;
 import org.apache.hadoop.io.Text;
 import org.apache.hadoop.io.WritableComparable;
-import org.apache.hadoop.io.NullWritable;
-import org.apache.hadoop.io.Writable;
-import org.apache.hadoop.mapred.JobConf;
 import org.apache.hadoop.mapred.InputFormat;
 import org.apache.hadoop.mapred.InputSplit;
 import org.apache.hadoop.mapred.InputSplitWithLocationInfo;
-import org.apache.hadoop.mapred.SplitLocationInfo;
-import org.apache.hadoop.mapred.FileSplit;
+import org.apache.hadoop.mapred.JobConf;
 import org.apache.hadoop.mapred.RecordReader;
 import org.apache.hadoop.mapred.Reporter;
+import org.apache.hadoop.mapreduce.MRJobConfig;
+import org.apache.hadoop.mapreduce.TaskAttemptID;
 import org.apache.hadoop.security.Credentials;
-import org.apache.hadoop.security.UserGroupInformation;
 import org.apache.hadoop.security.token.Token;
-import org.apache.hadoop.security.token.TokenIdentifier;
-import org.apache.hadoop.util.Progressable;
 import org.apache.hadoop.yarn.api.ApplicationConstants;
 import org.apache.hadoop.yarn.api.records.ApplicationAttemptId;
 import org.apache.hadoop.yarn.api.records.ApplicationId;
 import org.apache.hadoop.yarn.api.records.ContainerId;
-
 import org.apache.tez.common.security.JobTokenIdentifier;
 import org.apache.tez.common.security.TokenCache;
 import org.apache.tez.dag.records.TezTaskAttemptID;
 import org.apache.tez.runtime.api.events.TaskAttemptFailedEvent;
 import org.apache.tez.runtime.api.impl.EventType;
-import org.apache.tez.runtime.api.impl.TaskSpec;
-import org.apache.tez.runtime.api.impl.TezEvent;
 import org.apache.tez.runtime.api.impl.TezEvent;
 import org.apache.tez.runtime.api.impl.TezHeartbeatRequest;
-import org.apache.tez.runtime.api.impl.TezHeartbeatResponse;
-
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import com.google.common.base.Preconditions;
-import com.google.common.collect.Lists;
 import com.google.protobuf.ByteString;
 
 
 /**
  * Base LLAP input format to handle requesting of splits and communication with LLAP daemon.
  */
-public class LlapBaseInputFormat<V extends WritableComparable> implements InputFormat<NullWritable, V> {
+public class LlapBaseInputFormat<V extends WritableComparable<?>>
+  implements InputFormat<NullWritable, V> {
 
   private static final Logger LOG = LoggerFactory.getLogger(LlapBaseInputFormat.class);
 
@@ -117,9 +101,6 @@ public class LlapBaseInputFormat<V extends WritableComparable> implements InputF
 
   public final String SPLIT_QUERY = "select get_splits(\"%s\",%d)";
 
-  private Connection con;
-  private Statement stmt;
-
   public LlapBaseInputFormat(String url, String user, String pwd, String query) {
     this.url = url;
     this.user = user;
@@ -130,6 +111,7 @@ public class LlapBaseInputFormat<V extends WritableComparable> implements InputF
   public LlapBaseInputFormat() {}
 
 
+  @SuppressWarnings("unchecked")
   @Override
   public RecordReader<NullWritable, V> getRecordReader(InputSplit split, JobConf job, Reporter reporter) throws IOException {
 
@@ -146,42 +128,62 @@ public class LlapBaseInputFormat<V extends WritableComparable> implements InputF
     LOG.info("Found service instance for host " + host + " with rpc port " + llapSubmitPort
         + " and outputformat port " + serviceInstance.getOutputFormatPort());
 
+    byte[] llapTokenBytes = llapSplit.getTokenBytes();
+    Token<LlapTokenIdentifier> llapToken = null;
+    if (llapTokenBytes != null) {
+      DataInputBuffer in = new DataInputBuffer();
+      in.reset(llapTokenBytes, 0, llapTokenBytes.length);
+      llapToken = new Token<LlapTokenIdentifier>();
+      llapToken.readFields(in);
+    }
+
     LlapRecordReaderTaskUmbilicalExternalResponder umbilicalResponder =
         new LlapRecordReaderTaskUmbilicalExternalResponder();
     LlapTaskUmbilicalExternalClient llapClient =
       new LlapTaskUmbilicalExternalClient(job, submitWorkInfo.getTokenIdentifier(),
-          submitWorkInfo.getToken(), umbilicalResponder);
+          submitWorkInfo.getToken(), umbilicalResponder, llapToken);
     llapClient.init(job);
     llapClient.start();
 
-    SubmitWorkRequestProto submitWorkRequestProto =
-      constructSubmitWorkRequestProto(submitWorkInfo, llapSplit.getSplitNum(),
-          llapClient.getAddress(), submitWorkInfo.getToken());
+    int attemptNum = 0;
+    // Use task attempt number from conf if provided
+    TaskAttemptID taskAttemptId = TaskAttemptID.forName(job.get(MRJobConfig.TASK_ATTEMPT_ID));
+    if (taskAttemptId != null) {
+      attemptNum = taskAttemptId.getId();
+      if (LOG.isDebugEnabled()) {
+        LOG.debug("Setting attempt number to " + attemptNum + " from task attempt ID in conf: " +
+            job.get(MRJobConfig.TASK_ATTEMPT_ID));
+      }
+    }
 
-    TezEvent tezEvent = new TezEvent();
-    DataInputBuffer dib = new DataInputBuffer();
-    dib.reset(llapSplit.getFragmentBytes(), 0, llapSplit.getFragmentBytes().length);
-    tezEvent.readFields(dib);
-    List<TezEvent> tezEventList = Lists.newArrayList();
-    tezEventList.add(tezEvent);
+    SubmitWorkRequestProto request = constructSubmitWorkRequestProto(
+        submitWorkInfo, llapSplit.getSplitNum(), attemptNum, llapClient.getAddress(),
+        submitWorkInfo.getToken(), llapSplit.getFragmentBytes(),
+        llapSplit.getFragmentBytesSignature());
+    llapClient.submitWork(request, host, llapSubmitPort);
 
-    llapClient.submitWork(submitWorkRequestProto, host, llapSubmitPort, tezEventList);
-
-    String id = HiveConf.getVar(job, HiveConf.ConfVars.HIVEQUERYID) + "_" + llapSplit.getSplitNum();
-
-    HiveConf conf = new HiveConf();
-    Socket socket = new Socket(host,
-        serviceInstance.getOutputFormatPort());
+    Socket socket = new Socket(host, serviceInstance.getOutputFormatPort());
 
     LOG.debug("Socket connected");
+    SignableVertexSpec vertex = SignableVertexSpec.parseFrom(submitWorkInfo.getVertexBinary());
 
-    socket.getOutputStream().write(id.getBytes());
-    socket.getOutputStream().write(0);
-    socket.getOutputStream().flush();
+    String fragmentId =
+        Converters.createTaskAttemptId(vertex.getQueryIdentifier(), vertex.getVertexIndex(),
+            request.getFragmentNumber(), request.getAttemptNumber()).toString();
+    OutputStream socketStream = socket.getOutputStream();
+    LlapOutputSocketInitMessage.Builder builder =
+        LlapOutputSocketInitMessage.newBuilder().setFragmentId(fragmentId);
+    if (llapSplit.getTokenBytes() != null) {
+      builder.setToken(ByteString.copyFrom(llapSplit.getTokenBytes()));
+    }
+    builder.build().writeDelimitedTo(socketStream);
+    socketStream.flush();
 
-    LOG.info("Registered id: " + id);
+    LOG.info("Registered id: " + fragmentId);
 
-    LlapBaseRecordReader recordReader = new LlapBaseRecordReader(socket.getInputStream(), llapSplit.getSchema(), Text.class, job);
+    @SuppressWarnings("rawtypes")
+    LlapBaseRecordReader recordReader = new LlapBaseRecordReader(socket.getInputStream(),
+        llapSplit.getSchema(), Text.class, job, llapClient, (java.io.Closeable)socket);
     umbilicalResponder.setRecordReader(recordReader);
     return recordReader;
   }
@@ -205,11 +207,12 @@ public class LlapBaseInputFormat<V extends WritableComparable> implements InputF
       throw new IOException(e);
     }
 
-    try {
-      con = DriverManager.getConnection(url,user,pwd);
-      stmt = con.createStatement();
-      String sql = String.format(SPLIT_QUERY, query, numSplits);
+    String sql = String.format(SPLIT_QUERY, query, numSplits);
+    try (
+      Connection con = DriverManager.getConnection(url,user,pwd);
+      Statement stmt = con.createStatement();
       ResultSet res = stmt.executeQuery(sql);
+    ) {
       while (res.next()) {
         // deserialize split
         DataInput in = new DataInputStream(res.getBinaryStream(1));
@@ -217,21 +220,10 @@ public class LlapBaseInputFormat<V extends WritableComparable> implements InputF
         is.readFields(in);
         ins.add(is);
       }
-
-      res.close();
-      stmt.close();
     } catch (Exception e) {
       throw new IOException(e);
     }
     return ins.toArray(new InputSplit[ins.size()]);
-  }
-
-  public void close() {
-    try {
-      con.close();
-    } catch (Exception e) {
-      // ignore
-    }
   }
 
   private ServiceInstance getServiceInstance(JobConf job, LlapInputSplit llapSplit) throws IOException {
@@ -295,25 +287,17 @@ public class LlapBaseInputFormat<V extends WritableComparable> implements InputF
   }
 
   private SubmitWorkRequestProto constructSubmitWorkRequestProto(SubmitWorkInfo submitWorkInfo,
-      int taskNum,
-      InetSocketAddress address,
-      Token<JobTokenIdentifier> token) throws
-        IOException {
-    TaskSpec taskSpec = submitWorkInfo.getTaskSpec();
+      int taskNum, int attemptNum, InetSocketAddress address, Token<JobTokenIdentifier> token,
+      byte[] fragmentBytes, byte[] fragmentBytesSignature) throws IOException {
     ApplicationId appId = submitWorkInfo.getFakeAppId();
 
-    int attemptId = taskSpec.getTaskAttemptID().getId();
     // This works, assuming the executor is running within YARN.
     String user = System.getenv(ApplicationConstants.Environment.USER.name());
     LOG.info("Setting user in submitWorkRequest to: " + user);
-    SignableVertexSpec svs = Converters.convertTaskSpecToProto(
-        taskSpec, attemptId, appId.toString(), null, user); // TODO signatureKeyId
 
     ContainerId containerId =
-      ContainerId.newInstance(ApplicationAttemptId.newInstance(appId, 0), taskNum);
+        ContainerId.newInstance(ApplicationAttemptId.newInstance(appId, attemptNum), taskNum);
 
-
-    Credentials taskCredentials = new Credentials();
     // Credentials can change across DAGs. Ideally construct only once per DAG.
     Credentials credentials = new Credentials();
     TokenCache.setSessionToken(token, credentials);
@@ -324,21 +308,29 @@ public class LlapBaseInputFormat<V extends WritableComparable> implements InputF
     runtimeInfo.setWithinDagPriority(0);
     runtimeInfo.setDagStartTime(submitWorkInfo.getCreationTime());
     runtimeInfo.setFirstAttemptStartTime(submitWorkInfo.getCreationTime());
-    runtimeInfo.setNumSelfAndUpstreamTasks(taskSpec.getVertexParallelism());
+    runtimeInfo.setNumSelfAndUpstreamTasks(submitWorkInfo.getVertexParallelism());
     runtimeInfo.setNumSelfAndUpstreamCompletedTasks(0);
 
     SubmitWorkRequestProto.Builder builder = SubmitWorkRequestProto.newBuilder();
 
-    builder.setWorkSpec(VertexOrBinary.newBuilder().setVertex(svs).build());
-    // TODO work spec signature
-    builder.setFragmentNumber(taskSpec.getTaskAttemptID().getTaskID().getId());
-    builder.setAttemptNumber(0);
+    VertexOrBinary.Builder vertexBuilder = VertexOrBinary.newBuilder();
+    vertexBuilder.setVertexBinary(ByteString.copyFrom(submitWorkInfo.getVertexBinary()));
+    if (submitWorkInfo.getVertexSignature() != null) {
+      // Unsecure case?
+      builder.setWorkSpecSignature(ByteString.copyFrom(submitWorkInfo.getVertexSignature()));
+    }
+    builder.setWorkSpec(vertexBuilder.build());
+    builder.setFragmentNumber(taskNum);
+    builder.setAttemptNumber(attemptNum);
     builder.setContainerIdString(containerId.toString());
     builder.setAmHost(address.getHostName());
     builder.setAmPort(address.getPort());
     builder.setCredentialsBinary(ByteString.copyFrom(credentialsBinary));
     builder.setFragmentRuntimeInfo(runtimeInfo.build());
-
+    builder.setInitialEventBytes(ByteString.copyFrom(fragmentBytes));
+    if (fragmentBytesSignature != null) {
+      builder.setInitialEventSignature(ByteString.copyFrom(fragmentBytesSignature));
+    }
     return builder.build();
   }
 
@@ -351,7 +343,7 @@ public class LlapBaseInputFormat<V extends WritableComparable> implements InputF
   }
 
   private static class LlapRecordReaderTaskUmbilicalExternalResponder implements LlapTaskUmbilicalExternalResponder {
-    protected LlapBaseRecordReader recordReader = null;
+    protected LlapBaseRecordReader<?> recordReader = null;
     protected LinkedBlockingQueue<ReaderEvent> queuedEvents = new LinkedBlockingQueue<ReaderEvent>();
 
     public LlapRecordReaderTaskUmbilicalExternalResponder() {
@@ -369,7 +361,6 @@ public class LlapBaseInputFormat<V extends WritableComparable> implements InputF
 
     @Override
     public void heartbeat(TezHeartbeatRequest request) {
-      TezTaskAttemptID taskAttemptId = request.getCurrentTaskAttemptID();
       List<TezEvent> inEvents = request.getEvents();
       for (TezEvent tezEvent : ListUtils.emptyIfNull(inEvents)) {
         EventType eventType = tezEvent.getEventType();
@@ -415,7 +406,7 @@ public class LlapBaseInputFormat<V extends WritableComparable> implements InputF
       }
     }
 
-    public synchronized LlapBaseRecordReader getRecordReader() {
+    public synchronized LlapBaseRecordReader<?> getRecordReader() {
       return recordReader;
     }
 
@@ -441,7 +432,7 @@ public class LlapBaseInputFormat<V extends WritableComparable> implements InputF
      * @param readerEvent
      */
     protected synchronized void sendOrQueueEvent(ReaderEvent readerEvent) {
-      LlapBaseRecordReader recordReader = getRecordReader();
+      LlapBaseRecordReader<?> recordReader = getRecordReader();
       if (recordReader != null) {
         recordReader.handleEvent(readerEvent);
       } else {

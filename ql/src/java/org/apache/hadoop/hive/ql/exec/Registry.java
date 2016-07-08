@@ -47,7 +47,7 @@ import org.apache.hadoop.hive.ql.udf.generic.SimpleGenericUDAFParameterInfo;
 import org.apache.hadoop.hive.ql.udf.ptf.TableFunctionResolver;
 import org.apache.hadoop.hive.serde2.objectinspector.ObjectInspector;
 import org.apache.hadoop.hive.serde2.typeinfo.TypeInfo;
-import org.apache.hadoop.util.ReflectionUtils;
+import org.apache.hive.common.util.ReflectionUtil;
 
 import java.io.IOException;
 import java.util.Collections;
@@ -125,7 +125,7 @@ public class Registry {
       case GENERIC_UDAF_RESOLVER:
         return registerGenericUDAF(
             functionName, (GenericUDAFResolver)
-            ReflectionUtils.newInstance(udfClass, null), resources);
+            ReflectionUtil.newInstance(udfClass, null), resources);
       case TABLE_FUNCTION_RESOLVER:
         // native or not would be decided by annotation. need to evaluate that first
         return registerTableFunction(functionName,
@@ -154,7 +154,7 @@ public class Registry {
       Class<? extends GenericUDF> genericUDFClass, FunctionResource... resources) {
     validateClass(genericUDFClass, GenericUDF.class);
     FunctionInfo fI = new FunctionInfo(isNative, functionName,
-        ReflectionUtils.newInstance(genericUDFClass, null), resources);
+        ReflectionUtil.newInstance(genericUDFClass, null), resources);
     addFunction(functionName, fI);
     return fI;
   }
@@ -179,7 +179,7 @@ public class Registry {
       Class<? extends GenericUDTF> genericUDTFClass, FunctionResource... resources) {
     validateClass(genericUDTFClass, GenericUDTF.class);
     FunctionInfo fI = new FunctionInfo(isNative, functionName,
-        ReflectionUtils.newInstance(genericUDTFClass, null), resources);
+        ReflectionUtil.newInstance(genericUDTFClass, null), resources);
     addFunction(functionName, fI);
     return fI;
   }
@@ -197,7 +197,7 @@ public class Registry {
       Class<? extends UDAF> udafClass, FunctionResource... resources) {
     validateClass(udafClass, UDAF.class);
     FunctionInfo function = new WindowFunctionInfo(isNative, functionName,
-        new GenericUDAFBridge(ReflectionUtils.newInstance(udafClass, null)), resources);
+        new GenericUDAFBridge(ReflectionUtil.newInstance(udafClass, null)), resources);
     addFunction(functionName, function);
     addFunction(WINDOW_FUNC_PREFIX + functionName, function);
     return function;
@@ -395,7 +395,7 @@ public class Registry {
    */
   @SuppressWarnings("deprecation")
   public GenericUDAFEvaluator getGenericUDAFEvaluator(String name,
-      List<ObjectInspector> argumentOIs, boolean isDistinct,
+      List<ObjectInspector> argumentOIs, boolean isWindowing, boolean isDistinct,
       boolean isAllColumns) throws SemanticException {
 
     GenericUDAFResolver udafResolver = getGenericUDAFResolver(name);
@@ -413,7 +413,7 @@ public class Registry {
 
     GenericUDAFParameterInfo paramInfo =
         new SimpleGenericUDAFParameterInfo(
-            args, isDistinct, isAllColumns);
+            args, isWindowing, isDistinct, isAllColumns);
     if (udafResolver instanceof GenericUDAFResolver2) {
       udafEvaluator =
           ((GenericUDAFResolver2) udafResolver).getEvaluator(paramInfo);
@@ -433,14 +433,14 @@ public class Registry {
     }
     if (!functionName.equals(FunctionRegistry.LEAD_FUNC_NAME) &&
         !functionName.equals(FunctionRegistry.LAG_FUNC_NAME)) {
-      return getGenericUDAFEvaluator(functionName, argumentOIs, isDistinct, isAllColumns);
+      return getGenericUDAFEvaluator(functionName, argumentOIs, true, isDistinct, isAllColumns);
     }
 
     // this must be lead/lag UDAF
     ObjectInspector args[] = new ObjectInspector[argumentOIs.size()];
     GenericUDAFResolver udafResolver = info.getGenericUDAFResolver();
     GenericUDAFParameterInfo paramInfo = new SimpleGenericUDAFParameterInfo(
-        argumentOIs.toArray(args), isDistinct, isAllColumns);
+        argumentOIs.toArray(args), true, isDistinct, isAllColumns);
     return ((GenericUDAFResolver2) udafResolver).getEvaluator(paramInfo);
   }
 
@@ -556,7 +556,16 @@ public class Registry {
     // and the current thread may not be able to resolve the UDF. Test for this condition
     // and if necessary load the JARs in this thread.
     if (isNative && info != null && info.isPersistent()) {
-      return registerToSessionRegistry(qualifiedName, info);
+      Class<?> functionClass;
+      try {
+        functionClass = info.getFunctionClass();
+      } catch (Exception e) {
+        return registerToSessionRegistry(qualifiedName, info);
+      }
+      if (functionClass == null) {
+        return registerToSessionRegistry(qualifiedName, info);
+      }
+      return info;
     }
     if (info != null || !isNative) {
       return info; // We have the UDF, or we are in the session registry (or both).

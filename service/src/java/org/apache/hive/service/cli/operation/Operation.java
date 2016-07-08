@@ -104,10 +104,6 @@ public abstract class Operation {
     queryState = new QueryState(parentSession.getHiveConf(), confOverlay, runAsync);
   }
 
-  public QueryState getQueryState() {
-    return queryState;
-  }
-
   public Future<?> getBackgroundHandle() {
     return backgroundHandle;
   }
@@ -144,7 +140,7 @@ public abstract class Operation {
     } catch (HiveSQLException sqlException) {
       LOG.error("Error getting task status for " + opHandle.toString(), sqlException);
     }
-    return new OperationStatus(state, taskStatus, operationStart, operationComplete, operationException);
+    return new OperationStatus(state, taskStatus, operationStart, operationComplete, hasResultSet, operationException);
   }
 
   public boolean hasResultSet() {

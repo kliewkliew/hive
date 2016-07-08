@@ -29,8 +29,10 @@ import org.apache.hadoop.hive.conf.HiveConfUtil;
 import org.apache.hadoop.hive.metastore.api.AbortTxnRequest;
 import org.apache.hadoop.hive.metastore.api.AbortTxnsRequest;
 import org.apache.hadoop.hive.metastore.api.AddDynamicPartitions;
+import org.apache.hadoop.hive.metastore.api.AddForeignKeyRequest;
 import org.apache.hadoop.hive.metastore.api.AddPartitionsRequest;
 import org.apache.hadoop.hive.metastore.api.AddPartitionsResult;
+import org.apache.hadoop.hive.metastore.api.AddPrimaryKeyRequest;
 import org.apache.hadoop.hive.metastore.api.AggrStats;
 import org.apache.hadoop.hive.metastore.api.AlreadyExistsException;
 import org.apache.hadoop.hive.metastore.api.CacheFileMetadataRequest;
@@ -44,6 +46,7 @@ import org.apache.hadoop.hive.metastore.api.CompactionRequest;
 import org.apache.hadoop.hive.metastore.api.CompactionType;
 import org.apache.hadoop.hive.metastore.api.ConfigValSecurityException;
 import org.apache.hadoop.hive.metastore.api.CurrentNotificationEventId;
+import org.apache.hadoop.hive.metastore.api.DataOperationType;
 import org.apache.hadoop.hive.metastore.api.Database;
 import org.apache.hadoop.hive.metastore.api.DropConstraintRequest;
 import org.apache.hadoop.hive.metastore.api.DropPartitionsExpr;
@@ -155,6 +158,7 @@ import java.nio.ByteBuffer;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collection;
+import java.util.Collections;
 import java.util.HashMap;
 import java.util.Iterator;
 import java.util.LinkedHashMap;
@@ -184,7 +188,7 @@ public class HiveMetaStoreClient implements IMetaStoreClient {
   private boolean isConnected = false;
   private URI metastoreUris[];
   private final HiveMetaHookLoader hookLoader;
-  protected final HiveConf conf;
+  protected final HiveConf conf;  // Keep a copy of HiveConf so if Session conf changes, we may need to get a new HMS client.
   protected boolean fastpath = false;
   private String tokenStrForm;
   private final boolean localMetaStore;
@@ -211,8 +215,10 @@ public class HiveMetaStoreClient implements IMetaStoreClient {
     this.hookLoader = hookLoader;
     if (conf == null) {
       conf = new HiveConf(HiveMetaStoreClient.class);
+      this.conf = conf;
+    } else {
+      this.conf = new HiveConf(conf);
     }
-    this.conf = conf;
     filterHook = loadFilterHooks();
     fileMetadataBatchSize = HiveConf.getIntVar(
         conf, HiveConf.ConfVars.METASTORE_BATCH_RETRIEVE_OBJECTS_MAX);
@@ -227,10 +233,10 @@ public class HiveMetaStoreClient implements IMetaStoreClient {
       // instantiate the metastore server handler directly instead of connecting
       // through the network
       if (conf.getBoolVar(ConfVars.METASTORE_FASTPATH)) {
-        client = new HiveMetaStore.HMSHandler("hive client", conf, true);
+        client = new HiveMetaStore.HMSHandler("hive client", this.conf, true);
         fastpath = true;
       } else {
-        client = HiveMetaStore.newRetryingHMSHandler("hive client", conf, true);
+        client = HiveMetaStore.newRetryingHMSHandler("hive client", this.conf, true);
       }
       isConnected = true;
       snapshotActiveConf();
@@ -263,6 +269,10 @@ public class HiveMetaStoreClient implements IMetaStoreClient {
           metastoreUris[i++] = tmpUri;
 
         }
+        // make metastore URIS random
+        List uriList = Arrays.asList(metastoreUris);
+        Collections.shuffle(uriList);
+        metastoreUris = (URI[]) uriList.toArray();
       } catch (IllegalArgumentException e) {
         throw (e);
       } catch (Exception e) {
@@ -430,7 +440,7 @@ public class HiveMetaStoreClient implements IMetaStoreClient {
               // this should happen on the map/reduce tasks if the client added the
               // tokens into hadoop's credential store in the front end during job
               // submission.
-              String tokenSig = conf.get("hive.metastore.token.signature");
+              String tokenSig = conf.getVar(ConfVars.METASTORE_TOKEN_SIGNATURE);
               // tokenSig could be null
               tokenStrForm = Utils.getTokenStrForm(tokenSig);
               if(tokenStrForm != null) {
@@ -770,6 +780,18 @@ public class HiveMetaStoreClient implements IMetaStoreClient {
   public void dropConstraint(String dbName, String tableName, String constraintName) throws
     NoSuchObjectException, MetaException, TException {
     client.drop_constraint(new DropConstraintRequest(dbName, tableName, constraintName));
+  }
+
+  @Override
+  public void addPrimaryKey(List<SQLPrimaryKey> primaryKeyCols) throws
+    NoSuchObjectException, MetaException, TException {
+    client.add_primary_key(new AddPrimaryKeyRequest(primaryKeyCols));
+  }
+
+  @Override
+  public void addForeignKey(List<SQLForeignKey> foreignKeyCols) throws
+    NoSuchObjectException, MetaException, TException {
+    client.add_foreign_key(new AddForeignKeyRequest(foreignKeyCols));
   }
 
 /**
@@ -1579,6 +1601,8 @@ public class HiveMetaStoreClient implements IMetaStoreClient {
 
   /** {@inheritDoc} */
   @Override
+  @Deprecated
+  //use setPartitionColumnStatistics instead
   public boolean updateTableColumnStatistics(ColumnStatistics statsObj)
     throws NoSuchObjectException, InvalidObjectException, MetaException, TException,
     InvalidInputException{
@@ -1587,6 +1611,8 @@ public class HiveMetaStoreClient implements IMetaStoreClient {
 
   /** {@inheritDoc} */
   @Override
+  @Deprecated
+  //use setPartitionColumnStatistics instead
   public boolean updatePartitionColumnStatistics(ColumnStatistics statsObj)
     throws NoSuchObjectException, InvalidObjectException, MetaException, TException,
     InvalidInputException{
@@ -2099,8 +2125,14 @@ public class HiveMetaStoreClient implements IMetaStoreClient {
   }
 
   @Override
+  @Deprecated
   public ShowLocksResponse showLocks() throws TException {
     return client.show_locks(new ShowLocksRequest());
+  }
+
+  @Override
+  public ShowLocksResponse showLocks(ShowLocksRequest request) throws TException {
+    return client.show_locks(request);
   }
 
   @Override
@@ -2121,6 +2153,7 @@ public class HiveMetaStoreClient implements IMetaStoreClient {
   }
 
   @Override
+  @Deprecated
   public void compact(String dbname, String tableName, String partitionName,  CompactionType type)
       throws TException {
     CompactionRequest cr = new CompactionRequest();
@@ -2133,14 +2166,35 @@ public class HiveMetaStoreClient implements IMetaStoreClient {
   }
 
   @Override
+  public void compact(String dbname, String tableName, String partitionName, CompactionType type,
+                      Map<String, String> tblproperties) throws TException {
+    CompactionRequest cr = new CompactionRequest();
+    if (dbname == null) cr.setDbname(DEFAULT_DATABASE_NAME);
+    else cr.setDbname(dbname);
+    cr.setTablename(tableName);
+    if (partitionName != null) cr.setPartitionname(partitionName);
+    cr.setType(type);
+    cr.setProperties(tblproperties);
+    client.compact(cr);
+  }
+
+  @Override
   public ShowCompactResponse showCompactions() throws TException {
     return client.show_compact(new ShowCompactRequest());
   }
 
+  @Deprecated
   @Override
   public void addDynamicPartitions(long txnId, String dbName, String tableName,
                                    List<String> partNames) throws TException {
     client.add_dynamic_partitions(new AddDynamicPartitions(txnId, dbName, tableName, partNames));
+  }  
+  @Override
+  public void addDynamicPartitions(long txnId, String dbName, String tableName,
+                                   List<String> partNames, DataOperationType operationType) throws TException {
+    AddDynamicPartitions adp = new AddDynamicPartitions(txnId, dbName, tableName, partNames);
+    adp.setOperationType(operationType);
+    client.add_dynamic_partitions(adp);
   }
 
   @InterfaceAudience.LimitedPrivate({"HCatalog"})

@@ -228,6 +228,8 @@ public interface RawStore extends Configurable {
   public abstract int getNumPartitionsByFilter(String dbName, String tblName, String filter)
     throws MetaException, NoSuchObjectException;
 
+  public abstract int getNumPartitionsByExpr(String dbName, String tblName, byte[] expr) throws MetaException, NoSuchObjectException;
+
   public abstract List<Partition> getPartitionsByNames(
       String dbName, String tblName, List<String> partNames)
       throws MetaException, NoSuchObjectException;
@@ -674,4 +676,8 @@ public interface RawStore extends Configurable {
     List<SQLForeignKey> foreignKeys) throws InvalidObjectException, MetaException;
 
   void dropConstraint(String dbName, String tableName, String constraintName) throws NoSuchObjectException;
+
+  void addPrimaryKeys(List<SQLPrimaryKey> pks) throws InvalidObjectException, MetaException;
+
+  void addForeignKeys(List<SQLForeignKey> fks) throws InvalidObjectException, MetaException;
 }
