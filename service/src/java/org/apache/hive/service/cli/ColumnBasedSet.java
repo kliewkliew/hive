@@ -58,6 +58,11 @@ public class ColumnBasedSet implements RowSet {
     }
   }
 
+  public ColumnBasedSet(List<ColumnBuffer> columnsIn) {
+    descriptors = null;
+    columns = columnsIn;
+  }
+
   public ColumnBasedSet(TRowSet tRowSet) throws TException {
     descriptors = null;
     columns = new ArrayList<ColumnBuffer>();
