@@ -102,32 +102,32 @@ public class ThriftJDBCBinarySerDe extends AbstractSerDe {
   }
 
   private Writable serializeBatch() throws SerDeException {
-	  output.reset();
-	  for (int i = 0; i < columnBuffers.length; i++) {
-		  TColumn tColumn = columnBuffers[i].toTColumn();
-		  try {
-			  tColumn.write(protocol);
-		  } catch(TException e) {
-			  throw new SerDeException(e);
-		  }
-	  }
-	  initializeRowAndColumns();
-	  serializedBytesWritable.set(output.getData(), 0, output.getLength());
-	  return serializedBytesWritable;
+    output.reset();
+    for (int i = 0; i < columnBuffers.length; i++) {
+      TColumn tColumn = columnBuffers[i].toTColumn();
+      try {
+        tColumn.write(protocol);
+      } catch(TException e) {
+        throw new SerDeException(e);
+      }
+    }
+    initializeRowAndColumns();
+    serializedBytesWritable.set(output.getData(), 0, output.getLength());
+    return serializedBytesWritable;
   }
 
   // use the columnNames to initialize the reusable row object and the columnBuffers. reason this is being done is if buffer is full, we should reinitialize the
   // column buffers, otherwise at the end when closeOp() is called, things get printed multiple times.
   private void initializeRowAndColumns() {
-	    row = new ArrayList<Object>(columnNames.size());
-	    for (int i = 0; i < columnNames.size(); i++) {
-	      row.add(null);
-	    }
-	    // Initialize column buffers
-	    columnBuffers = new ColumnBuffer[columnNames.size()];
-	    for (int i = 0; i < columnBuffers.length; i++) {
-	      columnBuffers[i] = new ColumnBuffer(Type.getType(columnTypes.get(i)));
-	    }
+    row = new ArrayList<Object>(columnNames.size());
+    for (int i = 0; i < columnNames.size(); i++) {
+      row.add(null);
+    }
+    // Initialize column buffers
+    columnBuffers = new ColumnBuffer[columnNames.size()];
+    for (int i = 0; i < columnBuffers.length; i++) {
+      columnBuffers[i] = new ColumnBuffer(Type.getType(columnTypes.get(i)));
+    }
   }
 
   /**
@@ -142,10 +142,10 @@ public class ThriftJDBCBinarySerDe extends AbstractSerDe {
     StructObjectInspector soi = (StructObjectInspector) objInspector;
     List<? extends StructField> fields = soi.getAllStructFieldRefs();
     try {
-	    Object[] formattedRow = (Object[]) thriftFormatter.convert(obj, objInspector);
-	    for (int i = 0; i < columnNames.size(); i++) {
-	        columnBuffers[i].addValue(formattedRow[i]);
-	    }
+      Object[] formattedRow = (Object[]) thriftFormatter.convert(obj, objInspector);
+      for (int i = 0; i < columnNames.size(); i++) {
+        columnBuffers[i].addValue(formattedRow[i]);
+      }
     } catch (Exception e) {
         throw new SerDeException(e);
     }
