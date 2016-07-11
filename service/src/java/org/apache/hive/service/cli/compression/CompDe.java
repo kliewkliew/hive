@@ -19,6 +19,7 @@
 
 package org.apache.hive.service.cli.compression;
 
+import java.util.List;
 import java.util.Map;
 
 import org.apache.hadoop.classification.InterfaceAudience;
@@ -54,5 +55,5 @@ public interface CompDe {
    * @param compressedSet
    * @return The set of columns.
    */
-  public ColumnBuffer[] decompress(byte[] compressedSet);
+  public List<ColumnBuffer> decompress(byte[] compressedSet);
 }
