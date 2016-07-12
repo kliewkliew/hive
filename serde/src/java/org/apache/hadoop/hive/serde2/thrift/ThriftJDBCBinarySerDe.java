@@ -38,6 +38,7 @@ import org.apache.hadoop.hive.serde2.typeinfo.TypeInfoFactory;
 import org.apache.hadoop.hive.serde2.typeinfo.TypeInfoUtils;
 import org.apache.hadoop.io.BytesWritable;
 import org.apache.hadoop.io.Writable;
+import org.apache.hive.service.cli.compression.CompDe;
 import org.apache.hive.service.rpc.thrift.TColumn;
 import org.apache.thrift.TException;
 import org.apache.thrift.protocol.TCompactProtocol;
@@ -65,10 +66,13 @@ public class ThriftJDBCBinarySerDe extends AbstractSerDe {
   private int MAX_BUFFERED_ROWS;
   private int count;
   private StructObjectInspector rowObjectInspector;
+  private Configuration conf;
 
 
   @Override
-  public void initialize(Configuration conf, Properties tbl) throws SerDeException {
+  public void initialize(Configuration initConf, Properties tbl) throws SerDeException {
+    conf = initConf;
+    
     // Get column names
 	MAX_BUFFERED_ROWS = HiveConf.getIntVar(conf, HiveConf.ConfVars.HIVE_SERVER2_THRIFT_RESULTSET_MAX_FETCH_SIZE);
     String columnNameProperty = tbl.getProperty(serdeConstants.LIST_COLUMNS);
@@ -103,14 +107,21 @@ public class ThriftJDBCBinarySerDe extends AbstractSerDe {
 
   private Writable serializeBatch() throws SerDeException {
     output.reset();
-    for (int i = 0; i < columnBuffers.length; i++) {
-      TColumn tColumn = columnBuffers[i].toTColumn();
-      try {
-        tColumn.write(protocol);
-      } catch(TException e) {
-        throw new SerDeException(e);
+    
+    if (!HiveConf.getVar(conf, HiveConf.ConfVars.HIVE_SERVER2_THRIFT_RESULTSET_COMPRESSOR, "").isEmpty()) {
+      //TODO
+    }
+    else {
+      for (int i = 0; i < columnBuffers.length; i++) {
+        TColumn tColumn = columnBuffers[i].toTColumn();
+        try {
+          tColumn.write(protocol);
+        } catch(TException e) {
+          throw new SerDeException(e);
+        }
       }
     }
+    
     initializeRowAndColumns();
     serializedBytesWritable.set(output.getData(), 0, output.getLength());
     return serializedBytesWritable;
