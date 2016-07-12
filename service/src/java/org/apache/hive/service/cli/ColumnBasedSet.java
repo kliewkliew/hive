@@ -26,6 +26,7 @@ import java.util.List;
 import org.apache.hadoop.hive.common.type.HiveDecimal;
 import org.apache.hadoop.hive.serde2.thrift.ColumnBuffer;
 import org.apache.hadoop.hive.serde2.thrift.Type;
+import org.apache.hive.service.cli.compression.CompDe;
 import org.apache.hive.service.rpc.thrift.TColumn;
 import org.apache.hive.service.rpc.thrift.TRow;
 import org.apache.hive.service.rpc.thrift.TRowSet;
@@ -58,32 +59,38 @@ public class ColumnBasedSet implements RowSet {
     }
   }
 
-  public ColumnBasedSet(List<ColumnBuffer> columnsIn) {
-    descriptors = null;
-    columns = columnsIn;
+  public ColumnBasedSet(TRowSet tRowSet) throws TException {
+    this(tRowSet, null);
   }
 
-  public ColumnBasedSet(TRowSet tRowSet) throws TException {
+  public ColumnBasedSet(TRowSet tRowSet, CompDe compDe) throws TException {
     descriptors = null;
-    columns = new ArrayList<ColumnBuffer>();
-    // Use TCompactProtocol to read serialized TColumns
+    // TODO: use ServiceLoader instead of passing in constructor
     if (tRowSet.isSetBinaryColumns()) {
-      TProtocol protocol =
-          new TCompactProtocol(new TIOStreamTransport(new ByteArrayInputStream(
-              tRowSet.getBinaryColumns())));
-      // Read from the stream using the protocol for each column in final schema
-      for (int i = 0; i < tRowSet.getColumnCount(); i++) {
-        TColumn tvalue = new TColumn();
-        try {
-          tvalue.read(protocol);
-        } catch (TException e) {
-          LOG.error(e.getMessage(), e);
-          throw new TException("Error reading column value from the row set blob", e);
+      // Use TCompactProtocol to read serialized TColumns
+      if (compDe == null) {
+        columns = new ArrayList<ColumnBuffer>();
+        TProtocol protocol =
+            new TCompactProtocol(new TIOStreamTransport(new ByteArrayInputStream(
+                tRowSet.getBinaryColumns())));
+        // Read from the stream using the protocol for each column in final schema
+        for (int i = 0; i < tRowSet.getColumnCount(); i++) {
+          TColumn tvalue = new TColumn();
+          try {
+            tvalue.read(protocol);
+          } catch (TException e) {
+            LOG.error(e.getMessage(), e);
+            throw new TException("Error reading column value from the row set blob", e);
+          }
+          columns.add(new ColumnBuffer(tvalue));
         }
-        columns.add(new ColumnBuffer(tvalue));
+      }
+      else {
+        columns = compDe.decompress(tRowSet.getBinaryColumns());
       }
     }
     else {
+      columns = new ArrayList<ColumnBuffer>();
       if (tRowSet.getColumns() != null) {
         for (TColumn tvalue : tRowSet.getColumns()) {
           columns.add(new ColumnBuffer(tvalue));
