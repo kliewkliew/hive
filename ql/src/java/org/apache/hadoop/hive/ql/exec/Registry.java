@@ -510,11 +510,12 @@ public class Registry {
   private void removePersistentFunctionUnderLock(FunctionInfo fi) {
     Class<?> functionClass = getPermanentUdfClass(fi);
     Integer refCount = persistent.get(functionClass);
-    assert refCount != null;
-    if (refCount == 1) {
-      persistent.remove(functionClass);
-    } else {
-      persistent.put(functionClass, Integer.valueOf(refCount - 1));
+    if (refCount != null) {
+      if (refCount == 1) {
+        persistent.remove(functionClass);
+      } else {
+        persistent.put(functionClass, Integer.valueOf(refCount - 1));
+      }
     }
   }
 
@@ -557,16 +558,7 @@ public class Registry {
     // and the current thread may not be able to resolve the UDF. Test for this condition
     // and if necessary load the JARs in this thread.
     if (isNative && info != null && info.isPersistent()) {
-      Class<?> functionClass;
-      try {
-        functionClass = info.getFunctionClass();
-      } catch (Exception e) {
-        return registerToSessionRegistry(qualifiedName, info);
-      }
-      if (functionClass == null) {
-        return registerToSessionRegistry(qualifiedName, info);
-      }
-      return info;
+      return registerToSessionRegistry(qualifiedName, info);
     }
     if (info != null || !isNative) {
       return info; // We have the UDF, or we are in the session registry (or both).

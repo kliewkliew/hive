@@ -77,8 +77,8 @@ public class TestSymlinkTextInputFormat extends TestCase {
 
     TableDesc tblDesc = Utilities.defaultTd;
     PartitionDesc partDesc = new PartitionDesc(tblDesc, null);
-    LinkedHashMap<String, PartitionDesc> pt = new LinkedHashMap<String, PartitionDesc>();
-    pt.put("/tmp/testfolder", partDesc);
+    LinkedHashMap<Path, PartitionDesc> pt = new LinkedHashMap<>();
+    pt.put(new Path("/tmp/testfolder"), partDesc);
     MapredWork mrwork = new MapredWork();
     mrwork.getMapWork().setPathToPartitionInfo(pt);
     Utilities.setMapRedWork(job, mrwork,new Path("/tmp/" + System.getProperty("user.name"), "hive"));
@@ -133,7 +133,9 @@ public class TestSymlinkTextInputFormat extends TestCase {
 
 
     HiveConf hiveConf = new HiveConf(TestSymlinkTextInputFormat.class);
-
+    hiveConf
+    .setVar(HiveConf.ConfVars.HIVE_AUTHORIZATION_MANAGER,
+        "org.apache.hadoop.hive.ql.security.authorization.plugin.sqlstd.SQLStdHiveAuthorizerFactory");
     HiveConf.setBoolVar(hiveConf, HiveConf.ConfVars.HIVE_REWORK_MAPREDWORK, true);
     HiveConf.setBoolVar(hiveConf, HiveConf.ConfVars.HIVE_SUPPORT_CONCURRENCY, false);
     Driver drv = new Driver(hiveConf);

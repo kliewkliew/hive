@@ -19,6 +19,7 @@
 
 package org.apache.hadoop.hive.llap.io.api.impl;
 
+import org.apache.hadoop.hive.ql.exec.vector.VectorExpressionDescriptor;
 import org.apache.hadoop.hive.ql.io.BatchToRowInputFormat;
 
 import org.apache.hadoop.hive.conf.HiveConf.ConfVars;
@@ -30,18 +31,26 @@ import com.google.common.util.concurrent.ListenableFuture;
 import com.google.common.util.concurrent.ListeningExecutorService;
 import java.io.IOException;
 import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.HashMap;
 import java.util.Iterator;
 import java.util.LinkedHashMap;
 import java.util.LinkedList;
 import java.util.List;
+import java.util.concurrent.ExecutorService;
+import java.util.Map;
+
 import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.fs.Path;
+import org.apache.hadoop.hive.conf.HiveConf;
 import org.apache.hadoop.hive.llap.ConsumerFeedback;
 import org.apache.hadoop.hive.llap.counters.FragmentCountersMap;
 import org.apache.hadoop.hive.llap.counters.LlapIOCounters;
 import org.apache.hadoop.hive.llap.counters.QueryFragmentCounters;
+import org.apache.hadoop.hive.llap.daemon.impl.StatsRecordingThreadPool;
 import org.apache.hadoop.hive.llap.io.decode.ColumnVectorProducer;
 import org.apache.hadoop.hive.llap.io.decode.ReadPipeline;
+import org.apache.hadoop.hive.llap.tezplugins.LlapTezUtils;
 import org.apache.hadoop.hive.ql.exec.ColumnInfo;
 import org.apache.hadoop.hive.ql.exec.Operator;
 import org.apache.hadoop.hive.ql.exec.RowSchema;
@@ -60,8 +69,10 @@ import org.apache.hadoop.hive.ql.io.sarg.ConvertAstToSearchArg;
 import org.apache.hadoop.hive.ql.io.sarg.SearchArgument;
 import org.apache.hadoop.hive.ql.metadata.HiveException;
 import org.apache.hadoop.hive.ql.metadata.VirtualColumn;
+import org.apache.hadoop.hive.ql.optimizer.physical.Vectorizer;
 import org.apache.hadoop.hive.ql.plan.MapWork;
 import org.apache.hadoop.hive.ql.plan.PartitionDesc;
+import org.apache.hadoop.hive.serde.serdeConstants;
 import org.apache.hadoop.hive.serde2.ColumnProjectionUtils;
 import org.apache.hadoop.hive.serde2.typeinfo.TypeInfo;
 import org.apache.hadoop.hive.serde2.typeinfo.TypeInfoUtils;
@@ -74,8 +85,10 @@ import org.apache.hadoop.mapred.RecordReader;
 import org.apache.hadoop.mapred.Reporter;
 import org.apache.hive.common.util.HiveStringUtils;
 import org.apache.tez.common.counters.TezCounters;
+import org.apache.tez.runtime.api.impl.TaskSpec;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.slf4j.MDC;
 
 public class LlapInputFormat implements InputFormat<NullWritable, VectorizedRowBatch>,
     VectorizedInputFormatInterface, SelfDescribingInputFormatInterface,
@@ -87,12 +100,12 @@ public class LlapInputFormat implements InputFormat<NullWritable, VectorizedRowB
   private final InputFormat sourceInputFormat;
   private final AvoidSplitCombination sourceASC;
   private final ColumnVectorProducer cvp;
-  private final ListeningExecutorService executor;
+  private final ExecutorService executor;
   private final String hostName;
 
   @SuppressWarnings("rawtypes")
   LlapInputFormat(InputFormat sourceInputFormat, ColumnVectorProducer cvp,
-      ListeningExecutorService executor) {
+      ExecutorService executor) {
     // TODO: right now, we do nothing with source input format, ORC-only in the first cut.
     //       We'd need to plumb it thru and use it to get data to cache/etc.
     assert sourceInputFormat instanceof OrcInputFormat;
@@ -112,6 +125,12 @@ public class LlapInputFormat implements InputFormat<NullWritable, VectorizedRowB
       useLlapIo = ((LlapAwareSplit)split).canUseLlapIo();
     }
     boolean isVectorized = Utilities.getUseVectorizedInputFileFormat(job);
+
+    // validate for supported types. Until we fix HIVE-14089 we need this check.
+    if (useLlapIo) {
+      useLlapIo = Utilities.checkLlapIOSupportedTypes(job);
+    }
+
     if (!useLlapIo) {
       LlapIoImpl.LOG.warn("Not using LLAP IO for an unsupported split: " + split);
       return sourceInputFormat.getRecordReader(split, job, reporter);
@@ -173,19 +192,18 @@ public class LlapInputFormat implements InputFormat<NullWritable, VectorizedRowB
       this.columnIds = includedCols;
       this.sarg = ConvertAstToSearchArg.createFromConf(job);
       this.columnNames = ColumnProjectionUtils.getReadColumnNames(job);
-      String dagId = job.get("tez.mapreduce.dag.index");
-      String vertexId = job.get("tez.mapreduce.vertex.index");
-      String taskId = job.get("tez.mapreduce.task.index");
-      String taskAttemptId = job.get("tez.mapreduce.task.attempt.index");
+      final String fragmentId = LlapTezUtils.getFragmentId(job);
+      final String dagId = LlapTezUtils.getDagId(job);
+      final String queryId = HiveConf.getVar(job, HiveConf.ConfVars.HIVEQUERYID);
+      MDC.put("dagId", dagId);
+      MDC.put("queryId", queryId);
       TezCounters taskCounters = null;
-      if (dagId != null && vertexId != null && taskId != null && taskAttemptId != null) {
-        String fullId = Joiner.on('_').join(dagId, vertexId, taskId, taskAttemptId);
-        taskCounters = FragmentCountersMap.getCountersForFragment(fullId);
-        LOG.info("Received dagid_vertexid_taskid_attempid: {}", fullId);
+      if (fragmentId != null) {
+        MDC.put("fragmentId", fragmentId);
+        taskCounters = FragmentCountersMap.getCountersForFragment(fragmentId);
+        LOG.info("Received fragment id: {}", fragmentId);
       } else {
-        LOG.warn("Not using tez counters as some identifier is null." +
-            " dagId: {} vertexId: {} taskId: {} taskAttempId: {}",
-            dagId, vertexId, taskId, taskAttemptId);
+        LOG.warn("Not using tez counters as fragment id string is null");
       }
       this.counters = new QueryFragmentCounters(job, taskCounters);
       this.counters.setDesc(QueryFragmentCounters.Desc.MACHINE, hostName);
@@ -255,17 +273,12 @@ public class LlapInputFormat implements InputFormat<NullWritable, VectorizedRowB
       return rbCtx;
     }
 
-    private final class UncaughtErrorHandler implements FutureCallback<Void> {
+    private final class IOUncaughtExceptionHandler implements Thread.UncaughtExceptionHandler {
       @Override
-      public void onSuccess(Void result) {
-        // Successful execution of reader is supposed to call setDone.
-      }
-
-      @Override
-      public void onFailure(Throwable t) {
-        // Reader is not supposed to throw AFTER calling setError.
-        LlapIoImpl.LOG.error("Unhandled error from reader thread " + t.getMessage());
-        setError(t);
+      public void uncaughtException(final Thread t, final Throwable e) {
+        LlapIoImpl.LOG.error("Unhandled error from reader thread. threadName: {} threadId: {}" +
+            " Message: {}", t.getName(), t.getId(), e.getMessage());
+        setError(e);
       }
     }
 
@@ -274,9 +287,12 @@ public class LlapInputFormat implements InputFormat<NullWritable, VectorizedRowB
       ReadPipeline rp = cvp.createReadPipeline(
           this, split, columnIds, sarg, columnNames, counters);
       feedback = rp;
-      ListenableFuture<Void> future = executor.submit(rp.getReadCallable());
-      // TODO: we should NOT do this thing with handler. Reader needs to do cleanup in most cases.
-      Futures.addCallback(future, new UncaughtErrorHandler());
+      if (executor instanceof StatsRecordingThreadPool) {
+        // Every thread created by this thread pool will use the same handler
+        ((StatsRecordingThreadPool) executor)
+            .setUncaughtExceptionHandler(new IOUncaughtExceptionHandler());
+      }
+      executor.submit(rp.getReadCallable());
     }
 
     ColumnVectorBatch nextCvb() throws InterruptedException, IOException {
@@ -333,6 +349,7 @@ public class LlapInputFormat implements InputFormat<NullWritable, VectorizedRowB
       LlapIoImpl.LOG.info("Llap counters: {}" ,counters); // This is where counters are logged!
       feedback.stop();
       rethrowErrorIfAny();
+      MDC.clear();
     }
 
     private void rethrowErrorIfAny() throws IOException {
@@ -411,7 +428,7 @@ public class LlapInputFormat implements InputFormat<NullWritable, VectorizedRowB
     // Determine the partition columns using the first partition descriptor.
     // Note - like vectorizer, this assumes partition columns go after data columns.
     int partitionColumnCount = 0;
-    Iterator<String> paths = mapWork.getPathToAliases().keySet().iterator();
+    Iterator<Path> paths = mapWork.getPathToAliases().keySet().iterator();
     if (paths.hasNext()) {
       PartitionDesc partDesc = mapWork.getPathToPartitionInfo().get(paths.next());
       if (partDesc != null) {

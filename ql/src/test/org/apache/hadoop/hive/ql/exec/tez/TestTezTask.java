@@ -138,11 +138,10 @@ public class TestTezTask {
     mws[0].setAliasToWork(map);
     mws[1].setAliasToWork(map);
 
-    LinkedHashMap<String, ArrayList<String>> pathMap
-      = new LinkedHashMap<String, ArrayList<String>>();
+    LinkedHashMap<Path, ArrayList<String>> pathMap = new LinkedHashMap<>();
     ArrayList<String> aliasList = new ArrayList<String>();
     aliasList.add("foo");
-    pathMap.put("foo", aliasList);
+    pathMap.put(new Path("foo"), aliasList);
 
     mws[0].setPathToAliases(pathMap);
     mws[1].setPathToAliases(pathMap);
@@ -162,7 +161,11 @@ public class TestTezTask {
     conf = new JobConf();
     appLr = mock(LocalResource.class);
 
-    SessionState.start(new HiveConf());
+    HiveConf hiveConf = new HiveConf();
+    hiveConf
+        .setVar(HiveConf.ConfVars.HIVE_AUTHORIZATION_MANAGER,
+            "org.apache.hadoop.hive.ql.security.authorization.plugin.sqlstd.SQLStdHiveAuthorizerFactory");
+    SessionState.start(hiveConf);
     session = mock(TezClient.class);
     sessionState = mock(TezSessionState.class);
     when(sessionState.getSession()).thenReturn(session);

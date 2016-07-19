@@ -222,6 +222,7 @@ public class ExecDriver extends Task<MapredWork> implements Serializable, Hadoop
     Context ctx = driverContext.getCtx();
     boolean ctxCreated = false;
     Path emptyScratchDir;
+    JobClient jc = null;
 
     MapWork mWork = work.getMapWork();
     ReduceWork rWork = work.getReduceWork();
@@ -377,7 +378,7 @@ public class ExecDriver extends Task<MapredWork> implements Serializable, Hadoop
         }
       }
 
-      JobClient jc = new JobClient(job);
+      jc = new JobClient(job);
       // make this client wait if job tracker is not behaving well.
       Throttle.checkJobTracker(job, LOG);
 
@@ -447,6 +448,9 @@ public class ExecDriver extends Task<MapredWork> implements Serializable, Hadoop
           }
           jobID = rj.getID().toString();
         }
+        if (jc!=null) {
+          jc.close();
+        }
       } catch (Exception e) {
 	LOG.warn("Failed while cleaning up ", e);
       } finally {
@@ -487,13 +491,9 @@ public class ExecDriver extends Task<MapredWork> implements Serializable, Hadoop
     Operator<?> topOp = mWork.getAliasToWork().get(alias);
     PartitionDesc partDesc = mWork.getAliasToPartnInfo().get(alias);
 
-    ArrayList<String> paths = mWork.getPaths();
     ArrayList<PartitionDesc> parts = mWork.getPartitionDescs();
 
-    List<Path> inputPaths = new ArrayList<Path>(paths.size());
-    for (String path : paths) {
-      inputPaths.add(new Path(path));
-    }
+    List<Path> inputPaths = mWork.getPaths();
 
     Path tmpPath = context.getExternalTmpPath(inputPaths.get(0));
     Path partitionFile = new Path(tmpPath, ".partitions");
@@ -516,7 +516,7 @@ public class ExecDriver extends Task<MapredWork> implements Serializable, Hadoop
 
       FetchWork fetchWork;
       if (!partDesc.isPartitioned()) {
-        assert paths.size() == 1;
+        assert inputPaths.size() == 1;
         fetchWork = new FetchWork(inputPaths.get(0), partDesc.getTableDesc());
       } else {
         fetchWork = new FetchWork(inputPaths, parts, partDesc.getTableDesc());

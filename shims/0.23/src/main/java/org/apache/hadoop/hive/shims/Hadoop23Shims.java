@@ -1037,11 +1037,21 @@ public class Hadoop23Shims extends HadoopShimsSecure {
     options.setSyncFolder(true);
     options.setSkipCRC(true);
     options.preserve(FileAttribute.BLOCKSIZE);
+
+    // Creates the command-line parameters for distcp
+    String[] params = {"-update", "-skipcrccheck", src.toString(), dst.toString()};
+
     try {
       conf.setBoolean("mapred.mapper.new-api", true);
       DistCp distcp = new DistCp(conf, options);
-      distcp.execute();
-      return true;
+
+      // HIVE-13704 states that we should use run() instead of execute() due to a hadoop known issue
+      // added by HADOOP-10459
+      if (distcp.run(params) == 0) {
+        return true;
+      } else {
+        return false;
+      }
     } catch (Exception e) {
       throw new IOException("Cannot execute DistCp process: " + e, e);
     } finally {
@@ -1288,9 +1298,10 @@ public class Hadoop23Shims extends HadoopShimsSecure {
     if (getSubjectMethod == null) {
       throw new IOException("The UGI method was not found: " + ugiCloneError);
     }
-    Subject subject = new Subject();
     try {
-      subject.getPrincipals().addAll(((Subject)getSubjectMethod.invoke(baseUgi)).getPrincipals());
+      Subject origSubject = (Subject) getSubjectMethod.invoke(baseUgi);
+      Subject subject = new Subject(false, origSubject.getPrincipals(),
+          origSubject.getPublicCredentials(), origSubject.getPrivateCredentials());
       return ugiCtor.newInstance(subject);
     } catch (InstantiationException | IllegalAccessException | InvocationTargetException e) {
       throw new IOException(e);

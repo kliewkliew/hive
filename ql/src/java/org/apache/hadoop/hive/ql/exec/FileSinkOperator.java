@@ -1027,8 +1027,10 @@ public class FileSinkOperator extends TerminalOperator<FileSinkDesc> implements
           serializer.getClass().getName().equalsIgnoreCase(ThriftJDBCBinarySerDe.class.getName())) {
           try {
             recordValue = serializer.serialize(null, inputObjInspectors[0]);
-            rowOutWriters = fpaths.outWriters;
-            rowOutWriters[0].write(recordValue);
+            if ( null != fpaths ) {
+              rowOutWriters = fpaths.outWriters;
+              rowOutWriters[0].write(recordValue);
+            }
           } catch (SerDeException | IOException e) {
             throw new HiveException(e);
           }
@@ -1228,6 +1230,7 @@ public class FileSinkOperator extends TerminalOperator<FileSinkDesc> implements
         }
       }
     }
+    sContext.setIndexForTezUnion(this.conf.getIndexInTezUnion());
     if (!statsPublisher.closeConnection(sContext)) {
       // The original exception is lost.
       // Not changing the interface to maintain backward compatibility

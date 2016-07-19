@@ -26,13 +26,17 @@ import java.net.URISyntaxException;
 import java.security.AccessControlException;
 import java.security.PrivilegedExceptionAction;
 import java.util.BitSet;
+import java.util.Collection;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Random;
+import java.util.Set;
 
 import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.fs.FileStatus;
 import org.apache.hadoop.fs.FileSystem;
 import org.apache.hadoop.fs.FileUtil;
+import org.apache.hadoop.fs.GlobFilter;
 import org.apache.hadoop.fs.LocalFileSystem;
 import org.apache.hadoop.fs.Path;
 import org.apache.hadoop.fs.PathFilter;
@@ -849,4 +853,118 @@ public final class FileUtils {
     }
     return false;
   }
+  
+  
+  /**
+   * Return whenever all paths in the collection are schemaless
+   * 
+   * @param paths
+   * @return
+   */
+  public static boolean pathsContainNoScheme(Collection<Path> paths) {
+    for( Path path  : paths){
+      if(path.toUri().getScheme() != null){
+        return false;
+      }
+    }
+    return true;
+  }
+
+  /**
+   * Returns the deepest candidate path for the given path.
+   * 
+   * prioritizes on paths including schema / then includes matches without schema
+   * 
+   * @param path
+   * @param candidates  the candidate paths
+   * @return
+   */
+  public static Path getParentRegardlessOfScheme(Path path, Set<Path> candidates) {
+    Path schemalessPath = Path.getPathWithoutSchemeAndAuthority(path);
+    
+    for(;path!=null && schemalessPath!=null; path=path.getParent(),schemalessPath=schemalessPath.getParent()){
+      if(candidates.contains(path))
+        return path;
+      if(candidates.contains(schemalessPath))
+        return schemalessPath;
+    }
+    // exception?
+    return null;
+  }
+
+  /**
+   * Checks whenever path is inside the given subtree
+   * 
+   * return true iff
+   *  * path = subtree
+   *  * subtreeContains(path,d) for any descendant of the subtree node
+   * @param path    the path in question
+   * @param subtree
+   * 
+   * @return
+   */
+  public static boolean isPathWithinSubtree(Path path, Path subtree) {
+    while(path!=null){
+      if(subtree.equals(path)){
+        return true;
+      }
+      path=path.getParent();
+    }
+    return false;
+  }
+
+  /**
+   * Get the URI of the path. Assume to be local file system if no scheme.
+   */
+  public static URI getURI(String path) throws URISyntaxException {
+    if (path == null) {
+      return null;
+    }
+
+    URI uri = new URI(path);
+    if (uri.getScheme() == null) {
+      // if no scheme in the path, we assume it's file on local fs.
+      uri = new File(path).toURI();
+    }
+
+    return uri;
+  }
+
+  /**
+   * Given a path string, get all the jars from the folder or the files themselves.
+   *
+   * @param pathString  the path string is the comma-separated path list
+   * @return            the list of the file names in the format of URI formats.
+   */
+  public static Set<String> getJarFilesByPath(String pathString, Configuration conf) {
+    Set<String> result = new HashSet<String>();
+    if (pathString == null || org.apache.commons.lang.StringUtils.isBlank(pathString)) {
+        return result;
+    }
+
+    String[] paths = pathString.split(",");
+    for(String path : paths) {
+      try {
+        Path p = new Path(getURI(path));
+        FileSystem fs = p.getFileSystem(conf);
+        if (!fs.exists(p)) {
+          LOG.error("The jar file path " + path + " doesn't exist");
+          continue;
+        }
+        if (fs.isDirectory(p)) {
+          // add all jar files under the folder
+          FileStatus[] files = fs.listStatus(p, new GlobFilter("*.jar"));
+          for(FileStatus file : files) {
+            result.add(file.getPath().toUri().toString());
+          }
+        } else {
+          result.add(p.toUri().toString());
+        }
+      } catch(URISyntaxException | IOException e) {
+        LOG.error("Invalid file path " + path, e);
+      }
+    }
+    return result;
+  }
+
 }

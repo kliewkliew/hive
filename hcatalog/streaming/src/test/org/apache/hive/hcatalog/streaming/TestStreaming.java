@@ -190,6 +190,9 @@ public class TestStreaming {
     conf = new HiveConf(this.getClass());
     conf.set("fs.raw.impl", RawFileSystem.class.getName());
     conf.set("hive.enforce.bucketing", "true");
+    conf
+    .setVar(HiveConf.ConfVars.HIVE_AUTHORIZATION_MANAGER,
+        "org.apache.hadoop.hive.ql.security.authorization.plugin.sqlstd.SQLStdHiveAuthorizerFactory");
     TxnDbUtil.setConfValues(conf);
     if (metaStoreURI!=null) {
       conf.setVar(HiveConf.ConfVars.METASTOREURIS, metaStoreURI);
@@ -790,6 +793,8 @@ public class TestStreaming {
             , txnBatch.getCurrentTransactionState());
 
     connection.close();
+    List<String> rs = queryTable(driver, "select * from " + dbName + "." + tblName);
+    Assert.assertEquals(1, rs.size());
   }
 
   @Test

@@ -326,7 +326,7 @@ public class SemanticAnalyzer extends BaseSemanticAnalyzer {
    */
   boolean rootTasksResolved;
 
-  private TableMask tableMask;
+  protected TableMask tableMask;
 
   CreateTableDesc tableDesc;
 
@@ -3383,7 +3383,7 @@ public class SemanticAnalyzer extends BaseSemanticAnalyzer {
         pos = Integer.valueOf(pos.intValue() + 1);
         matched++;
 
-        if (unparseTranslator.isEnabled()) {
+        if (unparseTranslator.isEnabled() || tableMask.isEnabled()) {
           if (replacementText.length() > 0) {
             replacementText.append(", ");
           }
@@ -3399,6 +3399,8 @@ public class SemanticAnalyzer extends BaseSemanticAnalyzer {
 
     if (unparseTranslator.isEnabled()) {
       unparseTranslator.addTranslation(sel, replacementText.toString());
+    } else if (tableMask.isEnabled()) {
+      tableMask.addTranslation(sel, replacementText.toString());
     }
     return pos;
   }
@@ -4109,6 +4111,7 @@ public class SemanticAnalyzer extends BaseSemanticAnalyzer {
     ASTNode[] exprs = new ASTNode[exprList.getChildCount()];
     String[][] aliases = new String[exprList.getChildCount()][];
     boolean[] hasAsClauses = new boolean[exprList.getChildCount()];
+    int offset = 0;
     // Iterate over all expression (either after SELECT, or in SELECT TRANSFORM)
     for (int i = startPosn; i < exprList.getChildCount(); ++i) {
 
@@ -4140,7 +4143,7 @@ public class SemanticAnalyzer extends BaseSemanticAnalyzer {
         // Get rid of TOK_SELEXPR
         expr = (ASTNode) child.getChild(0);
         String[] colRef = getColAlias(child, autogenColAliasPrfxLbl, inputRR,
-            autogenColAliasPrfxIncludeFuncName, i);
+            autogenColAliasPrfxIncludeFuncName, i + offset);
         tabAlias = colRef[0];
         colAlias = colRef[1];
         if (hasAsClause) {
@@ -4152,20 +4155,16 @@ public class SemanticAnalyzer extends BaseSemanticAnalyzer {
       aliases[i] = new String[] {tabAlias, colAlias};
       hasAsClauses[i] = hasAsClause;
       colAliases.add(colAlias);
-    }
 
-    // Iterate over all expression (either after SELECT, or in SELECT TRANSFORM)
-    for (int i = startPosn; i < exprList.getChildCount(); ++i) {
       // The real expression
-      ASTNode expr = exprs[i];
-      String tabAlias = aliases[i][0];
-      String colAlias = aliases[i][1];
-      boolean hasAsClause = hasAsClauses[i];
-
       if (expr.getType() == HiveParser.TOK_ALLCOLREF) {
+        int initPos = pos;
         pos = genColListRegex(".*", expr.getChildCount() == 0 ? null
             : getUnescapedName((ASTNode) expr.getChild(0)).toLowerCase(),
             expr, col_list, null, inputRR, starRR, pos, out_rwsch, qb.getAliases(), false);
+        if (unparseTranslator.isEnabled()) {
+          offset += pos - initPos - 1;
+        }
         selectStar = true;
       } else if (expr.getType() == HiveParser.TOK_TABLE_OR_COL && !hasAsClause
           && !inputRR.getIsExprResolver()
@@ -7948,7 +7947,14 @@ public class SemanticAnalyzer extends BaseSemanticAnalyzer {
 
       // backtrack can be null when input is script operator
       ExprNodeDesc exprBack = ExprNodeDescUtils.backtrack(expr, dummy, child);
-      int kindex = exprBack == null ? -1 : ExprNodeDescUtils.indexOf(exprBack, reduceKeysBack);
+      int kindex;
+      if (exprBack == null) {
+        kindex = -1;
+      } else if (ExprNodeDescUtils.isConstant(exprBack)) {
+        kindex = reduceKeysBack.indexOf(exprBack);
+      } else {
+        kindex = ExprNodeDescUtils.indexOf(exprBack, reduceKeysBack);
+      }
       if (kindex >= 0) {
         ColumnInfo newColInfo = new ColumnInfo(colInfo);
         newColInfo.setInternalName(Utilities.ReduceField.KEY + ".reducesinkkey" + kindex);
@@ -7960,7 +7966,14 @@ public class SemanticAnalyzer extends BaseSemanticAnalyzer {
         index[i] = kindex;
         continue;
       }
-      int vindex = exprBack == null ? -1 : ExprNodeDescUtils.indexOf(exprBack, reduceValuesBack);
+      int vindex;
+      if (exprBack == null) {
+        vindex = -1;
+      } else if (ExprNodeDescUtils.isConstant(exprBack)) {
+        vindex = reduceValuesBack.indexOf(exprBack);
+      } else {
+        vindex = ExprNodeDescUtils.indexOf(exprBack, reduceValuesBack);
+      }
       if (vindex >= 0) {
         index[i] = -vindex - 1;
         continue;
@@ -10507,6 +10520,7 @@ public class SemanticAnalyzer extends BaseSemanticAnalyzer {
 
     void setInsertToken(ASTNode ast, boolean isTmpFileDest) {
     }
+
   }
 
   private Table getTableObjectByName(String tableName) throws HiveException {
@@ -10566,7 +10580,9 @@ public class SemanticAnalyzer extends BaseSemanticAnalyzer {
         try {
           table = getTableObjectByName(tabIdName);
         } catch (HiveException e) {
-          throw new SemanticException("Table " + tabIdName + " is not found.");
+          // Table may not be found when materialization of CTE is on.
+          LOG.info("Table " + tabIdName + " is not found in walkASTMarkTABREF.");
+          continue;
         }
 
         List<String> colNames = new ArrayList<>();
@@ -10577,7 +10593,7 @@ public class SemanticAnalyzer extends BaseSemanticAnalyzer {
         }
         
         basicInfos.put(new HivePrivilegeObject(table.getDbName(), table.getTableName(), colNames),
-            new MaskAndFilterInfo(colTypes, additionalTabInfo.toString(), alias, astNode));
+            new MaskAndFilterInfo(colTypes, additionalTabInfo.toString(), alias, astNode, table.isView()));
       }
       if (astNode.getChildCount() > 0 && !ignoredTokens.contains(astNode.getToken().getType())) {
         for (Node child : astNode.getChildren()) {
@@ -10590,11 +10606,13 @@ public class SemanticAnalyzer extends BaseSemanticAnalyzer {
     List<HivePrivilegeObject> needRewritePrivObjs = tableMask
         .applyRowFilterAndColumnMasking(basicPrivObjs);
     if (needRewritePrivObjs != null && !needRewritePrivObjs.isEmpty()) {
-      tableMask.setNeedsRewrite(true);
       for (HivePrivilegeObject privObj : needRewritePrivObjs) {
         MaskAndFilterInfo info = basicInfos.get(privObj);
         String replacementText = tableMask.create(privObj, info);
-        tableMask.addTableMasking(info.astNode, replacementText);
+        if (replacementText != null) {
+          tableMask.setNeedsRewrite(true);
+          tableMask.addTranslation(info.astNode, replacementText);
+        }
       }
     }
   }
@@ -10641,7 +10659,7 @@ public class SemanticAnalyzer extends BaseSemanticAnalyzer {
     }
     // 2. rewrite the AST, replace TABREF with masking/filtering
     if (tableMask.needsRewrite()) {
-      tableMask.applyTableMasking(ctx.getTokenRewriteStream());
+      tableMask.applyTranslations(ctx.getTokenRewriteStream());
       String rewrittenQuery = ctx.getTokenRewriteStream().toString(ast.getTokenStartIndex(),
           ast.getTokenStopIndex());
       ASTNode rewrittenTree;
@@ -10716,13 +10734,10 @@ public class SemanticAnalyzer extends BaseSemanticAnalyzer {
         return false;
     }
 
-    // masking and filtering should be done here
+    // masking and filtering should be created here
     // the basic idea is similar to unparseTranslator.
-    tableMask = new TableMask(this, conf);
-    if (!unparseTranslator.isEnabled() && tableMask.isEnabled()) {
-      child = rewriteASTWithMaskAndFilter(ast);
-    }
-
+    tableMask = new TableMask(this, conf, ctx);
+    
     // 4. continue analyzing from the child ASTNode.
     Phase1Ctx ctx_1 = initPhase1Ctx();
     preProcessForInsert(child, qb);
@@ -10791,6 +10806,20 @@ public class SemanticAnalyzer extends BaseSemanticAnalyzer {
 
     // 2. Gen OP Tree from resolved Parse Tree
     Operator sinkOp = genOPTree(ast, plannerCtx);
+
+    if (!unparseTranslator.isEnabled() && tableMask.isEnabled()) {
+      // Here we rewrite the * and also the masking table
+      ASTNode tree = rewriteASTWithMaskAndFilter(ast);
+      if (tree != ast) {
+        ctx.setSkipTableMasking(true);
+        init(true);
+        genResolvedParseTree(tree, plannerCtx);
+        if (this instanceof CalcitePlanner) {
+          ((CalcitePlanner) this).resetCalciteConfiguration();
+        }
+        sinkOp = genOPTree(tree, plannerCtx);
+      }
+    }
 
     // 3. Deduce Resultset Schema
     if (createVwDesc != null) {

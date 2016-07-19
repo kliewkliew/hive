@@ -88,6 +88,8 @@ public class TestExecDriver extends TestCase {
       conf = queryState.getConf();
       conf.setBoolVar(HiveConf.ConfVars.SUBMITVIACHILD, true);
       conf.setBoolVar(HiveConf.ConfVars.SUBMITLOCALTASKVIACHILD, true);
+      conf.setVar(HiveConf.ConfVars.HIVE_AUTHORIZATION_MANAGER,
+          "org.apache.hadoop.hive.ql.security.authorization.plugin.sqlstd.SQLStdHiveAuthorizerFactory");
 
       SessionState.start(conf);
 
@@ -162,7 +164,7 @@ public class TestExecDriver extends TestCase {
   }
 
   public static void addMapWork(MapredWork mr, Table tbl, String alias, Operator<?> work) {
-    mr.getMapWork().addMapWork(tbl.getDataLocation().toString(), alias, work, new PartitionDesc(
+    mr.getMapWork().addMapWork(tbl.getDataLocation(), alias, work, new PartitionDesc(
         Utilities.getTableDesc(tbl), null));
   }
 
