@@ -38,7 +38,6 @@ import org.apache.hadoop.hive.serde2.typeinfo.TypeInfoFactory;
 import org.apache.hadoop.hive.serde2.typeinfo.TypeInfoUtils;
 import org.apache.hadoop.io.BytesWritable;
 import org.apache.hadoop.io.Writable;
-import org.apache.hive.service.cli.compression.CompDe;
 import org.apache.hive.service.rpc.thrift.TColumn;
 import org.apache.thrift.TException;
 import org.apache.thrift.protocol.TCompactProtocol;
