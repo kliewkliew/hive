@@ -26,7 +26,8 @@ import org.apache.hadoop.classification.InterfaceAudience;
 import org.apache.hadoop.classification.InterfaceStability;
 import org.apache.hadoop.hive.serde2.thrift.ColumnBuffer;
 
-
+@InterfaceAudience.Private
+@InterfaceStability.Unstable
 public interface CompDe {
   
   /**
@@ -53,7 +54,21 @@ public interface CompDe {
    * Decompress a set of columns
    * 
    * @param compressedSet
+   * 
    * @return The set of columns.
    */
   public List<ColumnBuffer> decompress(byte[] compressedSet);
+  
+  /**
+   * 
+   * @return The plug-in name
+   */
+  public String getName();
+  
+  /**
+   * Provide a namespace for the plug-in
+   * 
+   * @return The vendor name
+   */
+  public String getVendor();
 }

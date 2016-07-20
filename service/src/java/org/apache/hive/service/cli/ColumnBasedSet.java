@@ -26,6 +26,7 @@ import java.util.List;
 import org.apache.hadoop.hive.common.type.HiveDecimal;
 import org.apache.hadoop.hive.serde2.thrift.ColumnBuffer;
 import org.apache.hadoop.hive.serde2.compression.CompDe;
+import org.apache.hadoop.hive.serde2.compression.CompDeServiceLoader;
 import org.apache.hadoop.hive.serde2.thrift.Type;
 import org.apache.hive.service.rpc.thrift.TColumn;
 import org.apache.hive.service.rpc.thrift.TRow;
@@ -60,15 +61,15 @@ public class ColumnBasedSet implements RowSet {
   }
 
   public ColumnBasedSet(TRowSet tRowSet) throws TException {
-    this(tRowSet, null);
-  }
-
-  public ColumnBasedSet(TRowSet tRowSet, CompDe compDe) throws TException {
     descriptors = null;
-    // TODO: use ServiceLoader instead of passing in constructor
     if (tRowSet.isSetBinaryColumns()) {
       // Use TCompactProtocol to read serialized TColumns
-      if (compDe == null) {
+      
+      CompDe compDe = CompDeServiceLoader.getInstance().getCompDe();
+      if (compDe != null) {
+        columns = compDe.decompress(tRowSet.getBinaryColumns());
+      }
+      else {
         columns = new ArrayList<ColumnBuffer>();
         TProtocol protocol =
             new TCompactProtocol(new TIOStreamTransport(new ByteArrayInputStream(
@@ -84,9 +85,6 @@ public class ColumnBasedSet implements RowSet {
           }
           columns.add(new ColumnBuffer(tvalue));
         }
-      }
-      else {
-        columns = compDe.decompress(tRowSet.getBinaryColumns());
       }
     }
     else {

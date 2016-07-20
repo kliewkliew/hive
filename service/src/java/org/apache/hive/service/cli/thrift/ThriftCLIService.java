@@ -21,7 +21,9 @@ package org.apache.hive.service.cli.thrift;
 import java.io.IOException;
 import java.net.InetAddress;
 import java.net.UnknownHostException;
+import java.util.Arrays;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
@@ -30,6 +32,7 @@ import javax.security.auth.login.LoginException;
 
 import org.apache.hadoop.hive.conf.HiveConf;
 import org.apache.hadoop.hive.conf.HiveConf.ConfVars;
+import org.apache.hadoop.hive.serde2.compression.CompDeServiceLoader;
 import org.apache.hadoop.hive.common.ServerUtils;
 import org.apache.hadoop.hive.shims.HadoopShims.KerberosNameShim;
 import org.apache.hadoop.hive.shims.ShimLoader;
@@ -312,8 +315,27 @@ public abstract class ThriftCLIService extends AbstractService implements TCLISe
     try {
       SessionHandle sessionHandle = getSessionHandle(req, resp);
       resp.setSessionHandle(sessionHandle.toTSessionHandle());
-      // TODO: set real configuration map
-      //resp.setConfiguration(new HashMap<String, String>());
+
+      // CompDe negotiation
+      String[] serverCompDes =
+          HiveConf.getTrimmedStringsVar(hiveConf, ConfVars.HIVE_SERVER2_THRIFT_RESULTSET_COMPRESSOR);
+      List<String> clientCompDes =
+          Arrays.asList(HiveConf.getTrimmedStringsVar(hiveConf, ConfVars.HIVE_SERVER2_THRIFT_RESULTSET_CLIENT_COMPRESSORS));
+      
+      for (int i = 0; i < serverCompDes.length; i++) {
+        if (clientCompDes.contains(serverCompDes[i])) {
+          Map<String, String> clientOverlay = 
+              hiveConf.getValByRegex(ConfVars.HIVE_SERVER2_THRIFT_RESULTSET_COMPRESSOR + "\\." + serverCompDes[i] + "\\.\\w+");
+          Map<String, String> compDeResponse = 
+              CompDeServiceLoader.getInstance().initCompDe(serverCompDes[i], clientOverlay);
+          if (compDeResponse != null) {
+            resp.setCompressorConfiguration(compDeResponse);
+            resp.setCompressorName(serverCompDes[i]);
+            break;
+          }
+        }
+      }
+      
       resp.setStatus(OK_STATUS);
       ThriftCLIServerContext context =
         (ThriftCLIServerContext)currentServerContext.get();
