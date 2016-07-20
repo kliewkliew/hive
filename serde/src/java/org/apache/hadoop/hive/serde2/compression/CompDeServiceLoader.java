@@ -58,7 +58,10 @@ public class CompDeServiceLoader {
       CompDe compressor = compressors.next();
       if (compressor.getVendor() + "." + compressor.getName() == compDeName) {
         compDe = compressor;
-        return compDe.init(config);
+        Map<String, String> compDeResponse = compDe.init(config);
+        if (compDeResponse != null) {
+          return compDe.init(config);
+        }
       }
     }
     return null;
