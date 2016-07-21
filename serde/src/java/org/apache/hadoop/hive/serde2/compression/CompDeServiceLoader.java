@@ -22,10 +22,9 @@ import java.util.Iterator;
 import java.util.Map;
 import java.util.ServiceLoader;
 
-
 /**
- * Load classes that implement CompDe when starting up, and serve
- * them at run time.
+ * Load classes that implement CompDe when starting up, and serve them at run
+ * time.
  *
  */
 public class CompDeServiceLoader {
@@ -43,24 +42,26 @@ public class CompDeServiceLoader {
     }
     return instance;
   }
-  
+
   /**
    * Initialize the CompDe
    * 
-   * @param compDeName The compressor name qualified by the vendor namespace.
+   * @param compDeName
+   *          The compressor name qualified by the vendor namespace.
    * @param config
    * 
-   * @return The final configuration returned by the CompDe upon successfuly initialization, else null.
+   * @return The final configuration returned by the CompDe upon successfuly
+   *         initialization, else null.
    */
   public Map<String, String> initCompDe(String compDeName, Map<String, String> config) {
     Iterator<CompDe> compressors = ServiceLoader.load(CompDe.class).iterator();
     while (compressors.hasNext()) {
       CompDe compressor = compressors.next();
       if (compressor.getVendor() + "." + compressor.getName() == compDeName) {
-        compDe = compressor;
-        Map<String, String> compDeResponse = compDe.init(config);
+        Map<String, String> compDeResponse = compressor.init(config);
         if (compDeResponse != null) {
-          return compDe.init(config);
+          compDe = compressor;
+          return compDeResponse;
         }
       }
     }
@@ -75,5 +76,5 @@ public class CompDeServiceLoader {
   public CompDe getCompDe() {
     return compDe;
   }
-  
+
 }
