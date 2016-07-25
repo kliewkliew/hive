@@ -321,21 +321,24 @@ public abstract class ThriftCLIService extends AbstractService implements TCLISe
           HiveConf.getTrimmedStringsVar(hiveConf, ConfVars.HIVE_SERVER2_THRIFT_RESULTSET_COMPRESSOR);
       List<String> clientCompDes =
           Arrays.asList(HiveConf.getTrimmedStringsVar(hiveConf, ConfVars.HIVE_SERVER2_THRIFT_RESULTSET_CLIENT_COMPRESSORS));
+      // List of CompDes ordered by the server's preference if configured, otherwise ordered by the client's preference
+      String[] compDesList = serverCompDes.length != 0 ? serverCompDes : (String[]) clientCompDes.toArray();
       
-      for (int i = 0; i < serverCompDes.length; i++) {
-        if (clientCompDes.contains(serverCompDes[i])) {
+      for (int i = 0; i < compDesList.length; i++) {
+        if (clientCompDes.contains(compDesList[i])) {
           Map<String, String> clientOverlay = 
-              hiveConf.getValByRegex(ConfVars.HIVE_SERVER2_THRIFT_RESULTSET_COMPRESSOR + "\\." + serverCompDes[i] + "\\.\\w+");
+              hiveConf.getValByRegex(ConfVars.HIVE_SERVER2_THRIFT_RESULTSET_COMPRESSOR + "\\." + compDesList[i] + "\\.[\\w|\\d]+");
           Map<String, String> compDeResponse = 
-              CompDeServiceLoader.getInstance().initCompDe(serverCompDes[i], clientOverlay);
+              CompDeServiceLoader.getInstance().initCompDe(compDesList[i], clientOverlay);
           if (compDeResponse != null) {
+            LOG.info("Initialized CompDe plugin for " + compDesList[i]);
             resp.setCompressorConfiguration(compDeResponse);
-            resp.setCompressorName(serverCompDes[i]);
+            resp.setCompressorName(compDesList[i]);
             break;
           }
         }
       }
-      
+
       resp.setStatus(OK_STATUS);
       ThriftCLIServerContext context =
         (ThriftCLIServerContext)currentServerContext.get();

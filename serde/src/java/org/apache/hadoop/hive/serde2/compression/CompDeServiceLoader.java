@@ -21,6 +21,10 @@ package org.apache.hadoop.hive.serde2.compression;
 import java.util.Iterator;
 import java.util.Map;
 import java.util.ServiceLoader;
+import java.util.concurrent.ConcurrentHashMap;
+
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 /**
  * Load classes that implement CompDe when starting up, and serve them at run
@@ -29,22 +33,34 @@ import java.util.ServiceLoader;
  */
 public class CompDeServiceLoader {
   private static CompDeServiceLoader instance;
-  private static CompDe compDe;
+  // Map CompDe names to classes so we don't have to read the META-INF file for every session.
+  private ConcurrentHashMap<String, Class<? extends CompDe>> compressorTable
+    = new ConcurrentHashMap<String, Class<? extends CompDe>>();
+  private CompDe compDe;
+  public static final Logger LOG = LoggerFactory.getLogger(CompDeServiceLoader.class);
+
 
   /**
-   * Get the singleton instance of CompDeServiceLoader.
+   * Get the singleton instance or initialize the CompDeServiceLoader.
    *
    * @return A singleton instance of CompDeServiceLoader.
    */
   public static synchronized CompDeServiceLoader getInstance() {
     if (instance == null) {
+      Iterator<CompDe> compressors = ServiceLoader.load(CompDe.class).iterator();
       instance = new CompDeServiceLoader();
+      while (compressors.hasNext()) {
+        CompDe compressor = compressors.next();
+        instance.compressorTable.put(
+            compressor.getVendor() + "." + compressor.getName(),
+            compressor.getClass());
+      }
     }
     return instance;
   }
 
   /**
-   * Initialize the CompDe
+   * Initialize the CompDe if available on the server.
    * 
    * @param compDeName
    *          The compressor name qualified by the vendor namespace.
@@ -54,16 +70,10 @@ public class CompDeServiceLoader {
    *         initialization, else null.
    */
   public Map<String, String> initCompDe(String compDeName, Map<String, String> config) {
-    Iterator<CompDe> compressors = ServiceLoader.load(CompDe.class).iterator();
-    while (compressors.hasNext()) {
-      CompDe compressor = compressors.next();
-      if (compressor.getVendor() + "." + compressor.getName() == compDeName) {
-        Map<String, String> compDeResponse = compressor.init(config);
-        if (compDeResponse != null) {
-          compDe = compressor;
-          return compDeResponse;
-        }
-      }
+    try {
+      return compressorTable.get(compDeName).newInstance().init(config);
+    } catch (Exception e) {
+      LOG.error(e.getMessage(), e);
     }
     return null;
   }
