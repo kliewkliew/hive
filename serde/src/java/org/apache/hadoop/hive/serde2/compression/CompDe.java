@@ -19,7 +19,6 @@
 
 package org.apache.hadoop.hive.serde2.compression;
 
-import java.util.List;
 import java.util.Map;
 
 import org.apache.hadoop.classification.InterfaceAudience;
