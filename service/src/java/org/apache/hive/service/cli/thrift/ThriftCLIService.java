@@ -318,7 +318,7 @@ public abstract class ThriftCLIService extends AbstractService implements TCLISe
 
       // CompDe negotiation
       String[] serverCompDes =
-          HiveConf.getTrimmedStringsVar(hiveConf, ConfVars.HIVE_SERVER2_THRIFT_RESULTSET_COMPRESSOR);
+          HiveConf.getTrimmedStringsVar(hiveConf, ConfVars.HIVE_SERVER2_THRIFT_RESULTSET_SERVER_COMPRESSORS);
       List<String> clientCompDes =
           Arrays.asList(HiveConf.getTrimmedStringsVar(hiveConf, ConfVars.HIVE_SERVER2_THRIFT_RESULTSET_CLIENT_COMPRESSORS));
       // List of CompDes ordered by the server's preference if configured, otherwise ordered by the client's preference
