@@ -57,7 +57,7 @@ public interface CompDe {
    * 
    * @return The set of columns.
    */
-  public List<ColumnBuffer> decompress(byte[] compressedSet);
+  public ColumnBuffer[] decompress(byte[] compressedSet);
   
   /**
    * 

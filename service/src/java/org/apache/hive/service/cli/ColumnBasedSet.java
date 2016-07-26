@@ -20,6 +20,7 @@ package org.apache.hive.service.cli;
 
 import java.io.ByteArrayInputStream;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Iterator;
 import java.util.List;
 
@@ -68,7 +69,7 @@ public class ColumnBasedSet implements RowSet {
 
       CompDe compDe = SessionState.get().getCompDe();
       if (compDe != null) {
-        columns = compDe.decompress(tRowSet.getBinaryColumns());
+        columns = Arrays.asList(compDe.decompress(tRowSet.getBinaryColumns()));
       }
       else {
         columns = new ArrayList<ColumnBuffer>();
