@@ -19,6 +19,8 @@
 package org.apache.hive.jdbc;
 
 import org.apache.commons.lang.StringUtils;
+import org.apache.hadoop.hive.conf.HiveConf;
+import org.apache.hadoop.hive.conf.HiveConf.ConfVars;
 import org.apache.hadoop.hive.serde2.compression.CompDeServiceLoader;
 import org.apache.hive.jdbc.Utils.JdbcConnectionParams;
 import org.apache.hive.service.auth.HiveAuthFactory;
@@ -112,7 +114,7 @@ public class HiveConnection implements java.sql.Connection {
   private String jdbcUriString;
   private String host;
   private int port;
-  private final Map<String, String> sessConfMap;
+  private Map<String, String> sessConfMap;
   private JdbcConnectionParams connParams;
   private final boolean isEmbeddedMode;
   private TTransport transport;
@@ -576,6 +578,20 @@ public class HiveConnection implements java.sql.Connection {
     try {
       TOpenSessionResp openResp = client.OpenSession(openReq);
 
+      if (openResp.getCompressorName() != null) {
+        // Server initialized CompDe
+        if (CompDeServiceLoader.getInstance().getCompDe(openResp.getCompressorName()).init(openResp.getCompressorConfiguration()) != null) {
+          // And the client initialized properly with the same config: modify sessionConfMap so that SessionState will be initialized with the CompDe
+          sessConfMap.put(ConfVars.HIVE_SERVER2_THRIFT_RESULTSET_COMPRESSOR.varname, openResp.getCompressorName());
+          sessConfMap.put(ConfVars.COMPRESSRESULT.varname, "false");
+        }
+        else {
+          // But the client failed to initialize with the same settings as the server: disable compression and try again
+          openConf.remove(ConfVars.HIVE_SERVER2_THRIFT_RESULTSET_CLIENT_COMPRESSORS.varname);
+          openResp = client.OpenSession(openReq);
+        }
+      }
+
       // validate connection
       Utils.verifySuccess(openResp.getStatus());
       if (!supportedProtocols.contains(openResp.getServerProtocolVersion())) {
@@ -583,9 +599,6 @@ public class HiveConnection implements java.sql.Connection {
       }
       protocol = openResp.getServerProtocolVersion();
       sessHandle = openResp.getSessionHandle();
-      
-      CompDeServiceLoader.getInstance().initCompDe(
-          openResp.getCompressorName(), openResp.getCompressorConfiguration());
     } catch (TException e) {
       LOG.error("Error opening session", e);
       throw new SQLException("Could not establish connection to "

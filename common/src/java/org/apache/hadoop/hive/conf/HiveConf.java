@@ -2473,7 +2473,7 @@ public class HiveConf extends Configuration {
         "This list will be received from the client and used for CompDe negotiation."),
     HIVE_SERVER2_THRIFT_RESULTSET_COMPRESSOR("hive.server2.thrift.resultset.compressor", null,
         "A CompDe that will be used for the session.\n " +
-        "This setting is determined by negotiation and should not be configured."),
+        "This is determined by negotiation during OpenSession."),
 
     HIVE_SERVER2_XSRF_FILTER_ENABLED("hive.server2.xsrf.filter.enabled",false,
         "If enabled, HiveServer2 will block any requests made to it over http " +

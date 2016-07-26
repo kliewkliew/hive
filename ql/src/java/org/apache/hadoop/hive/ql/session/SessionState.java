@@ -86,6 +86,8 @@ import org.apache.hadoop.hive.ql.security.authorization.plugin.HiveAuthzSessionC
 import org.apache.hadoop.hive.ql.security.authorization.plugin.HiveAuthzSessionContext.CLIENT_TYPE;
 import org.apache.hadoop.hive.ql.security.authorization.plugin.HiveMetastoreClientFactoryImpl;
 import org.apache.hadoop.hive.ql.util.ResourceDownloader;
+import org.apache.hadoop.hive.serde2.compression.CompDe;
+import org.apache.hadoop.hive.serde2.compression.CompDeServiceLoader;
 import org.apache.hadoop.hive.shims.HadoopShims;
 import org.apache.hadoop.hive.shims.ShimLoader;
 import org.apache.hadoop.hive.shims.Utils;
@@ -124,6 +126,8 @@ public class SessionState {
    * current configuration.
    */
   private final HiveConf sessionConf;
+  
+  private final CompDe compDe;
 
   /**
    * silent mode.
@@ -286,6 +290,9 @@ public class SessionState {
     return sessionConf;
   }
 
+  public CompDe getCompDe() {
+    return compDe;
+  }
 
   public File getTmpOutputFile() {
     return tmpOutputFile;
@@ -375,6 +382,14 @@ public class SessionState {
     this.sessionConf.setClassLoader(currentLoader);
     resourceDownloader = new ResourceDownloader(conf,
         HiveConf.getVar(conf, ConfVars.DOWNLOADED_RESOURCES_DIR));
+
+    String compDeName = HiveConf.getVar(conf, ConfVars.HIVE_SERVER2_THRIFT_RESULTSET_COMPRESSOR);
+    compDe = CompDeServiceLoader.getInstance().getCompDe(compDeName);
+    if (compDe != null) {
+      Map<String, String> compDeConfig = 
+          conf.getValByRegex(ConfVars.HIVE_SERVER2_THRIFT_RESULTSET_COMPRESSOR + "\\." + compDeName + "\\.[\\w|\\d]+");
+      compDe.init(compDeConfig);
+    }
   }
 
   public Map<String, String> getHiveVariables() {

@@ -19,7 +19,6 @@
 package org.apache.hadoop.hive.serde2.compression;
 
 import java.util.Iterator;
-import java.util.Map;
 import java.util.ServiceLoader;
 import java.util.concurrent.ConcurrentHashMap;
 
@@ -36,7 +35,6 @@ public class CompDeServiceLoader {
   // Map CompDe names to classes so we don't have to read the META-INF file for every session.
   private ConcurrentHashMap<String, Class<? extends CompDe>> compressorTable
     = new ConcurrentHashMap<String, Class<? extends CompDe>>();
-  private CompDe compDe;
   public static final Logger LOG = LoggerFactory.getLogger(CompDeServiceLoader.class);
 
 
@@ -60,31 +58,20 @@ public class CompDeServiceLoader {
   }
 
   /**
-   * Initialize the CompDe if available on the server.
+   * Get the CompDe if the compressor class was loaded from CLASSPATH.
    * 
    * @param compDeName
    *          The compressor name qualified by the vendor namespace.
-   * @param config
-   * 
-   * @return The final configuration returned by the CompDe upon successfuly
-   *         initialization, else null.
-   */
-  public Map<String, String> initCompDe(String compDeName, Map<String, String> config) {
-    try {
-      return compressorTable.get(compDeName).newInstance().init(config);
-    } catch (Exception e) {
-      LOG.error(e.getMessage(), e);
-    }
-    return null;
-  }
-
-  /**
-   * Get the CompDe if the compressor class was loaded from CLASSPATH.
-   * 
+   *          
    * @return A CompDe implementation object
    */
-  public CompDe getCompDe() {
-    return compDe;
+  public CompDe getCompDe(String compDeName) {
+    try {
+      return compressorTable.get(compDeName).newInstance();
+    } catch (Exception e) {
+      LOG.error(e.getMessage(), e);
+      return null;
+    }
   }
 
 }

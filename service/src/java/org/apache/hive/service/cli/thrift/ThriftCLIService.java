@@ -326,14 +326,16 @@ public abstract class ThriftCLIService extends AbstractService implements TCLISe
       
       for (int i = 0; i < compDesList.length; i++) {
         if (clientCompDes.contains(compDesList[i])) {
-          Map<String, String> clientOverlay = 
+          Map<String, String> compDeConfig = 
               hiveConf.getValByRegex(ConfVars.HIVE_SERVER2_THRIFT_RESULTSET_COMPRESSOR + "\\." + compDesList[i] + "\\.[\\w|\\d]+");
           Map<String, String> compDeResponse = 
-              CompDeServiceLoader.getInstance().initCompDe(compDesList[i], clientOverlay);
+              CompDeServiceLoader.getInstance().getCompDe(compDesList[i]).init(compDeConfig);
           if (compDeResponse != null) {
             LOG.info("Initialized CompDe plugin for " + compDesList[i]);
             resp.setCompressorConfiguration(compDeResponse);
             resp.setCompressorName(compDesList[i]);
+            hiveConf.setVar(ConfVars.HIVE_SERVER2_THRIFT_RESULTSET_COMPRESSOR, compDesList[i]);
+            HiveConf.setBoolVar(hiveConf, HiveConf.ConfVars.COMPRESSRESULT, false);
             break;
           }
         }

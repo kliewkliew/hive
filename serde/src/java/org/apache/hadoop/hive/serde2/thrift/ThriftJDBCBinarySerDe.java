@@ -22,10 +22,12 @@ import java.nio.ByteBuffer;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
+import java.util.Map;
 import java.util.Properties;
 
 import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.hive.conf.HiveConf;
+import org.apache.hadoop.hive.conf.HiveConf.ConfVars;
 import org.apache.hadoop.hive.serde.serdeConstants;
 import org.apache.hadoop.hive.serde2.AbstractSerDe;
 import org.apache.hadoop.hive.serde2.ByteStream;
@@ -68,10 +70,19 @@ public class ThriftJDBCBinarySerDe extends AbstractSerDe {
   private int MAX_BUFFERED_ROWS;
   private int count;
   private StructObjectInspector rowObjectInspector;
+  private CompDe compDe;
 
 
   @Override
   public void initialize(Configuration conf, Properties tbl) throws SerDeException {
+    String compDeName = HiveConf.getVar(conf, ConfVars.HIVE_SERVER2_THRIFT_RESULTSET_COMPRESSOR);
+    CompDe compDe = CompDeServiceLoader.getInstance().getCompDe(compDeName);
+    if (compDe != null) {
+      Map<String, String> compDeConfig = 
+          conf.getValByRegex(ConfVars.HIVE_SERVER2_THRIFT_RESULTSET_COMPRESSOR + "\\." + compDeName + "\\.[\\w|\\d]+");
+      compDe.init(compDeConfig);
+    }
+
     // Get column names
 	MAX_BUFFERED_ROWS = HiveConf.getIntVar(conf, HiveConf.ConfVars.HIVE_SERVER2_THRIFT_RESULTSET_MAX_FETCH_SIZE);
     String columnNameProperty = tbl.getProperty(serdeConstants.LIST_COLUMNS);
@@ -107,7 +118,6 @@ public class ThriftJDBCBinarySerDe extends AbstractSerDe {
   private Writable serializeBatch() throws SerDeException {
     output.reset();
 
-    CompDe compDe = CompDeServiceLoader.getInstance().getCompDe();
     if (compDe != null) {
       try {
         protocol.writeBinary(ByteBuffer.wrap(compDe.compress(columnBuffers)));

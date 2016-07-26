@@ -24,6 +24,7 @@ import java.util.Iterator;
 import java.util.List;
 
 import org.apache.hadoop.hive.common.type.HiveDecimal;
+import org.apache.hadoop.hive.ql.session.SessionState;
 import org.apache.hadoop.hive.serde2.thrift.ColumnBuffer;
 import org.apache.hadoop.hive.serde2.compression.CompDe;
 import org.apache.hadoop.hive.serde2.compression.CompDeServiceLoader;
@@ -64,8 +65,8 @@ public class ColumnBasedSet implements RowSet {
     descriptors = null;
     if (tRowSet.isSetBinaryColumns()) {
       // Use TCompactProtocol to read serialized TColumns
-      
-      CompDe compDe = CompDeServiceLoader.getInstance().getCompDe();
+
+      CompDe compDe = SessionState.get().getCompDe();
       if (compDe != null) {
         columns = compDe.decompress(tRowSet.getBinaryColumns());
       }
