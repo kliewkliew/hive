@@ -335,7 +335,7 @@ public abstract class ThriftCLIService extends AbstractService implements TCLISe
             resp.setCompressorConfiguration(compDeResponse);
             resp.setCompressorName(compDesList[i]);
             hiveConf.setVar(ConfVars.HIVE_SERVER2_THRIFT_RESULTSET_COMPRESSOR, compDesList[i]);
-            HiveConf.setBoolVar(hiveConf, HiveConf.ConfVars.COMPRESSRESULT, false);
+            hiveConf.setBoolVar(HiveConf.ConfVars.COMPRESSRESULT, false);
             break;
           }
         }

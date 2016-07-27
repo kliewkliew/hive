@@ -33,11 +33,8 @@ public class TestSnappyCompDe {
   private SnappyCompDe compDe = new SnappyCompDe();
   private ColumnBuffer[] testCols;
 
-  /**
-   * sets up the prerequisite data variables. throws JSONException.
-   */
   @Before
-  public void setUp() {
+  public void init() {
     
     ColumnBuffer columnInt = new ColumnBuffer(Type.INT_TYPE);
     columnInt.addValue(Type.INT_TYPE, 0);
@@ -58,6 +55,6 @@ public class TestSnappyCompDe {
   public void testCompDe() {
     byte[] compressedCols = compDe.compress(testCols);
     ColumnBuffer[] decompressedCols = compDe.decompress(compressedCols);
-    assertArrayEquals(decompressedCols, testCols);
+    assertArrayEquals(testCols, decompressedCols);
   }
 }

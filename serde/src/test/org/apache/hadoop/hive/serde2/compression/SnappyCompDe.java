@@ -54,11 +54,11 @@ public class SnappyCompDe implements CompDe {
   @Override
   public byte[] compress(ColumnBuffer[] colSet) {
     ByteArrayOutputStream outputStream = new ByteArrayOutputStream();
-    
+
     outputStream.write(colSet.length);
     for (int colNum = 0; colNum < colSet.length; colNum++) {
       try {
-        byte[] compressedCol = colSet[colNum].toTColumn().getFieldValue().toString().getBytes();
+        byte[] compressedCol = Snappy.compress(colSet[colNum].toTColumn().getFieldValue().toString().getBytes());
         outputStream.write(compressedCol.length);
         outputStream.write(colSet[colNum].getType().toTType().getValue());
         outputStream.write(compressedCol);
@@ -80,20 +80,19 @@ public class SnappyCompDe implements CompDe {
   public ColumnBuffer[] decompress(byte[] compressedSet) {
     ByteArrayInputStream input = new ByteArrayInputStream(compressedSet);
     int setSize = input.read();
-    
+
     ColumnBuffer[] outputCols = new ColumnBuffer[setSize];
     for (int colNum = 0; colNum < setSize; colNum++) {
       int compressedSize = input.read();
-      byte[] compressedCol = new byte[compressedSize];
       int columnType = input.read();
+      byte[] compressedCol = new byte[compressedSize];
       input.read(compressedCol, 0, compressedSize);
-      TColumn column = new TColumn();
       try {
-        column.setFieldValue(columnType, (Object) Snappy.uncompress(compressedCol));
+        TColumn column = new TColumn(TColumn._Fields.findByThriftId(columnType), (Object) Snappy.uncompress(compressedCol));
+        outputCols[colNum] = new ColumnBuffer(column);
       } catch (IOException e) {
         e.printStackTrace();
       }
-      outputCols[colNum] = new ColumnBuffer(column);
     }
     return outputCols;
   }
