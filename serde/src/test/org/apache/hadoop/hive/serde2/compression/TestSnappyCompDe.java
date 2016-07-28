@@ -46,7 +46,14 @@ public class TestSnappyCompDe {
     columnStr.addValue(Type.STRING_TYPE, "DEF");
     columnStr.addValue(Type.STRING_TYPE, "GHI");
 
-    testCols = new ColumnBuffer[]{columnInt, columnStr};
+    ColumnBuffer columnBool= new ColumnBuffer(Type.BOOLEAN_TYPE);
+    columnBool.addValue(Type.BOOLEAN_TYPE, true);
+    columnBool.addValue(Type.BOOLEAN_TYPE, false);
+
+    testCols = new ColumnBuffer[]{
+        columnInt, 
+        columnStr, 
+        columnBool};
 
     hiveConf.setVar(ConfVars.HIVE_SERVER2_THRIFT_RESULTSET_COMPRESSOR, compDe.getVendor() + "." + compDe.getName());
   }
