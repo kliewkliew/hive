@@ -23,7 +23,15 @@ import org.apache.hadoop.hive.conf.HiveConf.ConfVars;
 import org.apache.hadoop.hive.serde2.compression.SnappyCompDe;
 import org.apache.hadoop.hive.serde2.thrift.ColumnBuffer;
 import org.apache.hadoop.hive.serde2.thrift.Type;
+import org.apache.hive.service.rpc.thrift.TColumn;
+import org.apache.hive.service.rpc.thrift.TStringColumn;
+
 import static org.junit.Assert.assertArrayEquals;
+
+import java.awt.List;
+import java.nio.ByteBuffer;
+import java.util.ArrayList;
+
 import org.junit.Before;
 import org.junit.Test;
 
@@ -35,25 +43,44 @@ public class TestSnappyCompDe {
 
   @Before
   public void init() {
-    
+
     ColumnBuffer columnInt = new ColumnBuffer(Type.INT_TYPE);
     columnInt.addValue(Type.INT_TYPE, 0);
     columnInt.addValue(Type.INT_TYPE, 1);
     columnInt.addValue(Type.INT_TYPE, 2);
+    columnInt.addValue(Type.INT_TYPE, 3);
 
     ColumnBuffer columnStr = new ColumnBuffer(Type.STRING_TYPE);
     columnStr.addValue(Type.STRING_TYPE, "ABC");
     columnStr.addValue(Type.STRING_TYPE, "DEF");
     columnStr.addValue(Type.STRING_TYPE, "GHI");
 
-    ColumnBuffer columnBool= new ColumnBuffer(Type.BOOLEAN_TYPE);
+    // Test trailing `false` in column
+    ColumnBuffer columnBool = new ColumnBuffer(Type.BOOLEAN_TYPE);
     columnBool.addValue(Type.BOOLEAN_TYPE, true);
     columnBool.addValue(Type.BOOLEAN_TYPE, false);
+
+    // Test nulls bitmask
+    byte[] firstNull = {1};
+    byte[] secondNull = {2};
+    byte[] thirdNull = {3};
+    ArrayList<String> someStrings = new ArrayList<String>();
+    someStrings.add("test1");
+    someStrings.add("test2");
+    ColumnBuffer columnStr2 = new ColumnBuffer(TColumn.stringVal(
+        new TStringColumn(someStrings, ByteBuffer.wrap(firstNull))));
+    ColumnBuffer columnStr3 = new ColumnBuffer(TColumn.stringVal(
+        new TStringColumn(someStrings, ByteBuffer.wrap(secondNull))));
+    ColumnBuffer columnStr4 = new ColumnBuffer(TColumn.stringVal(
+        new TStringColumn(someStrings, ByteBuffer.wrap(thirdNull))));
 
     testCols = new ColumnBuffer[]{
         columnInt, 
         columnStr, 
-        columnBool};
+        columnBool,
+        columnStr2,
+        columnStr3,
+        columnStr4};
 
     hiveConf.setVar(ConfVars.HIVE_SERVER2_THRIFT_RESULTSET_COMPRESSOR, compDe.getVendor() + "." + compDe.getName());
   }
