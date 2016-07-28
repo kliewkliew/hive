@@ -24,7 +24,6 @@ import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
-import java.io.ObjectOutputStream;
 import java.io.OutputStream;
 import java.nio.ByteBuffer;
 import java.nio.charset.StandardCharsets;
@@ -38,7 +37,6 @@ import org.apache.commons.io.IOUtils;
 import org.apache.commons.lang3.ArrayUtils;
 import org.apache.hadoop.hive.serde2.thrift.ColumnBuffer;
 import org.apache.hive.service.rpc.thrift.*;
-import org.apache.hive.service.rpc.thrift.TColumn._Fields;
 import org.xerial.snappy.Snappy;
 
 public class SnappyCompDe implements CompDe {
@@ -265,7 +263,7 @@ public class SnappyCompDe implements CompDe {
           BitSet bsBools = BitSet.valueOf(vals);
 
           boolean[] bools = new boolean[bsBools.length()];
-          for (int rowNum = 0; rowNum < bsBools.length(); rowNum++) {
+          for (int rowNum = 0; rowNum < bools.length; rowNum++) {
             bools[rowNum] = bsBools.get(rowNum);
           }
 
