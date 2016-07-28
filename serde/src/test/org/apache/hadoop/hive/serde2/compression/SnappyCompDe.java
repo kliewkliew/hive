@@ -93,7 +93,7 @@ public class SnappyCompDe implements CompDe {
 
           writePrimitives(column.getNulls(), bufferedStream);
 
-          // BitSet won't write trailing zeroes so we encode the size
+          // BitSet won't write trailing zeroes so we encode the length
           bufferedStream.write(column.getValuesSize());
 
           writePrimitives(bsBools.toByteArray(), bufferedStream);
@@ -138,7 +138,7 @@ public class SnappyCompDe implements CompDe {
           ByteArrayOutputStream flattenedData = new ByteArrayOutputStream();
 
           for (int rowNum = 0; rowNum < column.getValuesSize(); rowNum++) {
-            byte[] row = column.getValues().get(rowNum).asCharBuffer().toString().getBytes();
+            byte[] row = column.getValues().get(rowNum).array();
             rowSizes[rowNum] = row.length;
             flattenedData.write(row);
           }

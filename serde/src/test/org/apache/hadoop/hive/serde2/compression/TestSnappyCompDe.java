@@ -23,10 +23,12 @@ import org.apache.hadoop.hive.conf.HiveConf.ConfVars;
 import org.apache.hadoop.hive.serde2.compression.SnappyCompDe;
 import org.apache.hadoop.hive.serde2.thrift.ColumnBuffer;
 import org.apache.hadoop.hive.serde2.thrift.Type;
+import org.apache.hive.service.rpc.thrift.TBinaryColumn;
 import org.apache.hive.service.rpc.thrift.TColumn;
 import org.apache.hive.service.rpc.thrift.TStringColumn;
 
 import static org.junit.Assert.assertArrayEquals;
+import static org.junit.Assert.assertTrue;
 
 import java.awt.List;
 import java.nio.ByteBuffer;
@@ -40,6 +42,7 @@ public class TestSnappyCompDe {
   private static HiveConf hiveConf = new HiveConf();
   private SnappyCompDe compDe = new SnappyCompDe();
   private ColumnBuffer[] testCols;
+  private ColumnBuffer[] testBinary;
 
   @Before
   public void init() {
@@ -61,26 +64,40 @@ public class TestSnappyCompDe {
     columnBool.addValue(Type.BOOLEAN_TYPE, false);
 
     // Test nulls bitmask
-    byte[] firstNull = {1};
-    byte[] secondNull = {2};
-    byte[] thirdNull = {3};
+    byte[] firstNullMask = {1};
+    byte[] secondNullMask = {2};
+    byte[] thirdNullMask = {3};
     ArrayList<String> someStrings = new ArrayList<String>();
     someStrings.add("test1");
     someStrings.add("test2");
     ColumnBuffer columnStr2 = new ColumnBuffer(TColumn.stringVal(
-        new TStringColumn(someStrings, ByteBuffer.wrap(firstNull))));
+        new TStringColumn(someStrings, ByteBuffer.wrap(firstNullMask))));
     ColumnBuffer columnStr3 = new ColumnBuffer(TColumn.stringVal(
-        new TStringColumn(someStrings, ByteBuffer.wrap(secondNull))));
+        new TStringColumn(someStrings, ByteBuffer.wrap(secondNullMask))));
     ColumnBuffer columnStr4 = new ColumnBuffer(TColumn.stringVal(
-        new TStringColumn(someStrings, ByteBuffer.wrap(thirdNull))));
+        new TStringColumn(someStrings, ByteBuffer.wrap(thirdNullMask))));
+
+    byte[] firstRow = {2, 33, 7, 75, 5};
+    byte[] secondRow = {3, 21, 6};
+    byte[] thirdRow = {52, 25, 74, 74, 64};
+    ArrayList<ByteBuffer> someBinaries = new ArrayList<ByteBuffer>();
+    someBinaries.add(ByteBuffer.wrap(firstRow));
+    someBinaries.add(ByteBuffer.wrap(secondRow));
+    someBinaries.add(ByteBuffer.wrap(thirdRow));
+    ColumnBuffer columnBinary = new ColumnBuffer(TColumn.binaryVal(
+        new TBinaryColumn(someBinaries, ByteBuffer.wrap(new byte[]{}))));
 
     testCols = new ColumnBuffer[]{
-        columnInt, 
-        columnStr, 
+        columnInt,
+        columnStr,
         columnBool,
         columnStr2,
         columnStr3,
         columnStr4};
+
+    testBinary = new ColumnBuffer[]{
+        columnBinary
+    };
 
     hiveConf.setVar(ConfVars.HIVE_SERVER2_THRIFT_RESULTSET_COMPRESSOR, compDe.getVendor() + "." + compDe.getName());
   }
@@ -90,5 +107,12 @@ public class TestSnappyCompDe {
     byte[] compressedCols = compDe.compress(testCols);
     ColumnBuffer[] decompressedCols = compDe.decompress(compressedCols);
     assertArrayEquals(testCols, decompressedCols);
+  }
+
+  @Test
+  public void testBinaryCol() {
+    byte[] compressedBinary = compDe.compress(testBinary);
+    ColumnBuffer[] decompressedBinary = compDe.decompress(compressedBinary);
+    assertTrue(testBinary[0].toTColumn().getBinaryVal().equals(decompressedBinary[0].toTColumn().getBinaryVal()));
   }
 }
