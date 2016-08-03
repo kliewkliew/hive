@@ -24,6 +24,7 @@ import java.util.HashMap;
 
 import org.apache.hadoop.hive.conf.HiveConf;
 import org.apache.hadoop.hive.conf.HiveConf.ConfVars;
+import org.apache.hive.service.auth.HiveAuthFactory;
 import org.apache.hive.service.cli.HiveSQLException;
 import org.apache.hive.service.cli.thrift.EmbeddedThriftBinaryCLIService;
 import org.apache.hive.service.cli.thrift.ThriftCLIService;
@@ -44,15 +45,40 @@ public class TestCompDeNegotiation {
   public void init() throws Exception {
     noCompDes = new HiveConf();
     noCompDes.setBoolVar(ConfVars.COMPRESSRESULT, true);
+    noCompDes.setBoolean("datanucleus.schema.autoCreateTables", true);
 
+    noCompDes.setVar(ConfVars.HIVE_SERVER2_AUTHENTICATION, HiveAuthFactory.AuthTypes.NONE.toString());
+    noCompDes.setVar(ConfVars.HIVE_AUTHORIZATION_MANAGER,
+        "org.apache.hadoop.hive.ql.security.authorization.DefaultHiveAuthorizationProvider");
+    //noCompDes.setVar(ConfVars.HIVE_AUTHENTICATOR_MANAGER, SessionStateUserAuthenticator.class.getName());
+    //noCompDes.setBoolVar(ConfVars.HIVE_SERVER2_ENABLE_DOAS, false);
+    
     singleCompDe = new HiveConf();
+    singleCompDe.setBoolVar(ConfVars.COMPRESSRESULT, true);
     singleCompDe.setVar(ConfVars.HIVE_SERVER2_THRIFT_RESULTSET_SERVER_COMPRESSORS, "compde3");
+    singleCompDe.setBoolean("datanucleus.schema.autoCreateTables", true);
+
+    singleCompDe.setVar(ConfVars.HIVE_SERVER2_AUTHENTICATION, HiveAuthFactory.AuthTypes.NONE.toString());
+    singleCompDe.setVar(ConfVars.HIVE_AUTHORIZATION_MANAGER,
+        "org.apache.hadoop.hive.ql.security.authorization.DefaultHiveAuthorizationProvider");
+    //noCompDes.setVar(ConfVars.HIVE_AUTHENTICATOR_MANAGER, SessionStateUserAuthenticator.class.getName());
+    //noCompDes.setBoolVar(ConfVars.HIVE_SERVER2_ENABLE_DOAS, false);
 
     multiCompDes1 = new HiveConf();
+    multiCompDes1.setBoolVar(ConfVars.COMPRESSRESULT, true);
     multiCompDes1.setVar(ConfVars.HIVE_SERVER2_THRIFT_RESULTSET_SERVER_COMPRESSORS, "compde1,compde2,compde3,compde4");
+    multiCompDes1.setBoolean("datanucleus.schema.autoCreateTables", true);
+
+    multiCompDes1.setVar(ConfVars.HIVE_SERVER2_AUTHENTICATION, HiveAuthFactory.AuthTypes.NONE.toString());
+    multiCompDes1.setVar(ConfVars.HIVE_AUTHORIZATION_MANAGER,
+        "org.apache.hadoop.hive.ql.security.authorization.DefaultHiveAuthorizationProvider");
+    //noCompDes.setVar(ConfVars.HIVE_AUTHENTICATOR_MANAGER, SessionStateUserAuthenticator.class.getName());
+    //noCompDes.setBoolVar(ConfVars.HIVE_SERVER2_ENABLE_DOAS, false);
 
     multiCompDes2 = new HiveConf();
+    multiCompDes2.setBoolVar(ConfVars.COMPRESSRESULT, true);
     multiCompDes2.setVar(ConfVars.HIVE_SERVER2_THRIFT_RESULTSET_SERVER_COMPRESSORS, "compde2, compde4");
+    multiCompDes2.setBoolean("datanucleus.schema.autoCreateTables", true);
   }
 
   @Test
