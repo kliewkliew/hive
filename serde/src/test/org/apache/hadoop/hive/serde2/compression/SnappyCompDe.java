@@ -63,7 +63,7 @@ public class SnappyCompDe implements CompDe {
    *   - the size of the nulls binary
    *   - the nulls data
    *   - for string and binary rows: write the number of rows in the column followed by the size of each row
-   *   - the actual data (string and binary rows are flattened)
+   *   - the actual data (string and binary columns are flattened)
    * 
    * @param colSet
    * 
