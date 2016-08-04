@@ -21,22 +21,16 @@ package org.apache.hive.service.cli.compression;
 import static org.junit.Assert.*;
 
 import java.util.HashMap;
-import java.util.Iterator;
 import java.util.Map;
-import java.util.ServiceLoader;
 
 import org.apache.hadoop.hive.conf.HiveConf;
 import org.apache.hadoop.hive.conf.HiveConf.ConfVars;
-import org.apache.hadoop.hive.serde2.compression.CompDe;
-import org.apache.hadoop.hive.serde2.compression.CompDeServiceLoader;
 import org.apache.hive.service.auth.HiveAuthFactory;
 import org.apache.hive.service.cli.HiveSQLException;
-import org.apache.hive.service.cli.ICLIService;
 import org.apache.hive.service.cli.thrift.EmbeddedThriftBinaryCLIService;
 import org.apache.hive.service.cli.thrift.ThriftCLIService;
 import org.apache.hive.service.rpc.thrift.TOpenSessionReq;
 import org.apache.hive.service.rpc.thrift.TOpenSessionResp;
-import org.apache.hive.service.rpc.thrift.TProtocolVersion;
 import org.apache.thrift.TException;
 import org.junit.Before;
 import org.junit.Test;
@@ -55,7 +49,6 @@ public class TestCompDeNegotiation {
         "org.apache.hadoop.hive.ql.security.authorization.DefaultHiveAuthorizationProvider");
     baseConf.setBoolean("datanucleus.schema.autoCreateTables", true);
 
-    
     noCompDes = new HiveConf(baseConf);
     
     singleCompDe = new HiveConf(baseConf);
@@ -152,7 +145,7 @@ public class TestCompDeNegotiation {
 
     req.setConfiguration(multiCompDes1.getValByRegex(".*"));
     resp = service.OpenSession(req);
- // "compde1" fails to initialize in our mock service
+    // "compde1" fails to initialize in our mock service
     assertEquals("compde2", resp.getCompressorName());
 
     req.setConfiguration(multiCompDes2.getValByRegex(".*"));
