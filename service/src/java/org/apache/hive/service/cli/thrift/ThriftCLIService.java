@@ -314,7 +314,6 @@ public abstract class ThriftCLIService extends AbstractService implements TCLISe
     LOG.info("Client protocol version: " + req.getClient_protocol());
     TOpenSessionResp resp = new TOpenSessionResp();
     try {
-      // CompDe negotiation
       String[] serverCompDes =
           HiveConf.getTrimmedStringsVar(hiveConf, ConfVars.HIVE_SERVER2_THRIFT_RESULTSET_SERVER_COMPRESSORS);
 
@@ -326,6 +325,7 @@ public abstract class ThriftCLIService extends AbstractService implements TCLISe
       // List of CompDes ordered by the server's preference if configured, otherwise ordered by the client's preference
       String[] compDesList = serverCompDes.length != 0 ? serverCompDes : clientCompDes.toArray(new String[0]);
 
+      // CompDe negotiation
       for (int i = 0; i < compDesList.length; i++) {
         if (clientCompDes.contains(compDesList[i])) {
           Map<String, String> compDeConfig = 

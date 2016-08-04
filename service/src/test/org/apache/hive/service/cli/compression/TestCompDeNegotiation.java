@@ -62,7 +62,6 @@ public class TestCompDeNegotiation {
     multiCompDes2 = new HiveConf(baseConf);
     multiCompDes2.setVar(ConfVars.HIVE_SERVER2_THRIFT_RESULTSET_SERVER_COMPRESSORS, "compde2, compde4");
     multiCompDes2.setVar(ConfVars.HIVE_SERVER2_THRIFT_RESULTSET_CLIENT_COMPRESSORS, "compde2, compde4");
-    
   }
 
   public class MockEmbeddedThriftBinaryCLIService extends EmbeddedThriftBinaryCLIService {
@@ -154,5 +153,4 @@ public class TestCompDeNegotiation {
 
     service.stop();
   }
-
 }
