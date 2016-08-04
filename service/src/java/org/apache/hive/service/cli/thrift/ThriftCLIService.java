@@ -32,6 +32,7 @@ import javax.security.auth.login.LoginException;
 
 import org.apache.hadoop.hive.conf.HiveConf;
 import org.apache.hadoop.hive.conf.HiveConf.ConfVars;
+import org.apache.hadoop.hive.serde2.compression.CompDe;
 import org.apache.hadoop.hive.serde2.compression.CompDeServiceLoader;
 import org.apache.hadoop.hive.common.ServerUtils;
 import org.apache.hadoop.hive.shims.HadoopShims.KerberosNameShim;
@@ -313,23 +314,23 @@ public abstract class ThriftCLIService extends AbstractService implements TCLISe
     LOG.info("Client protocol version: " + req.getClient_protocol());
     TOpenSessionResp resp = new TOpenSessionResp();
     try {
-      SessionHandle sessionHandle = getSessionHandle(req, resp);
-      resp.setSessionHandle(sessionHandle.toTSessionHandle());
-
       // CompDe negotiation
       String[] serverCompDes =
           HiveConf.getTrimmedStringsVar(hiveConf, ConfVars.HIVE_SERVER2_THRIFT_RESULTSET_SERVER_COMPRESSORS);
+
+      HiveConf tempConf = new HiveConf();
+      tempConf.setVar(ConfVars.HIVE_SERVER2_THRIFT_RESULTSET_CLIENT_COMPRESSORS, req.getConfiguration().get(ConfVars.HIVE_SERVER2_THRIFT_RESULTSET_CLIENT_COMPRESSORS.varname));
       List<String> clientCompDes =
-          Arrays.asList(HiveConf.getTrimmedStringsVar(hiveConf, ConfVars.HIVE_SERVER2_THRIFT_RESULTSET_CLIENT_COMPRESSORS));
+          Arrays.asList(HiveConf.getTrimmedStringsVar(tempConf, ConfVars.HIVE_SERVER2_THRIFT_RESULTSET_CLIENT_COMPRESSORS));
+
       // List of CompDes ordered by the server's preference if configured, otherwise ordered by the client's preference
-      String[] compDesList = serverCompDes.length != 0 ? serverCompDes : (String[]) clientCompDes.toArray();
-      
+      String[] compDesList = serverCompDes.length != 0 ? serverCompDes : clientCompDes.toArray(new String[0]);
+
       for (int i = 0; i < compDesList.length; i++) {
         if (clientCompDes.contains(compDesList[i])) {
           Map<String, String> compDeConfig = 
               hiveConf.getValByRegex(ConfVars.HIVE_SERVER2_THRIFT_RESULTSET_COMPRESSOR + "\\." + compDesList[i] + "\\.[\\w|\\d]+");
-          Map<String, String> compDeResponse = 
-              CompDeServiceLoader.getInstance().getCompDe(compDesList[i]).init(compDeConfig);
+          Map<String, String> compDeResponse = initCompDe(compDesList[i], compDeConfig);
           if (compDeResponse != null) {
             LOG.info("Initialized CompDe plugin for " + compDesList[i]);
             resp.setCompressorConfiguration(compDeResponse);
@@ -340,6 +341,9 @@ public abstract class ThriftCLIService extends AbstractService implements TCLISe
           }
         }
       }
+
+      SessionHandle sessionHandle = getSessionHandle(req, resp);
+      resp.setSessionHandle(sessionHandle.toTSessionHandle());
 
       resp.setStatus(OK_STATUS);
       ThriftCLIServerContext context =
@@ -353,6 +357,16 @@ public abstract class ThriftCLIService extends AbstractService implements TCLISe
       resp.setStatus(HiveSQLException.toTStatus(e));
     }
     return resp;
+  }
+
+  protected Map<String, String> initCompDe(String compDeName, Map<String, String> compDeConfig) {
+    CompDe compDe = CompDeServiceLoader.getInstance().getCompDe(compDeName);
+    if (compDe != null) {
+      return compDe.init(compDeConfig);
+    }
+    else {
+      return null;
+    }
   }
 
   private String getIpAddress() {
