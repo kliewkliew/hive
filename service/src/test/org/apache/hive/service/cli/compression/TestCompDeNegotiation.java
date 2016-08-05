@@ -64,7 +64,7 @@ public class TestCompDeNegotiation {
     multiCompDes2.setVar(ConfVars.HIVE_SERVER2_THRIFT_RESULTSET_CLIENT_COMPRESSORS, "compde2, compde4");
   }
 
-  public class MockEmbeddedThriftBinaryCLIService extends EmbeddedThriftBinaryCLIService {
+  public class MockEmbeddedThriftBinaryCLIServiceWithCompDes extends EmbeddedThriftBinaryCLIService {
     @Override
     // Pretend that we have plug-ins for all CompDes except "compde1"
     protected Map<String, String> initCompDe(String compDeName, Map<String, String> compDeConfig) {
@@ -72,14 +72,23 @@ public class TestCompDeNegotiation {
         return null;
       }
       else {
-        return new HashMap<String, String>();
+        return compDeConfig;
       }
     }
   }
 
+  public class MockEmbeddedThriftBinaryCLIServiceWithoutCompDes extends EmbeddedThriftBinaryCLIService {
+    @Override
+    // Pretend that we have no CompDe plug-ins
+    protected Map<String, String> initCompDe(String compDeName, Map<String, String> compDeConfig) {
+      return null;
+    }
+  }
+
   @Test
-  public void testServerWithoutCompDe() throws HiveSQLException, InterruptedException, TException {
-    ThriftCLIService service = new MockEmbeddedThriftBinaryCLIService();
+  // The server has no CompDe plug-ins
+  public void testServerWithoutCompDePlugins() throws HiveSQLException, InterruptedException, TException {
+    ThriftCLIService service = new MockEmbeddedThriftBinaryCLIServiceWithoutCompDes();
     service.init(noCompDes);
 
     TOpenSessionReq req = new TOpenSessionReq();
@@ -102,8 +111,34 @@ public class TestCompDeNegotiation {
   }
 
   @Test
-  public void testServerSingleCompDe() throws HiveSQLException, InterruptedException, TException {
-    ThriftCLIService service = new MockEmbeddedThriftBinaryCLIService();
+  // The server has plug-ins but the CompDe list is not configured:
+  // The client order of preference for CompDes is used.
+  public void testServerWithoutCompDeInList() throws HiveSQLException, InterruptedException, TException {
+    ThriftCLIService service = new MockEmbeddedThriftBinaryCLIServiceWithCompDes();
+    service.init(noCompDes);
+
+    TOpenSessionReq req = new TOpenSessionReq();
+    req.setConfiguration(new HashMap<String, String>());
+    TOpenSessionResp resp;
+
+    req.setConfiguration(noCompDes.getValByRegex(".*"));
+    resp = service.OpenSession(req);
+    assertNull(resp.getCompressorName());
+
+    req.setConfiguration(singleCompDe.getValByRegex(".*"));
+    resp = service.OpenSession(req);
+    assertEquals("compde3", resp.getCompressorName());
+
+    req.setConfiguration(multiCompDes2.getValByRegex(".*"));
+    resp = service.OpenSession(req);
+    assertEquals("compde2", resp.getCompressorName());
+
+    service.stop();
+  }
+
+  @Test
+  public void testServerWithSingleCompDeInList() throws HiveSQLException, InterruptedException, TException {
+    ThriftCLIService service = new MockEmbeddedThriftBinaryCLIServiceWithCompDes();
     service.init(singleCompDe);
 
     TOpenSessionReq req = new TOpenSessionReq();
@@ -126,8 +161,8 @@ public class TestCompDeNegotiation {
   }
 
   @Test
-  public void testServerWithMultiCompDes() throws HiveSQLException, InterruptedException, TException {
-    ThriftCLIService service = new MockEmbeddedThriftBinaryCLIService();
+  public void testServerWithMultiCompDesInList() throws HiveSQLException, InterruptedException, TException {
+    ThriftCLIService service = new MockEmbeddedThriftBinaryCLIServiceWithCompDes();
     service.init(multiCompDes1);
 
     TOpenSessionReq req = new TOpenSessionReq();
