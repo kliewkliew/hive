@@ -76,7 +76,7 @@ public class ThriftJDBCBinarySerDe extends AbstractSerDe {
   @Override
   public void initialize(Configuration conf, Properties tbl) throws SerDeException {
     String compDeName = HiveConf.getVar(conf, ConfVars.HIVE_SERVER2_THRIFT_RESULTSET_COMPRESSOR);
-    CompDe compDe = CompDeServiceLoader.getInstance().getCompDe(compDeName);
+    compDe = CompDeServiceLoader.getInstance().getCompDe(compDeName);
     if (compDe != null) {
       Map<String, String> compDeConfig = 
           conf.getValByRegex(ConfVars.HIVE_SERVER2_THRIFT_RESULTSET_COMPRESSOR + "\\." + compDeName + "\\.[\\w|\\d]+");
