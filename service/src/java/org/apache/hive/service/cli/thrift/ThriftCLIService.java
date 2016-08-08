@@ -336,15 +336,13 @@ public abstract class ThriftCLIService extends AbstractService implements TCLISe
             resp.setCompressorConfiguration(compDeResponse);
             resp.setCompressorName(compDesList[i]);
             // SessionState is initialized based on TOpenSessionRequest
-            Map<String, String> newConfig = negotiatedRequest.getConfiguration();
-            newConfig.put(ConfVars.HIVE_SERVER2_THRIFT_RESULTSET_COMPRESSOR.varname, compDesList[i]);
-            negotiatedRequest.setConfiguration(newConfig);
+            req.getConfiguration().put(ConfVars.HIVE_SERVER2_THRIFT_RESULTSET_COMPRESSOR.varname, compDesList[i]);
             break;
           }
         }
       }
 
-      SessionHandle sessionHandle = getSessionHandle(negotiatedRequest, resp);
+      SessionHandle sessionHandle = getSessionHandle(req, resp);
       resp.setSessionHandle(sessionHandle.toTSessionHandle());
 
       resp.setStatus(OK_STATUS);
