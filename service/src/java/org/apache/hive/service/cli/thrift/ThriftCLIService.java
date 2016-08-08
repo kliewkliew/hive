@@ -326,6 +326,7 @@ public abstract class ThriftCLIService extends AbstractService implements TCLISe
       String[] compDesList = serverCompDes.length != 0 ? serverCompDes : clientCompDes.toArray(new String[clientCompDes.size()]);
 
       // CompDe negotiation
+      TOpenSessionReq negotiatedRequest = new TOpenSessionReq(req);
       for (int i = 0; i < compDesList.length; i++) {
         if (clientCompDes.contains(compDesList[i])) {
           Map<String, String> compDeConfig = 
@@ -335,14 +336,16 @@ public abstract class ThriftCLIService extends AbstractService implements TCLISe
             LOG.info("Initialized CompDe plugin for " + compDesList[i]);
             resp.setCompressorConfiguration(compDeResponse);
             resp.setCompressorName(compDesList[i]);
-            hiveConf.setVar(ConfVars.HIVE_SERVER2_THRIFT_RESULTSET_COMPRESSOR, compDesList[i]);
-            hiveConf.setBoolVar(HiveConf.ConfVars.COMPRESSRESULT, false);
+            // SessionState is initialized based on TOpenSessionRequest
+            Map<String, String> newConfig = negotiatedRequest.getConfiguration();
+            newConfig.put(ConfVars.HIVE_SERVER2_THRIFT_RESULTSET_COMPRESSOR.varname, compDesList[i]);
+            negotiatedRequest.setConfiguration(newConfig);
             break;
           }
         }
       }
 
-      SessionHandle sessionHandle = getSessionHandle(req, resp);
+      SessionHandle sessionHandle = getSessionHandle(negotiatedRequest, resp);
       resp.setSessionHandle(sessionHandle.toTSessionHandle());
 
       resp.setStatus(OK_STATUS);
