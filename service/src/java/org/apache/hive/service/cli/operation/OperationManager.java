@@ -221,6 +221,16 @@ public class OperationManager extends AbstractService {
   private Operation removeTimedOutOperation(OperationHandle operationHandle) {
     Operation operation = handleToOperation.get(operationHandle);
     if (operation != null && operation.isTimedOut(System.currentTimeMillis())) {
+      LOG.info("Operation is timed out,operation=" + operation.getHandle() + ",state=" + operation.getState().toString());
+      Metrics metrics = MetricsFactory.getInstance();
+      if (metrics != null) {
+        try {
+          metrics.decrementCounter(MetricsConstant.OPEN_OPERATIONS);
+        } catch (Exception e) {
+          LOG.warn("Error decrementing open_operations metric, reported values may be incorrect", e);
+        }
+      }
+
       handleToOperation.remove(operationHandle, operation);
       if (operation instanceof SQLOperation) {
         removeSaveSqlOperationDisplay(operationHandle);
@@ -373,13 +383,14 @@ public class OperationManager extends AbstractService {
 
   /**
    * @return displays representing a number of historical SQLOperations, at max number of
-   * hive.server2.webui.max.historic.queries
+   * hive.server2.webui.max.historic.queries. Newest items will be first.
    */
   public List<SQLOperationDisplay> getHistoricalSQLOperations() {
     List<SQLOperationDisplay> result = new LinkedList<>();
     synchronized (webuiLock) {
       if (historicSqlOperations != null) {
         result.addAll(historicSqlOperations.values());
+        Collections.reverse(result);
       }
     }
     return result;

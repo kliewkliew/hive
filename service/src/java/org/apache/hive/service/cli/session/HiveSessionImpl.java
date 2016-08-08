@@ -168,7 +168,8 @@ public class HiveSessionImpl implements HiveSession {
     sessionState.setForwardedAddresses(SessionManager.getForwardedAddresses());
     SessionState.start(sessionState);
     try {
-      sessionState.reloadAuxJars();
+      sessionState.loadAuxJars();
+      sessionState.loadReloadableAuxJars();
     } catch (IOException e) {
       String msg = "Failed to load reloadable jar file path: " + e;
       LOG.error(msg, e);
@@ -792,7 +793,7 @@ public class HiveSessionImpl implements HiveSession {
         try {
           operation.close();
         } catch (Exception e) {
-          LOG.warn("Exception is thrown closing timed-out operation " + operation.getHandle(), e);
+          LOG.warn("Exception is thrown closing timed-out operation, reported open_operations metrics may be incorrect " + operation.getHandle(), e);
         }
       }
     } finally {

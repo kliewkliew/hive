@@ -37,7 +37,7 @@ import java.util.Set;
 
 import org.apache.commons.lang3.StringUtils;
 import org.apache.hadoop.hive.llap.configuration.LlapDaemonConfiguration;
-import org.apache.hadoop.hive.llap.daemon.impl.LlapDaemon;
+import org.apache.hadoop.hive.llap.daemon.impl.LlapConstants;
 import org.apache.hadoop.hive.llap.daemon.impl.StaticPermanentFunctionChecker;
 import org.apache.hadoop.hive.llap.daemon.rpc.LlapDaemonProtocolProtos;
 import org.apache.hadoop.hive.llap.tezplugins.LlapTezUtils;
@@ -199,6 +199,11 @@ public class LlapServiceDriver {
           "@" + options.getName());
     }
 
+    if (options.getLogger() != null) {
+      HiveConf.setVar(conf, ConfVars.LLAP_DAEMON_LOGGER, options.getLogger());
+      propsDirectOptions.setProperty(ConfVars.LLAP_DAEMON_LOGGER.varname, options.getLogger());
+    }
+
     if (options.getSize() != -1) {
       if (options.getCache() != -1) {
         if (HiveConf.getBoolVar(conf, HiveConf.ConfVars.LLAP_ALLOCATOR_MAPPED) == false) {
@@ -277,7 +282,7 @@ public class LlapServiceDriver {
           .setProperty(ConfVars.LLAP_DAEMON_QUEUE_NAME.varname, options.getLlapQueueName());
     }
 
-    URL logger = conf.getResource(LlapDaemon.LOG4j2_PROPERTIES_FILE);
+    URL logger = conf.getResource(LlapConstants.LOG4j2_PROPERTIES_FILE);
 
     if (null == logger) {
       throw new Exception("Unable to find required config file: llap-daemon-log4j2.properties");
@@ -424,12 +429,12 @@ public class LlapServiceDriver {
     IOUtils.copyBytes(loggerContent,
         lfs.create(new Path(confPath, "llap-daemon-log4j2.properties"), true), conf, true);
 
-    String metricsFile = LlapDaemon.LLAP_HADOOP_METRICS2_PROPERTIES_FILE;
+    String metricsFile = LlapConstants.LLAP_HADOOP_METRICS2_PROPERTIES_FILE;
     URL metrics2 = conf.getResource(metricsFile);
     if (metrics2 == null) {
-      LOG.warn(LlapDaemon.LLAP_HADOOP_METRICS2_PROPERTIES_FILE + " cannot be found." +
-          " Looking for " + LlapDaemon.HADOOP_METRICS2_PROPERTIES_FILE);
-      metricsFile = LlapDaemon.HADOOP_METRICS2_PROPERTIES_FILE;
+      LOG.warn(LlapConstants.LLAP_HADOOP_METRICS2_PROPERTIES_FILE + " cannot be found." +
+          " Looking for " + LlapConstants.HADOOP_METRICS2_PROPERTIES_FILE);
+      metricsFile = LlapConstants.HADOOP_METRICS2_PROPERTIES_FILE;
       metrics2 = conf.getResource(metricsFile);
     }
     if (metrics2 != null) {
@@ -438,8 +443,8 @@ public class LlapServiceDriver {
           conf, true);
       LOG.info("Copied hadoop metrics2 properties file from " + metrics2);
     } else {
-      LOG.warn("Cannot find " + LlapDaemon.LLAP_HADOOP_METRICS2_PROPERTIES_FILE + " or " +
-          LlapDaemon.HADOOP_METRICS2_PROPERTIES_FILE + " in classpath.");
+      LOG.warn("Cannot find " + LlapConstants.LLAP_HADOOP_METRICS2_PROPERTIES_FILE + " or " +
+          LlapConstants.HADOOP_METRICS2_PROPERTIES_FILE + " in classpath.");
     }
 
     PrintWriter udfStream =
@@ -572,6 +577,15 @@ public class LlapServiceDriver {
     }
   }
 
+  /**
+   *
+   * @param lfs filesystem on which file will be generated
+   * @param confPath path wher the config will be generated
+   * @param configured the base configuration instances
+   * @param direct properties specified directly - i.e. using the properties exact option
+   * @param hiveconf properties specifried via --hiveconf
+   * @throws IOException
+   */
   private void createLlapDaemonConfig(FileSystem lfs, Path confPath, Configuration configured,
                                       Properties direct, Properties hiveconf) throws IOException {
     FSDataOutputStream confStream =

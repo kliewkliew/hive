@@ -2196,17 +2196,16 @@ public class SemanticAnalyzer extends BaseSemanticAnalyzer {
    * @throws HiveException If an error occurs while checking for encryption
    */
   private boolean isPathEncrypted(Path path) throws HiveException {
-    HadoopShims.HdfsEncryptionShim hdfsEncryptionShim;
 
-    hdfsEncryptionShim = SessionState.get().getHdfsEncryptionShim();
-    if (hdfsEncryptionShim != null) {
-      try {
+    try {
+      HadoopShims.HdfsEncryptionShim hdfsEncryptionShim = SessionState.get().getHdfsEncryptionShim(path.getFileSystem(conf));
+      if (hdfsEncryptionShim != null) {
         if (hdfsEncryptionShim.isPathEncrypted(path)) {
           return true;
         }
-      } catch (Exception e) {
-        throw new HiveException("Unable to determine if " + path + " is encrypted: " + e, e);
       }
+    } catch (Exception e) {
+        throw new HiveException("Unable to determine if " + path + " is encrypted: " + e, e);
     }
 
     return false;
@@ -8922,6 +8921,10 @@ public class SemanticAnalyzer extends BaseSemanticAnalyzer {
   private ObjectPair<Integer, int[]> findMergePos(QBJoinTree node, QBJoinTree target) {
     int res = -1;
     String leftAlias = node.getLeftAlias();
+    if (leftAlias == null && (!node.getNoOuterJoin() || !target.getNoOuterJoin())) {
+      // Cross with outer join: currently we do not merge
+      return new ObjectPair(-1, null);
+    }
 
     ArrayList<ASTNode> nodeCondn = node.getExpressions().get(0);
     ArrayList<ASTNode> targetCondn = null;

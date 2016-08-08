@@ -229,6 +229,7 @@ public class HiveConf extends Configuration {
       HiveConf.ConfVars.METASTORE_CACHE_PINOBJTYPES,
       HiveConf.ConfVars.METASTORE_CONNECTION_POOLING_TYPE,
       HiveConf.ConfVars.METASTORE_VALIDATE_TABLES,
+      HiveConf.ConfVars.METASTORE_DATANUCLEUS_INIT_COL_INFO,
       HiveConf.ConfVars.METASTORE_VALIDATE_COLUMNS,
       HiveConf.ConfVars.METASTORE_VALIDATE_CONSTRAINTS,
       HiveConf.ConfVars.METASTORE_STORE_MANAGER_TYPE,
@@ -385,6 +386,7 @@ public class HiveConf extends Configuration {
     llapDaemonVarsSetLocal.add(ConfVars.LLAP_DAEMON_WEB_SSL.varname);
     llapDaemonVarsSetLocal.add(ConfVars.LLAP_DAEMON_CONTAINER_ID.varname);
     llapDaemonVarsSetLocal.add(ConfVars.LLAP_VALIDATE_ACLS.varname);
+    llapDaemonVarsSetLocal.add(ConfVars.LLAP_DAEMON_LOGGER.varname);
   }
 
   /**
@@ -569,7 +571,7 @@ public class HiveConf extends Configuration {
         "Used to avoid all of the proxies and object copies in the metastore.  Note, if this is " +
             "set, you MUST use a local metastore (hive.metastore.uris must be empty) otherwise " +
             "undefined and most likely undesired behavior will result"),
-    METASTORE_FS_HANDLER_THREADS_COUNT("hive.metastore.fshandler.threads", 20,
+    METASTORE_FS_HANDLER_THREADS_COUNT("hive.metastore.fshandler.threads", 15,
         "Number of threads to be allocated for metastore handler for fs operations."),
     METASTORE_HBASE_CATALOG_CACHE_SIZE("hive.metastore.hbase.catalog.cache.size", 50000, "Maximum number of " +
         "objects we will place in the hbase metastore catalog cache.  The objects will be divided up by " +
@@ -704,6 +706,10 @@ public class HiveConf extends Configuration {
         "List of comma separated metastore object types that should be pinned in the cache"),
     METASTORE_CONNECTION_POOLING_TYPE("datanucleus.connectionPoolingType", "BONECP",
         "Specify connection pool library for datanucleus"),
+    // Workaround for DN bug on Postgres:
+    // http://www.datanucleus.org/servlet/forum/viewthread_thread,7985_offset
+    METASTORE_DATANUCLEUS_INIT_COL_INFO("datanucleus.rdbms.initializeColumnInfo", "NONE",
+        "initializeColumnInfo setting for DataNucleus; set to NONE at least on Postgres."),
     METASTORE_VALIDATE_TABLES("datanucleus.schema.validateTables", false,
         "validates existing schema against code. turn this on if you want to verify existing schema"),
     METASTORE_VALIDATE_COLUMNS("datanucleus.schema.validateColumns", false,
@@ -984,7 +990,7 @@ public class HiveConf extends Configuration {
         "Enabling strict large query checks disallows the following:\n" +
         "  Cartesian product (cross join)."),
     @Deprecated
-    HIVEMAPREDMODE("hive.mapred.mode", "nonstrict",
+    HIVEMAPREDMODE("hive.mapred.mode", null,
         "Deprecated; use hive.strict.checks.* settings instead."),
     HIVEALIAS("hive.alias", "", ""),
     HIVEMAPSIDEAGGREGATE("hive.map.aggr", true, "Whether to use map-side aggregation in Hive Group By queries"),
@@ -2107,7 +2113,9 @@ public class HiveConf extends Configuration {
         "hive.exec.temporary.table.storage", "default", new StringSet("memory",
          "ssd", "default"), "Define the storage policy for temporary tables." +
          "Choices between memory, ssd and default"),
-
+    HIVE_QUERY_LIFETIME_HOOKS("hive.query.lifetime.hooks", "",
+        "A comma separated list of hooks which implement QueryLifeTimeHook. These will be triggered" +
+            " before/after query compilation and before/after query execution, in the order specified"),
     HIVE_DRIVER_RUN_HOOKS("hive.exec.driver.run.hooks", "",
         "A comma separated list of hooks which implement HiveDriverRunHook. Will be run at the beginning " +
         "and end of Driver.run, these will be run in the order specified."),
@@ -2481,9 +2489,12 @@ public class HiveConf extends Configuration {
     HIVE_SECURITY_COMMAND_WHITELIST("hive.security.command.whitelist", "set,reset,dfs,add,list,delete,reload,compile",
         "Comma separated list of non-SQL Hive commands users are authorized to execute"),
 
-    HIVE_MOVE_FILES_THREAD_COUNT("hive.mv.files.thread", 25, new  SizeValidator(0L, true, 1024L, true), "Number of threads"
+    HIVE_MOVE_FILES_THREAD_COUNT("hive.mv.files.thread", 15, new  SizeValidator(0L, true, 1024L, true), "Number of threads"
          + " used to move files in move task. Set it to 0 to disable multi-threaded file moves. This parameter is also used by"
          + " MSCK to check tables."),
+    HIVE_LOAD_DYNAMIC_PARTITIONS_THREAD_COUNT("hive.load.dynamic.partitions.thread", 15,
+        new  SizeValidator(1L, true, 1024L, true),
+        "Number of threads used to load dynamic partitions."),
     // If this is set all move tasks at the end of a multi-insert query will only begin once all
     // outputs are ready
     HIVE_MULTI_INSERT_MOVE_TASKS_SHARE_DEPENDENCIES(
@@ -2601,6 +2612,13 @@ public class HiveConf extends Configuration {
     HIVE_VECTORIZATION_USE_ROW_DESERIALIZE("hive.vectorized.use.row.serde.deserialize", false,
         "This flag should be set to true to enable vectorizing using row deserialize.\n" +
         "The default value is false."),
+    HIVE_VECTOR_ADAPTOR_USAGE_MODE("hive.vectorized.adaptor.usage.mode", "all", new StringSet("none", "chosen", "all"),
+        "Specifies the extent to which the VectorUDFAdaptor will be used for UDFs that do not have a cooresponding vectorized class.\n" +
+        "0. none   : disable any usage of VectorUDFAdaptor\n" +
+        "1. chosen : use VectorUDFAdaptor for a small set of UDFs that were choosen for good performance\n" +
+        "2. all    : use VectorUDFAdaptor for all UDFs"
+    ),
+
     HIVE_TYPE_CHECK_ON_INSERT("hive.typecheck.on.insert", true, "This property has been extended to control "
         + "whether to check, convert, and normalize partition value to conform to its column type in "
         + "partition operations including but not limited to insert, such as alter, describe etc."),
@@ -2698,6 +2716,14 @@ public class HiveConf extends Configuration {
         "hive.tez.exec.inplace.progress",
         true,
         "Updates tez job execution progress in-place in the terminal."),
+    TEZ_CONTAINER_MAX_JAVA_HEAP_FRACTION("hive.tez.container.max.java.heap.fraction", 0.8f,
+        "This is to override the tez setting with the same name"),
+    TEZ_TASK_SCALE_MEMORY_RESERVE_FRACTION_MIN("hive.tez.task.scale.memory.reserve-fraction.min",
+        0.3f, "This is to override the tez setting tez.task.scale.memory.reserve-fraction"),
+    TEZ_TASK_SCALE_MEMORY_RESERVE_FRACTION_MAX("hive.tez.task.scale.memory.reserve.fraction.max",
+        0.5f, "The maximum fraction of JVM memory which Tez will reserve for the processor"),
+    TEZ_TASK_SCALE_MEMORY_RESERVE_FRACTION("hive.tez.task.scale.memory.reserve.fraction",
+        -1f, "The customized fraction of JVM memory which Tez will reserve for the processor"),
     // The default is different on the client and server, so it's null here.
     LLAP_IO_ENABLED("hive.llap.io.enabled", null, "Whether the LLAP IO layer is enabled."),
     LLAP_IO_NONVECTOR_WRAPPER_ENABLED("hive.llap.io.nonvector.wrapper.enabled", true,
@@ -2832,9 +2858,10 @@ public class HiveConf extends Configuration {
     LLAP_DAEMON_RPC_NUM_HANDLERS("hive.llap.daemon.rpc.num.handlers", 5,
       "Number of RPC handlers for LLAP daemon.", "llap.daemon.rpc.num.handlers"),
     LLAP_DAEMON_WORK_DIRS("hive.llap.daemon.work.dirs", "",
-      "Working directories for the daemon. Needs to be set for a secure cluster, since LLAP may\n" +
-      "not have access to the default YARN working directories. yarn.nodemanager.local-dirs is\n" +
-      "used if this is not set", "llap.daemon.work.dirs"),
+        "Working directories for the daemon. This should not be set if running as a YARN\n" +
+        "application via Slider. It must be set when not running via Slider on YARN. If the value\n" +
+        "is set when running as a Slider YARN application, the specified value will be used.",
+        "llap.daemon.work.dirs"),
     LLAP_DAEMON_YARN_SHUFFLE_PORT("hive.llap.daemon.yarn.shuffle.port", 15551,
       "YARN shuffle port for LLAP-daemon-hosted shuffle.", "llap.daemon.yarn.shuffle.port"),
     LLAP_DAEMON_YARN_CONTAINER_MB("hive.llap.daemon.yarn.container.mb", -1,
@@ -2987,6 +3014,11 @@ public class HiveConf extends Configuration {
         "Whether to create the LLAP coordinator; since execution engine and container vs llap\n" +
         "settings are both coming from job configs, we don't know at start whether this should\n" +
         "be created. Default true."),
+    LLAP_DAEMON_LOGGER("hive.llap.daemon.logger", Constants.LLAP_LOGGER_NAME_RFA,
+        new StringSet(Constants.LLAP_LOGGER_NAME_QUERY_ROUTING,
+            Constants.LLAP_LOGGER_NAME_RFA,
+            Constants.LLAP_LOGGER_NAME_CONSOLE),
+        "logger used for llap-daemons."),
 
     SPARK_CLIENT_FUTURE_TIMEOUT("hive.spark.client.future.timeout",
       "60s", new TimeValidator(TimeUnit.SECONDS),
@@ -3032,6 +3064,11 @@ public class HiveConf extends Configuration {
        "directories that are partition-like but contain unsupported characters. 'throw' (an " +
        "exception) is the default; 'skip' will skip the invalid directories and still repair the" +
        " others; 'ignore' will skip the validation (legacy behavior, causes bugs in many cases)"),
+    HIVE_MSCK_REPAIR_BATCH_SIZE(
+        "hive.msck.repair.batch.size", 0,
+        "Batch size for the msck repair command. If the value is greater than zero, "
+            + "it will execute batch wise with the configured batch size. "
+            + "The default value is zero. Zero means it will execute directly (Not batch wise)"),
     HIVE_SERVER2_LLAP_CONCURRENT_QUERIES("hive.server2.llap.concurrent.queries", -1,
         "The number of queries allowed in parallel via llap. Negative number implies 'infinite'."),
     HIVE_TEZ_ENABLE_MEMORY_MANAGER("hive.tez.enable.memory.manager", true,

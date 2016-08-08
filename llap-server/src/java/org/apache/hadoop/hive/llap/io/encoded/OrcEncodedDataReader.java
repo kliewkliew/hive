@@ -26,9 +26,11 @@ import java.util.Collections;
 import java.util.List;
 
 import org.apache.hadoop.hive.llap.counters.LlapIOCounters;
-import org.apache.hadoop.hive.llap.metrics.LlapDaemonIOMetrics;
+import org.apache.orc.OrcUtils;
+import org.apache.orc.TypeDescription;
 import org.apache.orc.impl.DataReaderProperties;
 import org.apache.orc.impl.OrcIndex;
+import org.apache.orc.impl.SchemaEvolution;
 import org.apache.tez.common.counters.TezCounters;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -160,10 +162,12 @@ public class OrcEncodedDataReader extends CallableWithNdc<Void>
   @SuppressWarnings("unused")
   private volatile boolean isPaused = false;
 
+  boolean[] globalIncludes = null;
+
   public OrcEncodedDataReader(LowLevelCache lowLevelCache, BufferUsageManager bufferManager,
       OrcMetadataCache metadataCache, Configuration conf, FileSplit split, List<Integer> columnIds,
       SearchArgument sarg, String[] columnNames, OrcEncodedDataConsumer consumer,
-      QueryFragmentCounters counters) {
+      QueryFragmentCounters counters) throws IOException {
     this.lowLevelCache = lowLevelCache;
     this.metadataCache = metadataCache;
     this.bufferManager = bufferManager;
@@ -182,6 +186,19 @@ public class OrcEncodedDataReader extends CallableWithNdc<Void>
     } catch (IOException e) {
       throw new RuntimeException(e);
     }
+
+    // moved this part of code from performDataRead as LlapInputFormat need to know the file schema
+    // to decide if schema evolution is supported or not
+    orcReader = null;
+    // 1. Get file metadata from cache, or create the reader and read it.
+    // Don't cache the filesystem object for now; Tez closes it and FS cache will fix all that
+    fs = split.getPath().getFileSystem(conf);
+    fileKey = determineFileId(fs, split,
+        HiveConf.getBoolVar(conf, ConfVars.LLAP_CACHE_ALLOW_SYNTHETIC_FILEID));
+    fileMetadata = getOrReadFileMetadata();
+    globalIncludes = OrcInputFormat.genIncludedColumns(fileMetadata.getTypes(), columnIds, true);
+    consumer.setFileMetadata(fileMetadata);
+    consumer.setIncludedColumns(globalIncludes);
   }
 
   @Override
@@ -220,18 +237,9 @@ public class OrcEncodedDataReader extends CallableWithNdc<Void>
       return null;
     }
     counters.setDesc(QueryFragmentCounters.Desc.TABLE, getDbAndTableName(split.getPath()));
-    orcReader = null;
-    // 1. Get file metadata from cache, or create the reader and read it.
-    // Don't cache the filesystem object for now; Tez closes it and FS cache will fix all that
-    fs = split.getPath().getFileSystem(conf);
-    fileKey = determineFileId(fs, split,
-        HiveConf.getBoolVar(conf, ConfVars.LLAP_CACHE_ALLOW_SYNTHETIC_FILEID));
     counters.setDesc(QueryFragmentCounters.Desc.FILE, split.getPath()
         + (fileKey == null ? "" : " (" + fileKey + ")"));
-
     try {
-      fileMetadata = getOrReadFileMetadata();
-      consumer.setFileMetadata(fileMetadata);
       validateFileMetadata();
       if (columnIds == null) {
         columnIds = createColumnIds(fileMetadata);
@@ -255,10 +263,8 @@ public class OrcEncodedDataReader extends CallableWithNdc<Void>
     // 3. Apply SARG if needed, and otherwise determine what RGs to read.
     int stride = fileMetadata.getRowIndexStride();
     ArrayList<OrcStripeMetadata> stripeMetadatas = null;
-    boolean[] globalIncludes = null;
     boolean[] sargColumns = null;
     try {
-      globalIncludes = OrcInputFormat.genIncludedColumns(fileMetadata.getTypes(), columnIds, true);
       if (sarg != null && stride != 0) {
         // TODO: move this to a common method
         int[] filterColumns = RecordReaderImpl.mapSargColumnsToOrcInternalColIdx(
@@ -704,8 +710,10 @@ public class OrcEncodedDataReader extends CallableWithNdc<Void>
       List<OrcProto.Type> types = fileMetadata.getTypes();
       String[] colNamesForSarg = OrcInputFormat.getSargColumnNames(
           columnNames, types, globalIncludes, fileMetadata.isOriginalFormat());
+      TypeDescription schema = OrcUtils.convertTypeFromProtobuf(types, 0);
+      SchemaEvolution schemaEvolution = new SchemaEvolution(schema, globalIncludes);
       sargApp = new RecordReaderImpl.SargApplier(sarg, colNamesForSarg,
-          rowIndexStride, types, globalIncludes.length);
+          rowIndexStride, globalIncludes.length, schemaEvolution);
     }
     boolean hasAnyData = false;
     // readState should have been initialized by this time with an empty array.
@@ -829,6 +837,11 @@ public class OrcEncodedDataReader extends CallableWithNdc<Void>
         long baseOffset, DiskRangeListFactory factory, BooleanRef gotAllData) {
       DiskRangeList result = (lowLevelCache == null) ? range
           : lowLevelCache.getFileData(fileKey, range, baseOffset, factory, counters, gotAllData);
+      if (LlapIoImpl.ORC_LOGGER.isTraceEnabled()) {
+        LlapIoImpl.ORC_LOGGER.trace("Disk ranges after data cache (file " + fileKey
+            + ", base offset " + baseOffset + "): "
+            + RecordReaderUtils.stringifyDiskRanges(range.next));
+      }
       if (gotAllData.value) return result;
       return (metadataCache == null) ? range
           : metadataCache.getIncompleteCbs(fileKey, range, baseOffset, factory, gotAllData);

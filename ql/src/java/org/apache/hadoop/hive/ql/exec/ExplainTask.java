@@ -143,7 +143,7 @@ public class ExplainTask extends Task<ExplainWork> implements Serializable {
         out.print("LOGICAL PLAN:");
       }
       JSONObject jsonPlan = outputMap(work.getParseContext().getTopOps(), true,
-                                      out, jsonOutput, work.getExtended(), 0);
+                                      out, work.getExtended(), jsonOutput, 0);
       if (out != null) {
         out.println();
       }
@@ -375,8 +375,7 @@ public class ExplainTask extends Task<ExplainWork> implements Serializable {
   private JSONObject outputMap(Map<?, ?> mp, boolean hasHeader, PrintStream out,
       boolean extended, boolean jsonOutput, int indent) throws Exception {
 
-    TreeMap<Object, Object> tree = new TreeMap<Object, Object>();
-    tree.putAll(mp);
+    TreeMap<Object, Object> tree = getBasictypeKeyedMap(mp);
     JSONObject json = jsonOutput ? new JSONObject(new LinkedHashMap<>()) : null;
     if (out != null && hasHeader && !mp.isEmpty()) {
       out.println();
@@ -468,12 +467,13 @@ public class ExplainTask extends Task<ExplainWork> implements Serializable {
         }
       }
       else if (ent.getValue() instanceof Map) {
+        String stringValue = getBasictypeKeyedMap((Map)ent.getValue()).toString();
         if (out != null) {
-          out.print(ent.getValue().toString());
+          out.print(stringValue);
           out.println();
         }
         if (jsonOutput) {
-          json.put(ent.getKey().toString(), ent.getValue().toString());
+          json.put(ent.getKey().toString(), stringValue);
         }
       }
       else if (ent.getValue() != null) {
@@ -494,6 +494,32 @@ public class ExplainTask extends Task<ExplainWork> implements Serializable {
     }
 
     return jsonOutput ? json : null;
+  }
+
+  /**
+   * Retruns a map which have either primitive or string keys.
+   * 
+   * This is neccessary to discard object level comparators which may sort the objects based on some non-trivial logic.
+   * 
+   * @param mp
+   * @return
+   */
+  private TreeMap<Object, Object> getBasictypeKeyedMap(Map<?, ?> mp) {
+    TreeMap<Object, Object> ret = new TreeMap<Object, Object>();
+    if (mp.size() > 0) {
+      Object firstKey = mp.keySet().iterator().next();
+      if (firstKey.getClass().isPrimitive() || firstKey instanceof String) {
+        // keep it as-is
+        ret.putAll(mp);
+        return ret;
+      } else {
+        for (Entry<?, ?> entry : mp.entrySet()) {
+          // discard possibly type related sorting order and replace with alphabetical
+          ret.put(entry.getKey().toString(), entry.getValue());
+        }
+      }
+    }
+    return ret;
   }
 
   private JSONArray outputList(List<?> l, PrintStream out, boolean hasHeader,

@@ -417,7 +417,12 @@ public final class FileUtils {
    * @throws IOException
    */
   public static boolean isActionPermittedForFileHierarchy(FileSystem fs, FileStatus fileStatus,
-      String userName, FsAction action) throws Exception {
+                                                          String userName, FsAction action) throws Exception {
+    return isActionPermittedForFileHierarchy(fs,fileStatus,userName, action, true);
+  }
+
+  public static boolean isActionPermittedForFileHierarchy(FileSystem fs, FileStatus fileStatus,
+      String userName, FsAction action, boolean recurse) throws Exception {
     boolean isDir = fileStatus.isDir();
 
     FsAction dirActionNeeded = action;
@@ -433,15 +438,15 @@ public final class FileUtils {
       return false;
     }
 
-    if (!isDir) {
+    if ((!isDir) || (!recurse)) {
       // no sub dirs to be checked
       return true;
     }
     // check all children
     FileStatus[] childStatuses = fs.listStatus(fileStatus.getPath());
     for (FileStatus childStatus : childStatuses) {
-      // check children recursively
-      if (!isActionPermittedForFileHierarchy(fs, childStatus, userName, action)) {
+      // check children recursively - recurse is true if we're here.
+      if (!isActionPermittedForFileHierarchy(fs, childStatus, userName, action, true)) {
         return false;
       }
     }
@@ -480,22 +485,27 @@ public final class FileUtils {
     }
     return false;
   }
-
   public static boolean isOwnerOfFileHierarchy(FileSystem fs, FileStatus fileStatus, String userName)
+      throws IOException {
+    return isOwnerOfFileHierarchy(fs, fileStatus, userName, true);
+  }
+
+  public static boolean isOwnerOfFileHierarchy(FileSystem fs, FileStatus fileStatus,
+      String userName, boolean recurse)
       throws IOException {
     if (!fileStatus.getOwner().equals(userName)) {
       return false;
     }
 
-    if (!fileStatus.isDir()) {
+    if ((!fileStatus.isDir()) || (!recurse)) {
       // no sub dirs to be checked
       return true;
     }
     // check all children
     FileStatus[] childStatuses = fs.listStatus(fileStatus.getPath());
     for (FileStatus childStatus : childStatuses) {
-      // check children recursively
-      if (!isOwnerOfFileHierarchy(fs, childStatus, userName)) {
+      // check children recursively - recurse is true if we're here.
+      if (!isOwnerOfFileHierarchy(fs, childStatus, userName, true)) {
         return false;
       }
     }
@@ -536,7 +546,11 @@ public final class FileUtils {
       } else {
         try {
           //set on the entire subtree
-          HdfsUtils.setFullFileStatus(conf, new HdfsUtils.HadoopFileStatus(conf, fs, lastExistingParent), fs, firstNonExistentParent, true);
+          if (inheritPerms) {
+            HdfsUtils.setFullFileStatus(conf,
+                new HdfsUtils.HadoopFileStatus(conf, fs, lastExistingParent), fs,
+                firstNonExistentParent, true);
+          }
         } catch (Exception e) {
           LOG.warn("Error setting permissions of " + firstNonExistentParent, e);
         }
@@ -613,25 +627,6 @@ public final class FileUtils {
     return result;
   }
 
-  /**
-   * Check if first path is a subdirectory of second path.
-   * Both paths must belong to the same filesystem.
-   *
-   * @param p1 first path
-   * @param p2 second path
-   * @param fs FileSystem, both paths must belong to the same filesystem
-   * @return
-   */
-  public static boolean isSubDir(Path p1, Path p2, FileSystem fs) {
-    String path1 = fs.makeQualified(p1).toString();
-    String path2 = fs.makeQualified(p2).toString();
-    if (path1.startsWith(path2)) {
-      return true;
-    }
-
-    return false;
-  }
-
   public static boolean renameWithPerms(FileSystem fs, Path sourcePath,
                                Path destPath, boolean inheritPerms,
                                Configuration conf) throws IOException {
@@ -674,7 +669,7 @@ public final class FileUtils {
     //FileSystem api doesn't have a .equals() function implemented, so using
     //the uri for comparison. FileSystem already uses uri+Configuration for
     //equality in its CACHE .
-    //Once equality has been added in HDFS-4321, we should make use of it
+    //Once equality has been added in HDFS-9159, we should make use of it
     return fs1.getUri().equals(fs2.getUri());
   }
 
@@ -879,7 +874,7 @@ public final class FileUtils {
    * @param candidates  the candidate paths
    * @return
    */
-  public static Path getParentRegardlessOfScheme(Path path, Set<Path> candidates) {
+  public static Path getParentRegardlessOfScheme(Path path, Collection<Path> candidates) {
     Path schemalessPath = Path.getPathWithoutSchemeAndAuthority(path);
     
     for(;path!=null && schemalessPath!=null; path=path.getParent(),schemalessPath=schemalessPath.getParent()){

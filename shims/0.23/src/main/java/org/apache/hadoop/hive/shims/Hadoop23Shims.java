@@ -32,9 +32,11 @@ import java.security.NoSuchAlgorithmException;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.Comparator;
+import java.util.HashSet;
 import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.TreeMap;
 
 import javax.security.auth.Subject;
@@ -1122,11 +1124,11 @@ public class Hadoop23Shims extends HadoopShimsSecure {
 
     @Override
     public boolean arePathsOnSameEncryptionZone(Path path1, Path path2) throws IOException {
-      EncryptionZone zone1, zone2;
+      return equivalentEncryptionZones(hdfsAdmin.getEncryptionZoneForPath(path1),
+                                       hdfsAdmin.getEncryptionZoneForPath(path2));
+    }
 
-      zone1 = hdfsAdmin.getEncryptionZoneForPath(path1);
-      zone2 = hdfsAdmin.getEncryptionZoneForPath(path2);
-
+    private boolean equivalentEncryptionZones(EncryptionZone zone1, EncryptionZone zone2) {
       if (zone1 == null && zone2 == null) {
         return true;
       } else if (zone1 == null || zone2 == null) {
@@ -1134,6 +1136,19 @@ public class Hadoop23Shims extends HadoopShimsSecure {
       }
 
       return zone1.equals(zone2);
+    }
+
+    @Override
+    public boolean arePathsOnSameEncryptionZone(Path path1, Path path2,
+                                                HadoopShims.HdfsEncryptionShim encryptionShim2) throws IOException {
+      if (!(encryptionShim2 instanceof Hadoop23Shims.HdfsEncryptionShim)) {
+        LOG.warn("EncryptionShim for path2 (" + path2 + ") is of unexpected type: " + encryptionShim2.getClass()
+            + ". Assuming path2 is on the same EncryptionZone as path1(" + path1 + ").");
+        return true;
+      }
+
+      return equivalentEncryptionZones(hdfsAdmin.getEncryptionZoneForPath(path1),
+          ((HdfsEncryptionShim)encryptionShim2).hdfsAdmin.getEncryptionZoneForPath(path2));
     }
 
     @Override
@@ -1300,11 +1315,23 @@ public class Hadoop23Shims extends HadoopShimsSecure {
     }
     try {
       Subject origSubject = (Subject) getSubjectMethod.invoke(baseUgi);
+      
       Subject subject = new Subject(false, origSubject.getPrincipals(),
-          origSubject.getPublicCredentials(), origSubject.getPrivateCredentials());
+          cloneCredentials(origSubject.getPublicCredentials()),
+          cloneCredentials(origSubject.getPrivateCredentials()));
       return ugiCtor.newInstance(subject);
     } catch (InstantiationException | IllegalAccessException | InvocationTargetException e) {
       throw new IOException(e);
     }
   }
+
+  private static Set<Object> cloneCredentials(Set<Object> old) {
+    Set<Object> set = new HashSet<>();
+    // Make sure Hadoop credentials objects do not reuse the maps.
+    for (Object o : old) {
+      set.add(o instanceof Credentials ? new Credentials((Credentials)o) : o);
+    }
+    return set;
+  }
+  
 }

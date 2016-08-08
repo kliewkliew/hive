@@ -64,8 +64,8 @@ STAGE PLANS:
     Spark
       Edges:
         Reducer 2 <- Map 1 (PARTITION-LEVEL SORT, 1), Map 4 (PARTITION-LEVEL SORT, 1)
-        Reducer 6 <- Map 5 (PARTITION-LEVEL SORT, 1), Map 7 (PARTITION-LEVEL SORT, 1)
         Reducer 3 <- Reducer 2 (PARTITION-LEVEL SORT, 1), Reducer 6 (PARTITION-LEVEL SORT, 1)
+        Reducer 6 <- Map 5 (PARTITION-LEVEL SORT, 1), Map 7 (PARTITION-LEVEL SORT, 1)
 #### A masked pattern was here ####
       Vertices:
         Map 1 
@@ -87,7 +87,7 @@ STAGE PLANS:
                   alias: b
                   Statistics: Num rows: 51 Data size: 206 Basic stats: COMPLETE Column stats: NONE
                   Filter Operator
-                    predicate: (key = 5) (type: boolean)
+                    predicate: (5 = key) (type: boolean)
                     Statistics: Num rows: 25 Data size: 100 Basic stats: COMPLETE Column stats: NONE
                     Select Operator
                       Statistics: Num rows: 25 Data size: 100 Basic stats: COMPLETE Column stats: NONE
@@ -97,7 +97,7 @@ STAGE PLANS:
         Map 5 
             Map Operator Tree:
                 TableScan
-                  alias: b
+                  alias: c
                   Statistics: Num rows: 51 Data size: 206 Basic stats: COMPLETE Column stats: NONE
                   Filter Operator
                     predicate: (key = 5) (type: boolean)
@@ -113,7 +113,7 @@ STAGE PLANS:
                   alias: d
                   Statistics: Num rows: 55 Data size: 222 Basic stats: COMPLETE Column stats: NONE
                   Filter Operator
-                    predicate: (key = 5) (type: boolean)
+                    predicate: (5 = key) (type: boolean)
                     Statistics: Num rows: 27 Data size: 108 Basic stats: COMPLETE Column stats: NONE
                     Select Operator
                       Statistics: Num rows: 27 Data size: 108 Basic stats: COMPLETE Column stats: NONE
@@ -207,7 +207,7 @@ STAGE PLANS:
                   alias: b
                   Statistics: Num rows: 51 Data size: 206 Basic stats: COMPLETE Column stats: NONE
                   Filter Operator
-                    predicate: (key = 5) (type: boolean)
+                    predicate: (5 = key) (type: boolean)
                     Statistics: Num rows: 25 Data size: 100 Basic stats: COMPLETE Column stats: NONE
                     Select Operator
                       Statistics: Num rows: 25 Data size: 100 Basic stats: COMPLETE Column stats: NONE
@@ -250,7 +250,7 @@ STAGE PLANS:
         Map 3 
             Map Operator Tree:
                 TableScan
-                  alias: b
+                  alias: c
                   Statistics: Num rows: 51 Data size: 206 Basic stats: COMPLETE Column stats: NONE
                   Filter Operator
                     predicate: (key = 5) (type: boolean)
@@ -274,7 +274,7 @@ STAGE PLANS:
                   alias: d
                   Statistics: Num rows: 55 Data size: 222 Basic stats: COMPLETE Column stats: NONE
                   Filter Operator
-                    predicate: (key = 5) (type: boolean)
+                    predicate: (5 = key) (type: boolean)
                     Statistics: Num rows: 27 Data size: 108 Basic stats: COMPLETE Column stats: NONE
                     Select Operator
                       Statistics: Num rows: 27 Data size: 108 Basic stats: COMPLETE Column stats: NONE

@@ -18,6 +18,7 @@
 
 package org.apache.hadoop.hive.ql.stats;
 
+import java.io.IOException;
 import java.math.BigDecimal;
 import java.math.BigInteger;
 import java.util.ArrayList;
@@ -27,7 +28,14 @@ import java.util.List;
 import java.util.Map;
 import java.util.Map.Entry;
 import java.util.Set;
+import java.util.concurrent.Callable;
+import java.util.concurrent.ExecutionException;
+import java.util.concurrent.Executors;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Future;
 
+
+import com.google.common.util.concurrent.ThreadFactoryBuilder;
 import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.fs.FileSystem;
 import org.apache.hadoop.fs.Path;
@@ -197,7 +205,7 @@ public class StatsUtils {
       if (fetchColStats) {
         colStats = getTableColumnStats(table, schema, neededColumns);
         long betterDS = getDataSizeFromColumnStats(nr, colStats);
-        ds = betterDS < 1 ? ds : betterDS;
+        ds = (betterDS < 1 || colStats.isEmpty()) ? ds : betterDS;
       }
        stats.setDataSize(ds);
       // infer if any column can be primary key based on column statistics
@@ -283,8 +291,8 @@ public class StatsUtils {
           // add partition column stats
           addParitionColumnStats(conf, neededColumns, referencedColumns, schema, table, partList,
               emptyStats);
-
           stats.addToColumnStats(emptyStats);
+          stats.addToDataSize(getDataSizeFromColumnStats(nr, emptyStats));
           stats.updateColumnStatsState(deriveStatType(emptyStats, referencedColumns));
         } else {
           List<ColumnStatisticsObj> colStats = aggrStats.getColStats();
@@ -298,7 +306,7 @@ public class StatsUtils {
           addParitionColumnStats(conf, neededColumns, referencedColumns, schema, table, partList,
               columnStats);
           long betterDS = getDataSizeFromColumnStats(nr, columnStats);
-          stats.setDataSize(betterDS < 1 ? ds : betterDS);
+          stats.setDataSize((betterDS < 1 || columnStats.isEmpty()) ? ds : betterDS);
           // infer if any column can be primary key based on column statistics
           inferAndSetPrimaryKey(stats.getNumRows(), columnStats);
 
@@ -424,7 +432,7 @@ public class StatsUtils {
             long numPartitions = getNDVPartitionColumn(partList.getPartitions(),
                 ci.getInternalName());
             partCS.setCountDistint(numPartitions);
-            partCS.setAvgColLen(StatsUtils.getAvgColLenOfVariableLengthTypes(conf,
+            partCS.setAvgColLen(StatsUtils.getAvgColLenOf(conf,
                 ci.getObjectInspector(), partCS.getColumnType()));
             partCS.setRange(getRangePartitionColumn(partList.getPartitions(), ci.getInternalName(),
                 ci.getType().getTypeName(), conf.getVar(ConfVars.DEFAULTPARTITIONNAME)));
@@ -543,7 +551,7 @@ public class StatsUtils {
           || colTypeLowerCase.startsWith(serdeConstants.MAP_TYPE_NAME)
           || colTypeLowerCase.startsWith(serdeConstants.STRUCT_TYPE_NAME)
           || colTypeLowerCase.startsWith(serdeConstants.UNION_TYPE_NAME)) {
-        avgRowSize += getAvgColLenOfVariableLengthTypes(conf, oi, colTypeLowerCase);
+        avgRowSize += getAvgColLenOf(conf, oi, colTypeLowerCase);
       } else {
         avgRowSize += getAvgColLenOfFixedLengthTypes(colTypeLowerCase);
       }
@@ -588,18 +596,42 @@ public class StatsUtils {
    *          - partition list
    * @return sizes of partitions
    */
-  public static List<Long> getFileSizeForPartitions(HiveConf conf, List<Partition> parts) {
-    List<Long> sizes = Lists.newArrayList();
-    for (Partition part : parts) {
-      Path path = part.getDataLocation();
-      long size = 0;
-      try {
-        FileSystem fs = path.getFileSystem(conf);
-        size = fs.getContentSummary(path).getLength();
-      } catch (Exception e) {
-        size = 0;
+  public static List<Long> getFileSizeForPartitions(final HiveConf conf, List<Partition> parts) {
+    LOG.info("Number of partitions : " + parts.size());
+    ArrayList<Future<Long>> futures = new ArrayList<>();
+
+    int threads = Math.max(1, conf.getIntVar(ConfVars.METASTORE_FS_HANDLER_THREADS_COUNT));
+    final ExecutorService pool = Executors.newFixedThreadPool(threads,
+                new ThreadFactoryBuilder()
+                    .setDaemon(true)
+                    .setNameFormat("Get-Partitions-Size-%d")
+                    .build());
+
+    final ArrayList<Long> sizes = new ArrayList<>(parts.size());
+    for (final Partition part : parts) {
+      final Path path = part.getDataLocation();
+      futures.add(pool.submit(new Callable<Long>() {
+        @Override
+        public Long call() throws Exception {
+          try {
+            LOG.debug("Partition path : " + path);
+            FileSystem fs = path.getFileSystem(conf);
+            return fs.getContentSummary(path).getLength();
+          } catch (IOException e) {
+            return 0L;
+          }
+        }
+      }));
+    }
+
+    try {
+      for(int i = 0; i < futures.size(); i++) {
+        sizes.add(i, futures.get(i).get());
       }
-      sizes.add(size);
+    } catch (InterruptedException | ExecutionException e) {
+      LOG.warn("Exception in processing files ", e);
+    } finally {
+      pool.shutdownNow();
     }
     return sizes;
   }
@@ -805,7 +837,7 @@ public class StatsUtils {
    *          - column type
    * @return raw data size
    */
-  public static long getAvgColLenOfVariableLengthTypes(HiveConf conf, ObjectInspector oi,
+  public static long getAvgColLenOf(HiveConf conf, ObjectInspector oi,
       String colType) {
 
     long configVarLen = HiveConf.getIntVar(conf, HiveConf.ConfVars.HIVE_STATS_MAX_VARIABLE_LENGTH);
@@ -872,7 +904,7 @@ public class StatsUtils {
       return getSizeOfComplexTypes(conf, oi);
     }
 
-    return 0;
+    throw new IllegalArgumentException("Size requested for unknown type: " + colType + " OI: " + oi.getTypeName());
   }
 
   /**
@@ -895,10 +927,10 @@ public class StatsUtils {
       if (colTypeLowerCase.equals(serdeConstants.STRING_TYPE_NAME)
           || colTypeLowerCase.startsWith(serdeConstants.VARCHAR_TYPE_NAME)
           || colTypeLowerCase.startsWith(serdeConstants.CHAR_TYPE_NAME)) {
-        int avgColLen = (int) getAvgColLenOfVariableLengthTypes(conf, oi, colTypeLowerCase);
+        int avgColLen = (int) getAvgColLenOf(conf, oi, colTypeLowerCase);
         result += JavaDataModel.get().lengthForStringOfLength(avgColLen);
       } else if (colTypeLowerCase.equals(serdeConstants.BINARY_TYPE_NAME)) {
-        int avgColLen = (int) getAvgColLenOfVariableLengthTypes(conf, oi, colTypeLowerCase);
+        int avgColLen = (int) getAvgColLenOf(conf, oi, colTypeLowerCase);
         result += JavaDataModel.get().lengthForByteArrayOfSize(avgColLen);
       } else {
         result += getAvgColLenOfFixedLengthTypes(colTypeLowerCase);
@@ -989,11 +1021,13 @@ public class StatsUtils {
     if (colTypeLowerCase.equals(serdeConstants.TINYINT_TYPE_NAME)
         || colTypeLowerCase.equals(serdeConstants.SMALLINT_TYPE_NAME)
         || colTypeLowerCase.equals(serdeConstants.INT_TYPE_NAME)
+        || colTypeLowerCase.equals(serdeConstants.VOID_TYPE_NAME)
         || colTypeLowerCase.equals(serdeConstants.BOOLEAN_TYPE_NAME)
         || colTypeLowerCase.equals(serdeConstants.FLOAT_TYPE_NAME)) {
       return JavaDataModel.get().primitive1();
     } else if (colTypeLowerCase.equals(serdeConstants.DOUBLE_TYPE_NAME)
         || colTypeLowerCase.equals(serdeConstants.BIGINT_TYPE_NAME)
+        || colTypeLowerCase.equals(serdeConstants.INTERVAL_YEAR_MONTH_TYPE_NAME)
         || colTypeLowerCase.equals("long")) {
       return JavaDataModel.get().primitive2();
     } else if (colTypeLowerCase.equals(serdeConstants.TIMESTAMP_TYPE_NAME)) {
@@ -1002,8 +1036,10 @@ public class StatsUtils {
       return JavaDataModel.get().lengthOfDate();
     } else if (colTypeLowerCase.startsWith(serdeConstants.DECIMAL_TYPE_NAME)) {
       return JavaDataModel.get().lengthOfDecimal();
+    } else if (colTypeLowerCase.equals(serdeConstants.INTERVAL_DAY_TIME_TYPE_NAME)) {
+      return JavaDataModel.JAVA32_META;
     } else {
-      return 0;
+      throw new IllegalArgumentException("Size requested for unknown type: " + colType);
     }
   }
 
@@ -1225,7 +1261,7 @@ public class StatsUtils {
     double avgColSize = 0;
     long countDistincts = 0;
     long numNulls = 0;
-    ObjectInspector oi = null;
+    ObjectInspector oi = end.getWritableObjectInspector();
     long numRows = parentStats.getNumRows();
 
     if (end instanceof ExprNodeColumnDesc) {
@@ -1244,7 +1280,6 @@ public class StatsUtils {
         // virtual columns
         colType = encd.getTypeInfo().getTypeName();
         countDistincts = numRows;
-        oi = encd.getWritableObjectInspector();
       } else {
 
         // clone the column stats and return
@@ -1263,16 +1298,13 @@ public class StatsUtils {
       // constant projection
       ExprNodeConstantDesc encd = (ExprNodeConstantDesc) end;
 
-      // null projection
+      colName = encd.getName();
+      colType = encd.getTypeString();
       if (encd.getValue() == null) {
-        colName = encd.getName();
-        colType = serdeConstants.VOID_TYPE_NAME;
+        // null projection
         numNulls = numRows;
       } else {
-        colName = encd.getName();
-        colType = encd.getTypeString();
         countDistincts = 1;
-        oi = encd.getWritableObjectInspector();
       }
     } else if (end instanceof ExprNodeGenericFuncDesc) {
 
@@ -1281,7 +1313,6 @@ public class StatsUtils {
       colName = engfd.getName();
       colType = engfd.getTypeString();
       countDistincts = getNDVFor(engfd, numRows, parentStats);
-      oi = engfd.getWritableObjectInspector();
     } else if (end instanceof ExprNodeColumnListDesc) {
 
       // column list
@@ -1289,7 +1320,6 @@ public class StatsUtils {
       colName = Joiner.on(",").join(encd.getCols());
       colType = serdeConstants.LIST_TYPE_NAME;
       countDistincts = numRows;
-      oi = encd.getWritableObjectInspector();
     } else if (end instanceof ExprNodeFieldDesc) {
 
       // field within complex type
@@ -1297,25 +1327,12 @@ public class StatsUtils {
       colName = enfd.getFieldName();
       colType = enfd.getTypeString();
       countDistincts = numRows;
-      oi = enfd.getWritableObjectInspector();
     } else {
       throw new IllegalArgumentException("not supported expr type " + end.getClass());
     }
 
     colType = colType.toLowerCase();
-    if (colType.equals(serdeConstants.STRING_TYPE_NAME)
-        || colType.equals(serdeConstants.BINARY_TYPE_NAME)
-        || colType.startsWith(serdeConstants.VARCHAR_TYPE_NAME)
-        || colType.startsWith(serdeConstants.CHAR_TYPE_NAME)
-        || colType.startsWith(serdeConstants.LIST_TYPE_NAME)
-        || colType.startsWith(serdeConstants.MAP_TYPE_NAME)
-        || colType.startsWith(serdeConstants.STRUCT_TYPE_NAME)
-        || colType.startsWith(serdeConstants.UNION_TYPE_NAME)) {
-      avgColSize = getAvgColLenOfVariableLengthTypes(conf, oi, colType);
-    } else {
-      avgColSize = getAvgColLenOfFixedLengthTypes(colType);
-    }
-
+    avgColSize = getAvgColLenOf(conf, oi, colType);
     ColStatistics colStats = new ColStatistics(colName, colType);
     colStats.setAvgColLen(avgColSize);
     colStats.setCountDistint(countDistincts);
@@ -1449,14 +1466,21 @@ public class StatsUtils {
   public static long getDataSizeFromColumnStats(long numRows, List<ColStatistics> colStats) {
     long result = 0;
 
-    if (numRows <= 0 || colStats == null || colStats.isEmpty()) {
+    if (numRows <= 0 || colStats == null) {
       return result;
+    }
+
+    if (colStats.isEmpty()) {
+      // this may happen if we are not projecting any column from current operator
+      // think count(*) where we are projecting rows without any columns
+      // in such a case we estimate empty row to be of size of empty java object.
+      return numRows * JavaDataModel.JAVA64_REF;
     }
 
     for (ColStatistics cs : colStats) {
       if (cs != null) {
         String colTypeLowerCase = cs.getColumnType().toLowerCase();
-        long nonNullCount = numRows - cs.getNumNulls();
+        long nonNullCount = cs.getNumNulls() > 0 ? numRows - cs.getNumNulls() + 1 : numRows;
         double sizeOf = 0;
         if (colTypeLowerCase.equals(serdeConstants.TINYINT_TYPE_NAME)
             || colTypeLowerCase.equals(serdeConstants.SMALLINT_TYPE_NAME)
