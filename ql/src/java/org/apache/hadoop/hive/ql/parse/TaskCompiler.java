@@ -34,6 +34,7 @@ import org.slf4j.LoggerFactory;
 import org.apache.hadoop.fs.Path;
 import org.apache.hadoop.hive.common.HiveStatsUtils;
 import org.apache.hadoop.hive.conf.HiveConf;
+import org.apache.hadoop.hive.conf.HiveConf.ConfVars;
 import org.apache.hadoop.hive.metastore.Warehouse;
 import org.apache.hadoop.hive.metastore.api.MetaException;
 import org.apache.hadoop.hive.ql.Context;
@@ -160,6 +161,9 @@ public abstract class TaskCompiler {
           resultTab =
               PlanUtils.getDefaultQueryOutputTableDesc(cols, colTypes, resFileFormat,
                   ThriftJDBCBinarySerDe.class);
+          resultTab.getProperties().put(
+              ConfVars.HIVE_SERVER2_THRIFT_RESULTSET_COMPRESSOR.varname,
+              SessionState.get().getConf().getVar(ConfVars.HIVE_SERVER2_THRIFT_RESULTSET_COMPRESSOR));
           // Set the fetch formatter to be a no-op for the ListSinkOperator, since we'll
           // read formatted thrift objects from the output SequenceFile written by Tasks.
           conf.set(SerDeUtils.LIST_SINK_OUTPUT_FORMATTER, NoOpFetchFormatter.class.getName());
