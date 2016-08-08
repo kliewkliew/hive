@@ -179,7 +179,7 @@ public class TestCompDeNegotiation {
 
     req.setConfiguration(multiCompDes1.getValByRegex(".*"));
     resp = service.OpenSession(req);
-    // "compde1" fails to initialize in our mock service
+    // "compde1" fails to initialize because our mock service does not have that plugin
     assertEquals("compde2", resp.getCompressorName());
 
     req.setConfiguration(multiCompDes2.getValByRegex(".*"));
