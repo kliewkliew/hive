@@ -52,16 +52,13 @@ public class TestCompDeNegotiation {
     noCompDes = new HiveConf(baseConf);
     
     singleCompDe = new HiveConf(baseConf);
-    singleCompDe.setVar(ConfVars.HIVE_SERVER2_THRIFT_RESULTSET_SERVER_COMPRESSORS, "compde3");
-    singleCompDe.setVar(ConfVars.HIVE_SERVER2_THRIFT_RESULTSET_CLIENT_COMPRESSORS, "compde3");
+    singleCompDe.setVar(ConfVars.HIVE_SERVER2_THRIFT_RESULTSET_COMPRESSOR_LIST, "compde3");
 
     multiCompDes1 = new HiveConf(baseConf);
-    multiCompDes1.setVar(ConfVars.HIVE_SERVER2_THRIFT_RESULTSET_SERVER_COMPRESSORS, "compde1,compde2,compde3,compde4");
-    multiCompDes1.setVar(ConfVars.HIVE_SERVER2_THRIFT_RESULTSET_CLIENT_COMPRESSORS, "compde1,compde2,compde3,compde4");
+    multiCompDes1.setVar(ConfVars.HIVE_SERVER2_THRIFT_RESULTSET_COMPRESSOR_LIST, "compde1,compde2,compde3,compde4");
 
     multiCompDes2 = new HiveConf(baseConf);
-    multiCompDes2.setVar(ConfVars.HIVE_SERVER2_THRIFT_RESULTSET_SERVER_COMPRESSORS, "compde2, compde4");
-    multiCompDes2.setVar(ConfVars.HIVE_SERVER2_THRIFT_RESULTSET_CLIENT_COMPRESSORS, "compde2, compde4");
+    multiCompDes2.setVar(ConfVars.HIVE_SERVER2_THRIFT_RESULTSET_COMPRESSOR_LIST, "compde2, compde4");
   }
 
   public class MockEmbeddedThriftBinaryCLIServiceWithCompDes extends EmbeddedThriftBinaryCLIService {

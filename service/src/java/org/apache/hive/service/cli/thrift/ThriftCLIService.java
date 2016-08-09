@@ -314,12 +314,12 @@ public abstract class ThriftCLIService extends AbstractService implements TCLISe
     TOpenSessionResp resp = new TOpenSessionResp();
     try {
       String[] serverCompDes =
-          HiveConf.getTrimmedStringsVar(hiveConf, ConfVars.HIVE_SERVER2_THRIFT_RESULTSET_SERVER_COMPRESSORS);
+          HiveConf.getTrimmedStringsVar(hiveConf, ConfVars.HIVE_SERVER2_THRIFT_RESULTSET_COMPRESSOR_LIST);
 
       HiveConf tempConf = new HiveConf();
-      tempConf.setVar(ConfVars.HIVE_SERVER2_THRIFT_RESULTSET_CLIENT_COMPRESSORS, req.getConfiguration().get(ConfVars.HIVE_SERVER2_THRIFT_RESULTSET_CLIENT_COMPRESSORS.varname));
+      tempConf.setVar(ConfVars.HIVE_SERVER2_THRIFT_RESULTSET_COMPRESSOR_LIST, req.getConfiguration().get(ConfVars.HIVE_SERVER2_THRIFT_RESULTSET_COMPRESSOR_LIST.varname));
       List<String> clientCompDes =
-          Arrays.asList(HiveConf.getTrimmedStringsVar(tempConf, ConfVars.HIVE_SERVER2_THRIFT_RESULTSET_CLIENT_COMPRESSORS));
+          Arrays.asList(HiveConf.getTrimmedStringsVar(tempConf, ConfVars.HIVE_SERVER2_THRIFT_RESULTSET_COMPRESSOR_LIST));
 
       // List of CompDes ordered by the server's preference if configured, otherwise ordered by the client's preference
       String[] compDesList = serverCompDes.length != 0 ? serverCompDes : clientCompDes.toArray(new String[clientCompDes.size()]);

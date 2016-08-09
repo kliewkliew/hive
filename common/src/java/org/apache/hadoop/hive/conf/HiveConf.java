@@ -2473,12 +2473,9 @@ public class HiveConf extends Configuration {
       "Max number of rows sent in one Fetch RPC call by the server to the client."),
 
     // ResultSet compression settings
-    HIVE_SERVER2_THRIFT_RESULTSET_SERVER_COMPRESSORS("hive.server2.thrift.resultset.server.compressors", null,
+    HIVE_SERVER2_THRIFT_RESULTSET_COMPRESSOR_LIST("hive.server2.thrift.resultset.server.compressor.list", null,
         "A list of compressors ordered by the server's preference.\n " +
-        "This list will be used to negotiate a CompDe for each session and should be configured on the server."),
-    HIVE_SERVER2_THRIFT_RESULTSET_CLIENT_COMPRESSORS("hive.server2.thrift.resultset.client.compressors", null,
-        "A list of compressors available to the client.\n " +
-        "This list will be received from the client and used for CompDe negotiation."),
+        "This list will be used to negotiate a CompDe for each session."),
     HIVE_SERVER2_THRIFT_RESULTSET_COMPRESSOR("hive.server2.thrift.resultset.compressor", null,
         "A CompDe that will be used for the session.\n " +
         "This is determined by negotiation during OpenSession."),
@@ -3082,8 +3079,7 @@ public class HiveConf extends Configuration {
 
     HIVE_CONF_RESTRICTED_LIST("hive.conf.restricted.list",
         "hive.security.authenticator.manager,hive.security.authorization.manager,hive.users.in.admin.role," +
-        "hive.server2.xsrf.filter.enabled," +
-        HIVE_SERVER2_THRIFT_RESULTSET_SERVER_COMPRESSORS,
+        "hive.server2.xsrf.filter.enabled",
         "Comma separated list of configuration options which are immutable at runtime"),
     HIVE_CONF_HIDDEN_LIST("hive.conf.hidden.list",
         METASTOREPWD.varname + "," + HIVE_SERVER2_SSL_KEYSTORE_PASSWORD.varname,
