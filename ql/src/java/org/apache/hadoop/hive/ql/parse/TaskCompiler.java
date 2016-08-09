@@ -161,9 +161,13 @@ public abstract class TaskCompiler {
           resultTab =
               PlanUtils.getDefaultQueryOutputTableDesc(cols, colTypes, resFileFormat,
                   ThriftJDBCBinarySerDe.class);
+          
+          String compDeName = SessionState.get().getConf().getVar(ConfVars.HIVE_SERVER2_THRIFT_RESULTSET_COMPRESSOR);
           resultTab.getProperties().put(
               ConfVars.HIVE_SERVER2_THRIFT_RESULTSET_COMPRESSOR.varname,
-              SessionState.get().getConf().getVar(ConfVars.HIVE_SERVER2_THRIFT_RESULTSET_COMPRESSOR));
+              compDeName);
+          resultTab.getProperties().putAll(
+              SessionState.get().getConf().getValByRegex(ConfVars.HIVE_SERVER2_THRIFT_RESULTSET_COMPRESSOR + "\\." + compDeName + "\\.[\\w|\\d]+"));
           // Set the fetch formatter to be a no-op for the ListSinkOperator, since we'll
           // read formatted thrift objects from the output SequenceFile written by Tasks.
           conf.set(SerDeUtils.LIST_SINK_OUTPUT_FORMATTER, NoOpFetchFormatter.class.getName());

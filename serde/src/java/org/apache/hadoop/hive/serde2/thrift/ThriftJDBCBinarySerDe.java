@@ -21,6 +21,8 @@ package org.apache.hadoop.hive.serde2.thrift;
 import java.nio.ByteBuffer;
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.HashMap;
+import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
 import java.util.Properties;
@@ -43,6 +45,7 @@ import org.apache.hadoop.hive.serde2.typeinfo.TypeInfoFactory;
 import org.apache.hadoop.hive.serde2.typeinfo.TypeInfoUtils;
 import org.apache.hadoop.io.BytesWritable;
 import org.apache.hadoop.io.Writable;
+import org.apache.hadoop.util.LightWeightGSet.SetIterator;
 import org.apache.hive.service.rpc.thrift.TColumn;
 import org.apache.thrift.TException;
 import org.apache.thrift.protocol.TCompactProtocol;
@@ -78,13 +81,18 @@ public class ThriftJDBCBinarySerDe extends AbstractSerDe {
     String compDeName = tbl.getProperty(ConfVars.HIVE_SERVER2_THRIFT_RESULTSET_COMPRESSOR.varname, "");
     compDe = CompDeServiceLoader.getInstance().getCompDe(compDeName);
     if (compDe != null) {
-      Map<String, String> compDeConfig = 
-          conf.getValByRegex(ConfVars.HIVE_SERVER2_THRIFT_RESULTSET_COMPRESSOR + "\\." + compDeName + "\\.[\\w|\\d]+");
+      Map<String, String> compDeConfig = new HashMap<String, String>();;
+      for (Iterator<Object> keyIt = tbl.keySet().iterator(); keyIt.hasNext(); ) {
+        String key = (String) keyIt.next();
+        if (key.startsWith(ConfVars.HIVE_SERVER2_THRIFT_RESULTSET_COMPRESSOR + "\\." + compDeName + "\\.")) {
+          compDeConfig.put(key, tbl.getProperty(key));
+        }
+      }
       compDe.init(compDeConfig);
     }
 
     // Get column names
-	MAX_BUFFERED_ROWS = HiveConf.getIntVar(conf, HiveConf.ConfVars.HIVE_SERVER2_THRIFT_RESULTSET_MAX_FETCH_SIZE);
+    MAX_BUFFERED_ROWS = HiveConf.getIntVar(conf, HiveConf.ConfVars.HIVE_SERVER2_THRIFT_RESULTSET_MAX_FETCH_SIZE);
     String columnNameProperty = tbl.getProperty(serdeConstants.LIST_COLUMNS);
     String columnTypeProperty = tbl.getProperty(serdeConstants.LIST_COLUMN_TYPES);
     if (columnNameProperty.length() == 0) {

@@ -127,11 +127,6 @@ public class SessionState {
   private final HiveConf sessionConf;
 
   /**
-   * initialized CompDe
-   */
-  private final CompDe sessionCompDe;
-
-  /**
    * silent mode.
    */
   protected boolean isSilent;
@@ -292,10 +287,6 @@ public class SessionState {
     return sessionConf;
   }
 
-  public CompDe getCompDe() {
-    return sessionCompDe;
-  }
-
   public File getTmpOutputFile() {
     return tmpOutputFile;
   }
@@ -384,14 +375,6 @@ public class SessionState {
     this.sessionConf.setClassLoader(currentLoader);
     resourceDownloader = new ResourceDownloader(conf,
         HiveConf.getVar(conf, ConfVars.DOWNLOADED_RESOURCES_DIR));
-
-    String compDeName = HiveConf.getVar(conf, ConfVars.HIVE_SERVER2_THRIFT_RESULTSET_COMPRESSOR);
-    sessionCompDe = CompDeServiceLoader.getInstance().getCompDe(compDeName);
-    if (sessionCompDe != null) {
-      Map<String, String> compDeConfig = 
-          conf.getValByRegex(ConfVars.HIVE_SERVER2_THRIFT_RESULTSET_COMPRESSOR + "\\." + compDeName + "\\.[\\w|\\d]+");
-      sessionCompDe.init(compDeConfig);
-    }
   }
 
   public Map<String, String> getHiveVariables() {
