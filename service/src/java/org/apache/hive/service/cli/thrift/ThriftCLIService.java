@@ -337,6 +337,7 @@ public abstract class ThriftCLIService extends AbstractService implements TCLISe
             resp.setCompressorName(compDesList[i]);
             // SessionState is initialized based on TOpenSessionRequest
             req.getConfiguration().put(ConfVars.HIVE_SERVER2_THRIFT_RESULTSET_COMPRESSOR.varname, compDesList[i]);
+            req.getConfiguration().putAll(compDeResponse);
             break;
           }
         }
