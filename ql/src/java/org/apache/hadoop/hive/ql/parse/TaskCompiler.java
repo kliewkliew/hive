@@ -163,10 +163,8 @@ public abstract class TaskCompiler {
                   ThriftJDBCBinarySerDe.class);
           
           String compDeName = SessionState.get().getConf().getVar(ConfVars.HIVE_SERVER2_THRIFT_RESULTSET_COMPRESSOR);
-          resultTab.getProperties().put(
-              ConfVars.HIVE_SERVER2_THRIFT_RESULTSET_COMPRESSOR.varname,
-              compDeName);
-          resultTab.getProperties().putAll(
+          resultTab.getProperties().put("compde", compDeName);
+          resultTab.getProperties().put("compde.config",
               SessionState.get().getConf().getValByRegex(ConfVars.HIVE_SERVER2_THRIFT_RESULTSET_COMPRESSOR + "\\." + compDeName + "\\.[\\w|\\d]+"));
           // Set the fetch formatter to be a no-op for the ListSinkOperator, since we'll
           // read formatted thrift objects from the output SequenceFile written by Tasks.
