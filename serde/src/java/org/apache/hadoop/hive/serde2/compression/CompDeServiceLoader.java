@@ -69,7 +69,7 @@ public class CompDeServiceLoader {
     try {
       return compressorTable.get(compDeName).newInstance();
     } catch (Exception e) {
-      LOG.error(e.getMessage(), e);
+      LOG.warn("Plug-in not found for " + compDeName + " CompDe");
       return null;
     }
   }

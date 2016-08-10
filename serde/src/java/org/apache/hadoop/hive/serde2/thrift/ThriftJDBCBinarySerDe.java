@@ -75,11 +75,13 @@ public class ThriftJDBCBinarySerDe extends AbstractSerDe {
 
   @Override
   public void initialize(Configuration conf, Properties tbl) throws SerDeException {
-    String compDeName = tbl.getProperty("compde", null);
-    compDe = CompDeServiceLoader.getInstance().getCompDe(compDeName);
-    if (compDe != null) {
-      Map<String, String> compDeConfig = (Map<String, String>) tbl.get("compde.config");
-      compDe.init(compDeConfig);
+    if (tbl.containsKey("compde")) {
+      String compDeName = tbl.getProperty("compde", null);
+      compDe = CompDeServiceLoader.getInstance().getCompDe(compDeName);
+      if (compDe != null && tbl.containsKey("compde.config")) {
+        Map<String, String> compDeConfig = (Map<String, String>) tbl.get("compde.config");
+        compDe.init(compDeConfig);
+      }
     }
 
     // Get column names

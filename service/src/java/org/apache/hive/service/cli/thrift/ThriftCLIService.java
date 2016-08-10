@@ -326,6 +326,7 @@ public abstract class ThriftCLIService extends AbstractService implements TCLISe
       }
 
       // CompDe negotiation
+      req.getConfiguration().put(ConfVars.HIVE_SERVER2_THRIFT_RESULTSET_COMPRESSOR.varname, "");
       for (int i = 0; i < serverCompDes.length; i++) {
         if (clientCompDes.contains(serverCompDes[i])) {
           Map<String, String> compDeConfig = 
