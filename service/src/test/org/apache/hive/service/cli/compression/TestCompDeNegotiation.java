@@ -108,8 +108,7 @@ public class TestCompDeNegotiation {
   }
 
   @Test
-  // The server has plug-ins but the CompDe list is not configured:
-  // The client order of preference for CompDes is used.
+  // The server has plug-ins but the CompDe list is not configured
   public void testServerWithoutCompDeInList() throws HiveSQLException, InterruptedException, TException {
     ThriftCLIService service = new MockEmbeddedThriftBinaryCLIServiceWithCompDes();
     service.init(noCompDes);
@@ -124,11 +123,11 @@ public class TestCompDeNegotiation {
 
     req.setConfiguration(singleCompDe.getValByRegex(".*"));
     resp = service.OpenSession(req);
-    assertEquals("compde3", resp.getCompressorName());
+    assertNull(resp.getCompressorName());
 
     req.setConfiguration(multiCompDes2.getValByRegex(".*"));
     resp = service.OpenSession(req);
-    assertEquals("compde2", resp.getCompressorName());
+    assertNull(resp.getCompressorName());
 
     service.stop();
   }

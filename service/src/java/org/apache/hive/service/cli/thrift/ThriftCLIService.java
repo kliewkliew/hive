@@ -22,7 +22,6 @@ import java.io.IOException;
 import java.net.InetAddress;
 import java.net.UnknownHostException;
 import java.util.Arrays;
-import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.TimeUnit;
@@ -321,22 +320,18 @@ public abstract class ThriftCLIService extends AbstractService implements TCLISe
       List<String> clientCompDes =
           Arrays.asList(HiveConf.getTrimmedStringsVar(tempConf, ConfVars.HIVE_SERVER2_THRIFT_RESULTSET_COMPRESSOR_LIST));
 
-      // List of CompDes ordered by the server's preference if configured, otherwise ordered by the client's preference
-      String[] compDesList = serverCompDes.length != 0 ? serverCompDes : clientCompDes.toArray(new String[clientCompDes.size()]);
-
       // CompDe negotiation
-      TOpenSessionReq negotiatedRequest = new TOpenSessionReq(req);
-      for (int i = 0; i < compDesList.length; i++) {
-        if (clientCompDes.contains(compDesList[i])) {
+      for (int i = 0; i < serverCompDes.length; i++) {
+        if (clientCompDes.contains(serverCompDes[i])) {
           Map<String, String> compDeConfig = 
-              hiveConf.getValByRegex(ConfVars.HIVE_SERVER2_THRIFT_RESULTSET_COMPRESSOR + "\\." + compDesList[i] + "\\.[\\w|\\d]+");
-          Map<String, String> compDeResponse = initCompDe(compDesList[i], compDeConfig);
+              hiveConf.getValByRegex(ConfVars.HIVE_SERVER2_THRIFT_RESULTSET_COMPRESSOR + "\\." + serverCompDes[i] + "\\.[\\w|\\d]+");
+          Map<String, String> compDeResponse = initCompDe(serverCompDes[i], compDeConfig);
           if (compDeResponse != null) {
-            LOG.info("Initialized CompDe plugin for " + compDesList[i]);
+            LOG.info("Initialized CompDe plugin for " + serverCompDes[i]);
             resp.setCompressorConfiguration(compDeResponse);
-            resp.setCompressorName(compDesList[i]);
+            resp.setCompressorName(serverCompDes[i]);
             // SessionState is initialized based on TOpenSessionRequest
-            req.getConfiguration().put(ConfVars.HIVE_SERVER2_THRIFT_RESULTSET_COMPRESSOR.varname, compDesList[i]);
+            req.getConfiguration().put(ConfVars.HIVE_SERVER2_THRIFT_RESULTSET_COMPRESSOR.varname, serverCompDes[i]);
             req.getConfiguration().putAll(compDeResponse);
             break;
           }
