@@ -62,12 +62,11 @@ public class ColumnBasedSet implements RowSet {
     }
   }
 
-  public ColumnBasedSet(TRowSet tRowSet) throws TException {
+  public ColumnBasedSet(TRowSet tRowSet, CompDe compDe) throws TException {
     descriptors = null;
     if (tRowSet.isSetBinaryColumns()) {
       // Use TCompactProtocol to read serialized TColumns
 
-      CompDe compDe = SessionState.get().getCompDe();
       if (compDe != null) {
         columns = Arrays.asList(compDe.decompress(tRowSet.getBinaryColumns()));
       }
