@@ -40,6 +40,8 @@ public class TestCompDeNegotiation {
   private HiveConf singleCompDe;
   private HiveConf multiCompDes1;
   private HiveConf multiCompDes2;
+  private HiveConf serverCompDeConf;
+  private HiveConf clientCompDeConf;
 
   @Before
   public void init() throws Exception {
@@ -52,29 +54,36 @@ public class TestCompDeNegotiation {
     noCompDes = new HiveConf(baseConf);
     
     singleCompDe = new HiveConf(baseConf);
-    singleCompDe.setVar(ConfVars.HIVE_SERVER2_THRIFT_RESULTSET_COMPRESSOR_LIST, "compde3");
+    singleCompDe.set(compressorListVarName(), "compde3");
 
     multiCompDes1 = new HiveConf(baseConf);
-    multiCompDes1.setVar(ConfVars.HIVE_SERVER2_THRIFT_RESULTSET_COMPRESSOR_LIST, "compde1,compde2,compde3,compde4");
+    multiCompDes1.set(compressorListVarName(), "compde1,compde2,compde3,compde4");
 
     multiCompDes2 = new HiveConf(baseConf);
-    multiCompDes2.setVar(ConfVars.HIVE_SERVER2_THRIFT_RESULTSET_COMPRESSOR_LIST, "compde2, compde4");
+    multiCompDes2.set(compressorListVarName(), "compde2, compde4");
+
+    serverCompDeConf = new HiveConf(baseConf);
+    serverCompDeConf.set(compressorListVarName(), "compde3");
+    serverCompDeConf.set(compDeConfigPrefix("compde3") + ".test1", "serverVal1");
+    serverCompDeConf.set(compDeConfigPrefix("compde3") + ".test2", "serverVal2");//overriden by client
+    serverCompDeConf.set(compDeConfigPrefix("compde3") + ".test4", "serverVal4");//overriden by plug-in
+    
+    clientCompDeConf = new HiveConf(baseConf);
+    serverCompDeConf.set(compressorListVarName(), "compde3");
+    clientCompDeConf.set(compDeConfigPrefix("compde3") + ".test2", "clientVal2");//overrides server
+    clientCompDeConf.set(compDeConfigPrefix("compde3") + ".test3", "clientVal3");
+    clientCompDeConf.set(compDeConfigPrefix("compde3") + ".test5", "clientVal5");//overriden by plug-in
   }
 
-  public class MockEmbeddedThriftBinaryCLIServiceWithCompDes extends EmbeddedThriftBinaryCLIService {
-    @Override
-    // Pretend that we have plug-ins for all CompDes except "compde1"
-    protected Map<String, String> initCompDe(String compDeName, Map<String, String> compDeConfig) {
-      if (compDeName.equals("compde1")) {
-        return null;
-      }
-      else {
-        return compDeConfig;
-      }
-    }
+  // The JDBC driver prefixes all configuration names and the server expects these prefixes
+  private String compressorListVarName() {
+    return "set:hiveconf:" + ConfVars.HIVE_SERVER2_THRIFT_RESULTSET_COMPRESSOR_LIST.varname;
+  }
+  private String compDeConfigPrefix(String compDeName) {
+    return "set:hiveconf:" + ConfVars.HIVE_SERVER2_THRIFT_RESULTSET_COMPRESSOR.varname + "." + compDeName;
   }
 
-  public class MockEmbeddedThriftBinaryCLIServiceWithoutCompDes extends EmbeddedThriftBinaryCLIService {
+  public class MockServiceWithoutCompDes extends EmbeddedThriftBinaryCLIService {
     @Override
     // Pretend that we have no CompDe plug-ins
     protected Map<String, String> initCompDe(String compDeName, Map<String, String> compDeConfig) {
@@ -85,7 +94,7 @@ public class TestCompDeNegotiation {
   @Test
   // The server has no CompDe plug-ins
   public void testServerWithoutCompDePlugins() throws HiveSQLException, InterruptedException, TException {
-    ThriftCLIService service = new MockEmbeddedThriftBinaryCLIServiceWithoutCompDes();
+    ThriftCLIService service = new MockServiceWithoutCompDes();
     service.init(noCompDes);
 
     TOpenSessionReq req = new TOpenSessionReq();
@@ -107,10 +116,23 @@ public class TestCompDeNegotiation {
     service.stop();
   }
 
+  public class MockServiceWithCompDes extends EmbeddedThriftBinaryCLIService {
+    @Override
+    // Pretend that we have plug-ins for all CompDes except "compde1"
+    protected Map<String, String> initCompDe(String compDeName, Map<String, String> compDeConfig) {
+      if (compDeName.equals("compde1")) {
+        return null;
+      }
+      else {
+        return compDeConfig;
+      }
+    }
+  }
+
   @Test
   // The server has plug-ins but the CompDe list is not configured
   public void testServerWithoutCompDeInList() throws HiveSQLException, InterruptedException, TException {
-    ThriftCLIService service = new MockEmbeddedThriftBinaryCLIServiceWithCompDes();
+    ThriftCLIService service = new MockServiceWithCompDes();
     service.init(noCompDes);
 
     TOpenSessionReq req = new TOpenSessionReq();
@@ -134,7 +156,7 @@ public class TestCompDeNegotiation {
 
   @Test
   public void testServerWithSingleCompDeInList() throws HiveSQLException, InterruptedException, TException {
-    ThriftCLIService service = new MockEmbeddedThriftBinaryCLIServiceWithCompDes();
+    ThriftCLIService service = new MockServiceWithCompDes();
     service.init(singleCompDe);
 
     TOpenSessionReq req = new TOpenSessionReq();
@@ -158,7 +180,7 @@ public class TestCompDeNegotiation {
 
   @Test
   public void testServerWithMultiCompDesInList() throws HiveSQLException, InterruptedException, TException {
-    ThriftCLIService service = new MockEmbeddedThriftBinaryCLIServiceWithCompDes();
+    ThriftCLIService service = new MockServiceWithCompDes();
     service.init(multiCompDes1);
 
     TOpenSessionReq req = new TOpenSessionReq();
@@ -183,5 +205,37 @@ public class TestCompDeNegotiation {
     assertEquals("compde2", resp.getCompressorName());
 
     service.stop();
+  }
+
+  public class MockWithCompDeConfig extends EmbeddedThriftBinaryCLIService {
+    @Override
+    // Mock a plug-in with an `init` function.
+    protected Map<String, String> initCompDe(String compDeName, Map<String, String> compDeConfig) {
+      compDeConfig.put(compDeConfigPrefix("compde3") + ".test4", "compDeVal4");//overrides server
+      compDeConfig.put(compDeConfigPrefix("compde3") + ".test5", "compDeVal5");//overrides client
+      compDeConfig.put(compDeConfigPrefix("compde3") + ".test6", "compDeVal6");
+      return compDeConfig;
+    }
+  }
+
+  @Test
+  // Ensure that the server combines the server default CompDe configuration with the client overrides and lets the plug-in `init` function create the final configuration.
+  public void testConfig() throws TException {
+    Map<String, String> expectedConf = new HashMap<String, String>();
+    expectedConf.put(compDeConfigPrefix("compde3") + ".test1", "serverVal1");
+    expectedConf.put(compDeConfigPrefix("compde3") + ".test2", "clientVal2");
+    expectedConf.put(compDeConfigPrefix("compde3") + ".test3", "clientVal3");
+    expectedConf.put(compDeConfigPrefix("compde3") + ".test4", "compDeVal4");
+    expectedConf.put(compDeConfigPrefix("compde3") + ".test5", "compDeVal5");
+    expectedConf.put(compDeConfigPrefix("compde3") + ".test6", "compDeVal6");
+
+    ThriftCLIService service = new MockWithCompDeConfig();
+    service.init(serverCompDeConf);
+
+    TOpenSessionReq req = new TOpenSessionReq();
+    req.setConfiguration(clientCompDeConf.getValByRegex(".*"));
+
+    TOpenSessionResp resp = service.OpenSession(req);
+    assertEquals(expectedConf, resp.getCompressorConfiguration());
   }
 }
