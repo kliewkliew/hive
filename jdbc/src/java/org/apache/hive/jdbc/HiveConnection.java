@@ -19,6 +19,7 @@
 package org.apache.hive.jdbc;
 
 import org.apache.commons.lang.StringUtils;
+import org.apache.hadoop.hive.conf.HiveConf.ConfVars;
 import org.apache.hadoop.hive.serde2.compression.CompDe;
 import org.apache.hadoop.hive.serde2.compression.CompDeServiceLoader;
 import org.apache.hive.jdbc.Utils.JdbcConnectionParams;
@@ -584,6 +585,10 @@ public class HiveConnection implements java.sql.Connection {
         // And the client initialized properly with the same config
         if (testCompDe.init(openResp.getCompressorConfiguration()) != null) {
           sessCompDe = testCompDe;
+        }
+        else {
+          openReq.getConfiguration().remove("set:hiveconf:" + ConfVars.HIVE_SERVER2_THRIFT_RESULTSET_COMPRESSOR_LIST.varname);
+          openResp = client.OpenSession(openReq);
         }
       }
 
