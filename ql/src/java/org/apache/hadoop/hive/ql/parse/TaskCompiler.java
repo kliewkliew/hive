@@ -125,13 +125,6 @@ public abstract class TaskCompiler {
       if (!resultTab.getSerdeClassName().equalsIgnoreCase(ThriftJDBCBinarySerDe.class.getName())) {
         if (SessionState.get().isHiveServerQuery()) {
           conf.set(SerDeUtils.LIST_SINK_OUTPUT_FORMATTER,ThriftFormatter.class.getName());
-
-          String compDeName = SessionState.get().getConf().getVar(ConfVars.HIVE_SERVER2_THRIFT_RESULTSET_COMPRESSOR);
-          if (!compDeName.isEmpty()) {
-            resultTab.getProperties().put("compde", compDeName);
-            resultTab.getProperties().put("compde.config",
-                SessionState.get().getConf().getValByRegex(ConfVars.HIVE_SERVER2_THRIFT_RESULTSET_COMPRESSOR + "\\." + compDeName + "\\.[\\w|\\d]+"));
-          }
         } else {
           String formatterName = conf.get(SerDeUtils.LIST_SINK_OUTPUT_FORMATTER);
           if (formatterName == null || formatterName.isEmpty()) {
