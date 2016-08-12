@@ -7149,8 +7149,8 @@ public class SemanticAnalyzer extends BaseSemanticAnalyzer {
 
       String compDeName = SessionState.get().getConf().getVar(ConfVars.HIVE_SERVER2_THRIFT_RESULTSET_COMPRESSOR);
       if (!compDeName.isEmpty()) {
-        table_desc.getProperties().put("compde", compDeName);
-        table_desc.getProperties().put("compde.config",
+        table_desc.getProperties().put(serdeConstants.COMPDE_NAME, compDeName);
+        table_desc.getProperties().put(serdeConstants.COMPDE_CONFIG,
             SessionState.get().getConf().getValByRegex(ConfVars.HIVE_SERVER2_THRIFT_RESULTSET_COMPRESSOR + "\\." + compDeName + "\\.[\\w|\\d]+"));
       }
 
