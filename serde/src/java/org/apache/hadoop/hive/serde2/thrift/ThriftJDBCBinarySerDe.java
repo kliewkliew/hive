@@ -75,7 +75,7 @@ public class ThriftJDBCBinarySerDe extends AbstractSerDe {
 
   @Override
   public void initialize(Configuration conf, Properties tbl) throws SerDeException {
-    if (tbl.containsKey("compde")) {
+    if (tbl.containsKey(serdeConstants.COMPDE_NAME)) {
       String compDeName = tbl.getProperty(serdeConstants.COMPDE_NAME, null);
       compDe = CompDeServiceLoader.getInstance().getCompDe(compDeName);
       if (compDe != null && tbl.containsKey(serdeConstants.COMPDE_CONFIG)) {
