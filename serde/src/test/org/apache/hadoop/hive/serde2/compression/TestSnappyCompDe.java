@@ -88,7 +88,7 @@ public class TestSnappyCompDe {
         columnStr4};
     
     byte[] compressedCols = compDe.compress(testCols);
-    ColumnBuffer[] decompressedCols = compDe.decompress(compressedCols);
+    ColumnBuffer[] decompressedCols = compDe.decompress(compressedCols, 0, compressedCols.length);
     assertArrayEquals(testCols, decompressedCols);
   }
 
@@ -111,7 +111,7 @@ public class TestSnappyCompDe {
     };
 
     byte[] compressedBinary = compDe.compress(testBinary);
-    ColumnBuffer[] decompressedBinary = compDe.decompress(compressedBinary);
+    ColumnBuffer[] decompressedBinary = compDe.decompress(compressedBinary, 0, compressedBinary.length);
     assertTrue(testBinary[0].toTColumn().getBinaryVal().equals(decompressedBinary[0].toTColumn().getBinaryVal()));
   }
 }
