@@ -65,7 +65,7 @@ public class ColumnBasedSet implements RowSet {
     }
   }
 
-  public ColumnBasedSet(TRowSet tRowSet, CompDe compDe) throws TException, IOException {
+  public ColumnBasedSet(TRowSet tRowSet, CompDe compDe) throws TException {
     descriptors = null;
     if (tRowSet.isSetBinaryColumns()) {
       // Use TCompactProtocol to read serialized TColumns
@@ -75,7 +75,12 @@ public class ColumnBasedSet implements RowSet {
 
         byte[] snappyBytes = new byte[inputStream.available()];
         BytesWritable unwrapStream = new BytesWritable(snappyBytes);
-        unwrapStream.readFields(new DataInputStream(inputStream));
+        try {
+          unwrapStream.readFields(new DataInputStream(inputStream));
+        } catch (IOException e) {
+          LOG.error(e.getMessage(), e);
+          throw new TException("Error reading column value from the row set blob", e);
+        }
 
         columns = Arrays.asList(compDe.decompress(snappyBytes));
       }
