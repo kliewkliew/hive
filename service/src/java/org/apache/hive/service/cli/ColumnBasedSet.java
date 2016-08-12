@@ -19,8 +19,6 @@
 package org.apache.hive.service.cli;
 
 import java.io.ByteArrayInputStream;
-import java.io.DataInputStream;
-import java.io.IOException;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Iterator;
@@ -30,7 +28,6 @@ import org.apache.hadoop.hive.common.type.HiveDecimal;
 import org.apache.hadoop.hive.serde2.thrift.ColumnBuffer;
 import org.apache.hadoop.hive.serde2.compression.CompDe;
 import org.apache.hadoop.hive.serde2.thrift.Type;
-import org.apache.hadoop.io.BytesWritable;
 import org.apache.hive.service.rpc.thrift.TColumn;
 import org.apache.hive.service.rpc.thrift.TRow;
 import org.apache.hive.service.rpc.thrift.TRowSet;
@@ -69,18 +66,7 @@ public class ColumnBasedSet implements RowSet {
       // Use TCompactProtocol to read serialized TColumns
 
       if (compDe != null) {
-        DataInputStream inputStream = new DataInputStream(new ByteArrayInputStream(tRowSet.getBinaryColumns()));
-
-        try {
-          byte[] snappyBytes = new byte[inputStream.available()];
-          BytesWritable unwrapStream = new BytesWritable(snappyBytes);
-          unwrapStream.readFields(inputStream);
-
-          columns = Arrays.asList(compDe.decompress(snappyBytes));
-        } catch (IOException e) {
-          LOG.error(e.getMessage(), e);
-          throw new TException("Error decompressing column-set blob", e);
-        }
+        columns = Arrays.asList(compDe.decompress(tRowSet.getBinaryColumns(), 1, tRowSet.getBinaryColumns()[1]));
       }
       else {
         columns = new ArrayList<ColumnBuffer>();

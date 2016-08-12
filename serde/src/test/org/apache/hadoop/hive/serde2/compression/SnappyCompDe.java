@@ -248,9 +248,9 @@ public class SnappyCompDe implements CompDe {
    * @return The set of columns.
    */
   @Override
-  public ColumnBuffer[] decompress(byte[] compressedSet) {
-    ByteArrayInputStream input = new ByteArrayInputStream(compressedSet);
-    BufferedInputStream bufferedInput = new BufferedInputStream(input);
+  public ColumnBuffer[] decompress(byte[] input, int inputOffset, int inputLength) {
+    ByteArrayInputStream inputStream = new ByteArrayInputStream(input, inputOffset, inputLength);
+    BufferedInputStream bufferedInput = new BufferedInputStream(inputStream);
 
     try {
       int numOfCols = bufferedInput.read();
