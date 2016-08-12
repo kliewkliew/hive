@@ -69,18 +69,18 @@ public class ColumnBasedSet implements RowSet {
       // Use TCompactProtocol to read serialized TColumns
 
       if (compDe != null) {
-        ByteArrayInputStream inputStream = new ByteArrayInputStream(tRowSet.getBinaryColumns());
+        DataInputStream inputStream = new DataInputStream(new ByteArrayInputStream(tRowSet.getBinaryColumns()));
 
-        byte[] snappyBytes = new byte[inputStream.available()];
-        BytesWritable unwrapStream = new BytesWritable(snappyBytes);
         try {
-          unwrapStream.readFields(new DataInputStream(inputStream));
+          byte[] snappyBytes = new byte[inputStream.available()];
+          BytesWritable unwrapStream = new BytesWritable(snappyBytes);
+          unwrapStream.readFields(inputStream);
+
+          columns = Arrays.asList(compDe.decompress(snappyBytes));
         } catch (IOException e) {
           LOG.error(e.getMessage(), e);
-          throw new TException("Error reading column value from the row set blob", e);
+          throw new TException("Error decompressing column-set blob", e);
         }
-
-        columns = Arrays.asList(compDe.decompress(snappyBytes));
       }
       else {
         columns = new ArrayList<ColumnBuffer>();
