@@ -152,7 +152,7 @@ public class TOpenSessionResp implements org.apache.thrift.TBase<TOpenSessionRes
   }
 
   public TOpenSessionResp() {
-    this.serverProtocolVersion = org.apache.hive.service.rpc.thrift.TProtocolVersion.HIVE_CLI_SERVICE_PROTOCOL_V8;
+    this.serverProtocolVersion = org.apache.hive.service.rpc.thrift.TProtocolVersion.HIVE_CLI_SERVICE_PROTOCOL_V9;
 
   }
 
@@ -194,7 +194,7 @@ public class TOpenSessionResp implements org.apache.thrift.TBase<TOpenSessionRes
   @Override
   public void clear() {
     this.status = null;
-    this.serverProtocolVersion = org.apache.hive.service.rpc.thrift.TProtocolVersion.HIVE_CLI_SERVICE_PROTOCOL_V8;
+    this.serverProtocolVersion = org.apache.hive.service.rpc.thrift.TProtocolVersion.HIVE_CLI_SERVICE_PROTOCOL_V9;
 
     this.sessionHandle = null;
     this.compressorConfiguration = null;

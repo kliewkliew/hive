@@ -2129,8 +2129,8 @@ class TOpenSessionReq {
 
   TOpenSessionReq(const TOpenSessionReq&);
   TOpenSessionReq& operator=(const TOpenSessionReq&);
-  TOpenSessionReq() : client_protocol((TProtocolVersion::type)7), username(), password() {
-    client_protocol = (TProtocolVersion::type)7;
+  TOpenSessionReq() : client_protocol((TProtocolVersion::type)8), username(), password() {
+    client_protocol = (TProtocolVersion::type)8;
 
   }
 
@@ -2189,10 +2189,9 @@ inline std::ostream& operator<<(std::ostream& out, const TOpenSessionReq& obj)
 }
 
 typedef struct _TOpenSessionResp__isset {
-  _TOpenSessionResp__isset() : sessionHandle(false), compressorConfiguration(false), compressorName(false) {}
+  _TOpenSessionResp__isset() : sessionHandle(false), configuration(false) {}
   bool sessionHandle :1;
-  bool compressorConfiguration :1;
-  bool compressorName :1;
+  bool configuration :1;
 } _TOpenSessionResp__isset;
 
 class TOpenSessionResp {
@@ -2200,8 +2199,8 @@ class TOpenSessionResp {
 
   TOpenSessionResp(const TOpenSessionResp&);
   TOpenSessionResp& operator=(const TOpenSessionResp&);
-  TOpenSessionResp() : serverProtocolVersion((TProtocolVersion::type)7), compressorName() {
-    serverProtocolVersion = (TProtocolVersion::type)7;
+  TOpenSessionResp() : serverProtocolVersion((TProtocolVersion::type)8) {
+    serverProtocolVersion = (TProtocolVersion::type)8;
 
   }
 
@@ -2209,8 +2208,7 @@ class TOpenSessionResp {
   TStatus status;
   TProtocolVersion::type serverProtocolVersion;
   TSessionHandle sessionHandle;
-  std::map<std::string, std::string>  compressorConfiguration;
-  std::string compressorName;
+  std::map<std::string, std::string>  configuration;
 
   _TOpenSessionResp__isset __isset;
 
@@ -2220,9 +2218,7 @@ class TOpenSessionResp {
 
   void __set_sessionHandle(const TSessionHandle& val);
 
-  void __set_compressorConfiguration(const std::map<std::string, std::string> & val);
-
-  void __set_compressorName(const std::string& val);
+  void __set_configuration(const std::map<std::string, std::string> & val);
 
   bool operator == (const TOpenSessionResp & rhs) const
   {
@@ -2234,13 +2230,9 @@ class TOpenSessionResp {
       return false;
     else if (__isset.sessionHandle && !(sessionHandle == rhs.sessionHandle))
       return false;
-    if (__isset.compressorConfiguration != rhs.__isset.compressorConfiguration)
+    if (__isset.configuration != rhs.__isset.configuration)
       return false;
-    else if (__isset.compressorConfiguration && !(compressorConfiguration == rhs.compressorConfiguration))
-      return false;
-    if (__isset.compressorName != rhs.__isset.compressorName)
-      return false;
-    else if (__isset.compressorName && !(compressorName == rhs.compressorName))
+    else if (__isset.configuration && !(configuration == rhs.configuration))
       return false;
     return true;
   }
