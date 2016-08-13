@@ -21,8 +21,11 @@ package org.apache.hive.service.cli.thrift;
 import java.io.IOException;
 import java.net.InetAddress;
 import java.net.UnknownHostException;
-import java.util.HashMap;
+import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.List;
 import java.util.Map;
+import java.util.Map.Entry;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 
@@ -30,6 +33,8 @@ import javax.security.auth.login.LoginException;
 
 import org.apache.hadoop.hive.conf.HiveConf;
 import org.apache.hadoop.hive.conf.HiveConf.ConfVars;
+import org.apache.hadoop.hive.serde2.compression.CompDe;
+import org.apache.hadoop.hive.serde2.compression.CompDeServiceLoader;
 import org.apache.hadoop.hive.common.ServerUtils;
 import org.apache.hadoop.hive.shims.HadoopShims.KerberosNameShim;
 import org.apache.hadoop.hive.shims.ShimLoader;
@@ -309,10 +314,48 @@ public abstract class ThriftCLIService extends AbstractService implements TCLISe
     LOG.info("Client protocol version: " + req.getClient_protocol());
     TOpenSessionResp resp = new TOpenSessionResp();
     try {
+      String[] serverCompDes =
+          HiveConf.getTrimmedStringsVar(hiveConf, ConfVars.HIVE_SERVER2_THRIFT_RESULTSET_COMPRESSOR_LIST);
+
+      List<String> clientCompDes = new ArrayList<String>();
+      if (req.getConfiguration().containsKey("set:hiveconf:" + ConfVars.HIVE_SERVER2_THRIFT_RESULTSET_COMPRESSOR_LIST.varname)
+          && !req.getConfiguration().get("set:hiveconf:" + ConfVars.HIVE_SERVER2_THRIFT_RESULTSET_COMPRESSOR_LIST.varname).isEmpty()) {
+        HiveConf tempConf = new HiveConf();
+        tempConf.setVar(ConfVars.HIVE_SERVER2_THRIFT_RESULTSET_COMPRESSOR_LIST, req.getConfiguration().get("set:hiveconf:" + ConfVars.HIVE_SERVER2_THRIFT_RESULTSET_COMPRESSOR_LIST.varname));
+        clientCompDes =
+            Arrays.asList(HiveConf.getTrimmedStringsVar(tempConf, ConfVars.HIVE_SERVER2_THRIFT_RESULTSET_COMPRESSOR_LIST));
+      }
+
+      // CompDe negotiation
+      req.getConfiguration().put("set:hiveconf:" + ConfVars.HIVE_SERVER2_THRIFT_RESULTSET_COMPRESSOR.varname, "");
+      for (String compDeName : serverCompDes) {
+        if (clientCompDes.contains(compDeName)) {
+          // Client configuration overrides server defaults
+          Map<String, String> compDeConfig = 
+              hiveConf.getValByRegex(ConfVars.HIVE_SERVER2_THRIFT_RESULTSET_COMPRESSOR + "\\." + compDeName + "\\.[\\w|\\d]+");
+          for (Entry<String, String> entry : compDeConfig.entrySet()) {
+            if (req.getConfiguration().containsKey("set:hiveconf:" + entry.getKey())) {
+              compDeConfig.put(entry.getKey(), req.getConfiguration().get("set:hiveconf:" + entry.getKey()));
+            }
+          }
+
+          Map<String, String> compDeResponse = initCompDe(compDeName, compDeConfig);
+
+          if (compDeResponse != null) {
+            LOG.info("Initialized CompDe plugin for " + compDeName);
+            resp.setCompressorConfiguration(compDeResponse);
+            resp.setCompressorName(compDeName);
+            // SessionState is initialized based on TOpenSessionRequest
+            req.getConfiguration().put("set:hiveconf:" + ConfVars.HIVE_SERVER2_THRIFT_RESULTSET_COMPRESSOR.varname, compDeName);
+            req.getConfiguration().putAll(compDeResponse);
+            break;
+          }
+        }
+      }
+
       SessionHandle sessionHandle = getSessionHandle(req, resp);
       resp.setSessionHandle(sessionHandle.toTSessionHandle());
-      // TODO: set real configuration map
-      resp.setConfiguration(new HashMap<String, String>());
+
       resp.setStatus(OK_STATUS);
       ThriftCLIServerContext context =
         (ThriftCLIServerContext)currentServerContext.get();
@@ -324,6 +367,15 @@ public abstract class ThriftCLIService extends AbstractService implements TCLISe
       resp.setStatus(HiveSQLException.toTStatus(e));
     }
     return resp;
+  }
+
+  protected Map<String, String> initCompDe(String compDeName, Map<String, String> compDeConfig) {
+    if (CompDeServiceLoader.getInstance().hasCompDe(compDeName)) {
+      return CompDeServiceLoader.getInstance().getCompDe(compDeName).init(compDeConfig);
+    }
+    else {
+      return null;
+    }
   }
 
   private String getIpAddress() {

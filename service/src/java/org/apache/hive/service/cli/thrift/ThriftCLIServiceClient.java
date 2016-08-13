@@ -440,7 +440,7 @@ public class ThriftCLIServiceClient extends CLIServiceClient {
       req.setFetchType(fetchType.toTFetchType());
       TFetchResultsResp resp = cliService.FetchResults(req);
       checkStatus(resp.getStatus());
-      return RowSetFactory.create(resp.getResults(), opHandle.getProtocolVersion());
+      return RowSetFactory.create(resp.getResults(), opHandle.getProtocolVersion(), null);
     } catch (HiveSQLException e) {
       throw e;
     } catch (Exception e) {
