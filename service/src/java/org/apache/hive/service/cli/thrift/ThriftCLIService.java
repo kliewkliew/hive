@@ -370,9 +370,8 @@ public abstract class ThriftCLIService extends AbstractService implements TCLISe
   }
 
   protected Map<String, String> initCompDe(String compDeName, Map<String, String> compDeConfig) {
-    CompDe compDe = CompDeServiceLoader.getInstance().getCompDe(compDeName);
-    if (compDe != null) {
-      return compDe.init(compDeConfig);
+    if (CompDeServiceLoader.getInstance().hasCompDe(compDeName)) {
+      return CompDeServiceLoader.getInstance().getCompDe(compDeName).init(compDeConfig);
     }
     else {
       return null;
