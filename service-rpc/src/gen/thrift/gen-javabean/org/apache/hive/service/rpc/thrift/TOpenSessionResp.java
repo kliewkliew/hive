@@ -41,7 +41,8 @@ public class TOpenSessionResp implements org.apache.thrift.TBase<TOpenSessionRes
   private static final org.apache.thrift.protocol.TField STATUS_FIELD_DESC = new org.apache.thrift.protocol.TField("status", org.apache.thrift.protocol.TType.STRUCT, (short)1);
   private static final org.apache.thrift.protocol.TField SERVER_PROTOCOL_VERSION_FIELD_DESC = new org.apache.thrift.protocol.TField("serverProtocolVersion", org.apache.thrift.protocol.TType.I32, (short)2);
   private static final org.apache.thrift.protocol.TField SESSION_HANDLE_FIELD_DESC = new org.apache.thrift.protocol.TField("sessionHandle", org.apache.thrift.protocol.TType.STRUCT, (short)3);
-  private static final org.apache.thrift.protocol.TField CONFIGURATION_FIELD_DESC = new org.apache.thrift.protocol.TField("configuration", org.apache.thrift.protocol.TType.MAP, (short)4);
+  private static final org.apache.thrift.protocol.TField COMPRESSOR_CONFIGURATION_FIELD_DESC = new org.apache.thrift.protocol.TField("compressorConfiguration", org.apache.thrift.protocol.TType.MAP, (short)4);
+  private static final org.apache.thrift.protocol.TField COMPRESSOR_NAME_FIELD_DESC = new org.apache.thrift.protocol.TField("compressorName", org.apache.thrift.protocol.TType.STRING, (short)5);
 
   private static final Map<Class<? extends IScheme>, SchemeFactory> schemes = new HashMap<Class<? extends IScheme>, SchemeFactory>();
   static {
@@ -52,7 +53,8 @@ public class TOpenSessionResp implements org.apache.thrift.TBase<TOpenSessionRes
   private TStatus status; // required
   private TProtocolVersion serverProtocolVersion; // required
   private TSessionHandle sessionHandle; // optional
-  private Map<String,String> configuration; // optional
+  private Map<String,String> compressorConfiguration; // optional
+  private String compressorName; // optional
 
   /** The set of fields this struct contains, along with convenience methods for finding and manipulating them. */
   public enum _Fields implements org.apache.thrift.TFieldIdEnum {
@@ -63,7 +65,8 @@ public class TOpenSessionResp implements org.apache.thrift.TBase<TOpenSessionRes
      */
     SERVER_PROTOCOL_VERSION((short)2, "serverProtocolVersion"),
     SESSION_HANDLE((short)3, "sessionHandle"),
-    CONFIGURATION((short)4, "configuration");
+    COMPRESSOR_CONFIGURATION((short)4, "compressorConfiguration"),
+    COMPRESSOR_NAME((short)5, "compressorName");
 
     private static final Map<String, _Fields> byName = new HashMap<String, _Fields>();
 
@@ -84,8 +87,10 @@ public class TOpenSessionResp implements org.apache.thrift.TBase<TOpenSessionRes
           return SERVER_PROTOCOL_VERSION;
         case 3: // SESSION_HANDLE
           return SESSION_HANDLE;
-        case 4: // CONFIGURATION
-          return CONFIGURATION;
+        case 4: // COMPRESSOR_CONFIGURATION
+          return COMPRESSOR_CONFIGURATION;
+        case 5: // COMPRESSOR_NAME
+          return COMPRESSOR_NAME;
         default:
           return null;
       }
@@ -126,7 +131,7 @@ public class TOpenSessionResp implements org.apache.thrift.TBase<TOpenSessionRes
   }
 
   // isset id assignments
-  private static final _Fields optionals[] = {_Fields.SESSION_HANDLE,_Fields.CONFIGURATION};
+  private static final _Fields optionals[] = {_Fields.SESSION_HANDLE,_Fields.COMPRESSOR_CONFIGURATION,_Fields.COMPRESSOR_NAME};
   public static final Map<_Fields, org.apache.thrift.meta_data.FieldMetaData> metaDataMap;
   static {
     Map<_Fields, org.apache.thrift.meta_data.FieldMetaData> tmpMap = new EnumMap<_Fields, org.apache.thrift.meta_data.FieldMetaData>(_Fields.class);
@@ -136,10 +141,12 @@ public class TOpenSessionResp implements org.apache.thrift.TBase<TOpenSessionRes
         new org.apache.thrift.meta_data.EnumMetaData(org.apache.thrift.protocol.TType.ENUM, TProtocolVersion.class)));
     tmpMap.put(_Fields.SESSION_HANDLE, new org.apache.thrift.meta_data.FieldMetaData("sessionHandle", org.apache.thrift.TFieldRequirementType.OPTIONAL, 
         new org.apache.thrift.meta_data.StructMetaData(org.apache.thrift.protocol.TType.STRUCT, TSessionHandle.class)));
-    tmpMap.put(_Fields.CONFIGURATION, new org.apache.thrift.meta_data.FieldMetaData("configuration", org.apache.thrift.TFieldRequirementType.OPTIONAL, 
+    tmpMap.put(_Fields.COMPRESSOR_CONFIGURATION, new org.apache.thrift.meta_data.FieldMetaData("compressorConfiguration", org.apache.thrift.TFieldRequirementType.OPTIONAL, 
         new org.apache.thrift.meta_data.MapMetaData(org.apache.thrift.protocol.TType.MAP, 
             new org.apache.thrift.meta_data.FieldValueMetaData(org.apache.thrift.protocol.TType.STRING), 
             new org.apache.thrift.meta_data.FieldValueMetaData(org.apache.thrift.protocol.TType.STRING))));
+    tmpMap.put(_Fields.COMPRESSOR_NAME, new org.apache.thrift.meta_data.FieldMetaData("compressorName", org.apache.thrift.TFieldRequirementType.OPTIONAL, 
+        new org.apache.thrift.meta_data.FieldValueMetaData(org.apache.thrift.protocol.TType.STRING)));
     metaDataMap = Collections.unmodifiableMap(tmpMap);
     org.apache.thrift.meta_data.FieldMetaData.addStructMetaDataMap(TOpenSessionResp.class, metaDataMap);
   }
@@ -171,9 +178,12 @@ public class TOpenSessionResp implements org.apache.thrift.TBase<TOpenSessionRes
     if (other.isSetSessionHandle()) {
       this.sessionHandle = new TSessionHandle(other.sessionHandle);
     }
-    if (other.isSetConfiguration()) {
-      Map<String,String> __this__configuration = new HashMap<String,String>(other.configuration);
-      this.configuration = __this__configuration;
+    if (other.isSetCompressorConfiguration()) {
+      Map<String,String> __this__compressorConfiguration = new HashMap<String,String>(other.compressorConfiguration);
+      this.compressorConfiguration = __this__compressorConfiguration;
+    }
+    if (other.isSetCompressorName()) {
+      this.compressorName = other.compressorName;
     }
   }
 
@@ -187,7 +197,8 @@ public class TOpenSessionResp implements org.apache.thrift.TBase<TOpenSessionRes
     this.serverProtocolVersion = org.apache.hive.service.rpc.thrift.TProtocolVersion.HIVE_CLI_SERVICE_PROTOCOL_V9;
 
     this.sessionHandle = null;
-    this.configuration = null;
+    this.compressorConfiguration = null;
+    this.compressorName = null;
   }
 
   public TStatus getStatus() {
@@ -267,37 +278,60 @@ public class TOpenSessionResp implements org.apache.thrift.TBase<TOpenSessionRes
     }
   }
 
-  public int getConfigurationSize() {
-    return (this.configuration == null) ? 0 : this.configuration.size();
+  public int getCompressorConfigurationSize() {
+    return (this.compressorConfiguration == null) ? 0 : this.compressorConfiguration.size();
   }
 
-  public void putToConfiguration(String key, String val) {
-    if (this.configuration == null) {
-      this.configuration = new HashMap<String,String>();
+  public void putToCompressorConfiguration(String key, String val) {
+    if (this.compressorConfiguration == null) {
+      this.compressorConfiguration = new HashMap<String,String>();
     }
-    this.configuration.put(key, val);
+    this.compressorConfiguration.put(key, val);
   }
 
-  public Map<String,String> getConfiguration() {
-    return this.configuration;
+  public Map<String,String> getCompressorConfiguration() {
+    return this.compressorConfiguration;
   }
 
-  public void setConfiguration(Map<String,String> configuration) {
-    this.configuration = configuration;
+  public void setCompressorConfiguration(Map<String,String> compressorConfiguration) {
+    this.compressorConfiguration = compressorConfiguration;
   }
 
-  public void unsetConfiguration() {
-    this.configuration = null;
+  public void unsetCompressorConfiguration() {
+    this.compressorConfiguration = null;
   }
 
-  /** Returns true if field configuration is set (has been assigned a value) and false otherwise */
-  public boolean isSetConfiguration() {
-    return this.configuration != null;
+  /** Returns true if field compressorConfiguration is set (has been assigned a value) and false otherwise */
+  public boolean isSetCompressorConfiguration() {
+    return this.compressorConfiguration != null;
   }
 
-  public void setConfigurationIsSet(boolean value) {
+  public void setCompressorConfigurationIsSet(boolean value) {
     if (!value) {
-      this.configuration = null;
+      this.compressorConfiguration = null;
+    }
+  }
+
+  public String getCompressorName() {
+    return this.compressorName;
+  }
+
+  public void setCompressorName(String compressorName) {
+    this.compressorName = compressorName;
+  }
+
+  public void unsetCompressorName() {
+    this.compressorName = null;
+  }
+
+  /** Returns true if field compressorName is set (has been assigned a value) and false otherwise */
+  public boolean isSetCompressorName() {
+    return this.compressorName != null;
+  }
+
+  public void setCompressorNameIsSet(boolean value) {
+    if (!value) {
+      this.compressorName = null;
     }
   }
 
@@ -327,11 +361,19 @@ public class TOpenSessionResp implements org.apache.thrift.TBase<TOpenSessionRes
       }
       break;
 
-    case CONFIGURATION:
+    case COMPRESSOR_CONFIGURATION:
       if (value == null) {
-        unsetConfiguration();
+        unsetCompressorConfiguration();
       } else {
-        setConfiguration((Map<String,String>)value);
+        setCompressorConfiguration((Map<String,String>)value);
+      }
+      break;
+
+    case COMPRESSOR_NAME:
+      if (value == null) {
+        unsetCompressorName();
+      } else {
+        setCompressorName((String)value);
       }
       break;
 
@@ -349,8 +391,11 @@ public class TOpenSessionResp implements org.apache.thrift.TBase<TOpenSessionRes
     case SESSION_HANDLE:
       return getSessionHandle();
 
-    case CONFIGURATION:
-      return getConfiguration();
+    case COMPRESSOR_CONFIGURATION:
+      return getCompressorConfiguration();
+
+    case COMPRESSOR_NAME:
+      return getCompressorName();
 
     }
     throw new IllegalStateException();
@@ -369,8 +414,10 @@ public class TOpenSessionResp implements org.apache.thrift.TBase<TOpenSessionRes
       return isSetServerProtocolVersion();
     case SESSION_HANDLE:
       return isSetSessionHandle();
-    case CONFIGURATION:
-      return isSetConfiguration();
+    case COMPRESSOR_CONFIGURATION:
+      return isSetCompressorConfiguration();
+    case COMPRESSOR_NAME:
+      return isSetCompressorName();
     }
     throw new IllegalStateException();
   }
@@ -415,12 +462,21 @@ public class TOpenSessionResp implements org.apache.thrift.TBase<TOpenSessionRes
         return false;
     }
 
-    boolean this_present_configuration = true && this.isSetConfiguration();
-    boolean that_present_configuration = true && that.isSetConfiguration();
-    if (this_present_configuration || that_present_configuration) {
-      if (!(this_present_configuration && that_present_configuration))
+    boolean this_present_compressorConfiguration = true && this.isSetCompressorConfiguration();
+    boolean that_present_compressorConfiguration = true && that.isSetCompressorConfiguration();
+    if (this_present_compressorConfiguration || that_present_compressorConfiguration) {
+      if (!(this_present_compressorConfiguration && that_present_compressorConfiguration))
         return false;
-      if (!this.configuration.equals(that.configuration))
+      if (!this.compressorConfiguration.equals(that.compressorConfiguration))
+        return false;
+    }
+
+    boolean this_present_compressorName = true && this.isSetCompressorName();
+    boolean that_present_compressorName = true && that.isSetCompressorName();
+    if (this_present_compressorName || that_present_compressorName) {
+      if (!(this_present_compressorName && that_present_compressorName))
+        return false;
+      if (!this.compressorName.equals(that.compressorName))
         return false;
     }
 
@@ -446,10 +502,15 @@ public class TOpenSessionResp implements org.apache.thrift.TBase<TOpenSessionRes
     if (present_sessionHandle)
       list.add(sessionHandle);
 
-    boolean present_configuration = true && (isSetConfiguration());
-    list.add(present_configuration);
-    if (present_configuration)
-      list.add(configuration);
+    boolean present_compressorConfiguration = true && (isSetCompressorConfiguration());
+    list.add(present_compressorConfiguration);
+    if (present_compressorConfiguration)
+      list.add(compressorConfiguration);
+
+    boolean present_compressorName = true && (isSetCompressorName());
+    list.add(present_compressorName);
+    if (present_compressorName)
+      list.add(compressorName);
 
     return list.hashCode();
   }
@@ -492,12 +553,22 @@ public class TOpenSessionResp implements org.apache.thrift.TBase<TOpenSessionRes
         return lastComparison;
       }
     }
-    lastComparison = Boolean.valueOf(isSetConfiguration()).compareTo(other.isSetConfiguration());
+    lastComparison = Boolean.valueOf(isSetCompressorConfiguration()).compareTo(other.isSetCompressorConfiguration());
     if (lastComparison != 0) {
       return lastComparison;
     }
-    if (isSetConfiguration()) {
-      lastComparison = org.apache.thrift.TBaseHelper.compareTo(this.configuration, other.configuration);
+    if (isSetCompressorConfiguration()) {
+      lastComparison = org.apache.thrift.TBaseHelper.compareTo(this.compressorConfiguration, other.compressorConfiguration);
+      if (lastComparison != 0) {
+        return lastComparison;
+      }
+    }
+    lastComparison = Boolean.valueOf(isSetCompressorName()).compareTo(other.isSetCompressorName());
+    if (lastComparison != 0) {
+      return lastComparison;
+    }
+    if (isSetCompressorName()) {
+      lastComparison = org.apache.thrift.TBaseHelper.compareTo(this.compressorName, other.compressorName);
       if (lastComparison != 0) {
         return lastComparison;
       }
@@ -547,13 +618,23 @@ public class TOpenSessionResp implements org.apache.thrift.TBase<TOpenSessionRes
       }
       first = false;
     }
-    if (isSetConfiguration()) {
+    if (isSetCompressorConfiguration()) {
       if (!first) sb.append(", ");
-      sb.append("configuration:");
-      if (this.configuration == null) {
+      sb.append("compressorConfiguration:");
+      if (this.compressorConfiguration == null) {
         sb.append("null");
       } else {
-        sb.append(this.configuration);
+        sb.append(this.compressorConfiguration);
+      }
+      first = false;
+    }
+    if (isSetCompressorName()) {
+      if (!first) sb.append(", ");
+      sb.append("compressorName:");
+      if (this.compressorName == null) {
+        sb.append("null");
+      } else {
+        sb.append(this.compressorName);
       }
       first = false;
     }
@@ -640,22 +721,30 @@ public class TOpenSessionResp implements org.apache.thrift.TBase<TOpenSessionRes
               org.apache.thrift.protocol.TProtocolUtil.skip(iprot, schemeField.type);
             }
             break;
-          case 4: // CONFIGURATION
+          case 4: // COMPRESSOR_CONFIGURATION
             if (schemeField.type == org.apache.thrift.protocol.TType.MAP) {
               {
                 org.apache.thrift.protocol.TMap _map152 = iprot.readMapBegin();
-                struct.configuration = new HashMap<String,String>(2*_map152.size);
+                struct.compressorConfiguration = new HashMap<String,String>(2*_map152.size);
                 String _key153;
                 String _val154;
                 for (int _i155 = 0; _i155 < _map152.size; ++_i155)
                 {
                   _key153 = iprot.readString();
                   _val154 = iprot.readString();
-                  struct.configuration.put(_key153, _val154);
+                  struct.compressorConfiguration.put(_key153, _val154);
                 }
                 iprot.readMapEnd();
               }
-              struct.setConfigurationIsSet(true);
+              struct.setCompressorConfigurationIsSet(true);
+            } else { 
+              org.apache.thrift.protocol.TProtocolUtil.skip(iprot, schemeField.type);
+            }
+            break;
+          case 5: // COMPRESSOR_NAME
+            if (schemeField.type == org.apache.thrift.protocol.TType.STRING) {
+              struct.compressorName = iprot.readString();
+              struct.setCompressorNameIsSet(true);
             } else { 
               org.apache.thrift.protocol.TProtocolUtil.skip(iprot, schemeField.type);
             }
@@ -690,18 +779,25 @@ public class TOpenSessionResp implements org.apache.thrift.TBase<TOpenSessionRes
           oprot.writeFieldEnd();
         }
       }
-      if (struct.configuration != null) {
-        if (struct.isSetConfiguration()) {
-          oprot.writeFieldBegin(CONFIGURATION_FIELD_DESC);
+      if (struct.compressorConfiguration != null) {
+        if (struct.isSetCompressorConfiguration()) {
+          oprot.writeFieldBegin(COMPRESSOR_CONFIGURATION_FIELD_DESC);
           {
-            oprot.writeMapBegin(new org.apache.thrift.protocol.TMap(org.apache.thrift.protocol.TType.STRING, org.apache.thrift.protocol.TType.STRING, struct.configuration.size()));
-            for (Map.Entry<String, String> _iter156 : struct.configuration.entrySet())
+            oprot.writeMapBegin(new org.apache.thrift.protocol.TMap(org.apache.thrift.protocol.TType.STRING, org.apache.thrift.protocol.TType.STRING, struct.compressorConfiguration.size()));
+            for (Map.Entry<String, String> _iter156 : struct.compressorConfiguration.entrySet())
             {
               oprot.writeString(_iter156.getKey());
               oprot.writeString(_iter156.getValue());
             }
             oprot.writeMapEnd();
           }
+          oprot.writeFieldEnd();
+        }
+      }
+      if (struct.compressorName != null) {
+        if (struct.isSetCompressorName()) {
+          oprot.writeFieldBegin(COMPRESSOR_NAME_FIELD_DESC);
+          oprot.writeString(struct.compressorName);
           oprot.writeFieldEnd();
         }
       }
@@ -728,22 +824,28 @@ public class TOpenSessionResp implements org.apache.thrift.TBase<TOpenSessionRes
       if (struct.isSetSessionHandle()) {
         optionals.set(0);
       }
-      if (struct.isSetConfiguration()) {
+      if (struct.isSetCompressorConfiguration()) {
         optionals.set(1);
       }
-      oprot.writeBitSet(optionals, 2);
+      if (struct.isSetCompressorName()) {
+        optionals.set(2);
+      }
+      oprot.writeBitSet(optionals, 3);
       if (struct.isSetSessionHandle()) {
         struct.sessionHandle.write(oprot);
       }
-      if (struct.isSetConfiguration()) {
+      if (struct.isSetCompressorConfiguration()) {
         {
-          oprot.writeI32(struct.configuration.size());
-          for (Map.Entry<String, String> _iter157 : struct.configuration.entrySet())
+          oprot.writeI32(struct.compressorConfiguration.size());
+          for (Map.Entry<String, String> _iter157 : struct.compressorConfiguration.entrySet())
           {
             oprot.writeString(_iter157.getKey());
             oprot.writeString(_iter157.getValue());
           }
         }
+      }
+      if (struct.isSetCompressorName()) {
+        oprot.writeString(struct.compressorName);
       }
     }
 
@@ -755,7 +857,7 @@ public class TOpenSessionResp implements org.apache.thrift.TBase<TOpenSessionRes
       struct.setStatusIsSet(true);
       struct.serverProtocolVersion = org.apache.hive.service.rpc.thrift.TProtocolVersion.findByValue(iprot.readI32());
       struct.setServerProtocolVersionIsSet(true);
-      BitSet incoming = iprot.readBitSet(2);
+      BitSet incoming = iprot.readBitSet(3);
       if (incoming.get(0)) {
         struct.sessionHandle = new TSessionHandle();
         struct.sessionHandle.read(iprot);
@@ -764,17 +866,21 @@ public class TOpenSessionResp implements org.apache.thrift.TBase<TOpenSessionRes
       if (incoming.get(1)) {
         {
           org.apache.thrift.protocol.TMap _map158 = new org.apache.thrift.protocol.TMap(org.apache.thrift.protocol.TType.STRING, org.apache.thrift.protocol.TType.STRING, iprot.readI32());
-          struct.configuration = new HashMap<String,String>(2*_map158.size);
+          struct.compressorConfiguration = new HashMap<String,String>(2*_map158.size);
           String _key159;
           String _val160;
           for (int _i161 = 0; _i161 < _map158.size; ++_i161)
           {
             _key159 = iprot.readString();
             _val160 = iprot.readString();
-            struct.configuration.put(_key159, _val160);
+            struct.compressorConfiguration.put(_key159, _val160);
           }
         }
-        struct.setConfigurationIsSet(true);
+        struct.setCompressorConfigurationIsSet(true);
+      }
+      if (incoming.get(2)) {
+        struct.compressorName = iprot.readString();
+        struct.setCompressorNameIsSet(true);
       }
     }
   }
