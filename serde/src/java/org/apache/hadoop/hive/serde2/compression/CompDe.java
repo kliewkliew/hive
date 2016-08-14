@@ -35,10 +35,16 @@ public interface CompDe {
    * 
    * @param config Overlay configuration map
    * 
-   * @return The final configuration map is initialization was successful.
-   *         `null` if initialization failed.
+   * @return True if initialization was successful
    */
-  public Map<String, String> init(Map<String, String> config);
+  public boolean init(Map<String, String> config);
+  
+  /**
+   * Return the configuration settings of the CompDe after initialization.
+   * 
+   * @return
+   */
+  public Map<String, String> getConfig();
   
   /**
    * Compress a set of columns
