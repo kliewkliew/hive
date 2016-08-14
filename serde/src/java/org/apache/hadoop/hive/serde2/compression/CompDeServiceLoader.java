@@ -74,4 +74,16 @@ public class CompDeServiceLoader {
     }
   }
 
+  /**
+   * Does the server have a plugin for the specified name?
+   * 
+   * @param compDeName
+   *          The compressor name qualified by the vendor namespace.
+   *          
+   * @return
+   */
+  public boolean hasCompDe(String compDeName) {
+    return compressorTable.containsKey(compDeName);
+  }
+
 }

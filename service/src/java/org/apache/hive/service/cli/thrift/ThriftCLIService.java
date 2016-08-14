@@ -314,41 +314,43 @@ public abstract class ThriftCLIService extends AbstractService implements TCLISe
     LOG.info("Client protocol version: " + req.getClient_protocol());
     TOpenSessionResp resp = new TOpenSessionResp();
     try {
-      String[] serverCompDes =
-          HiveConf.getTrimmedStringsVar(hiveConf, ConfVars.HIVE_SERVER2_THRIFT_RESULTSET_COMPRESSOR_LIST);
+      if (req.isSetConfiguration()) {
+        String[] serverCompDes =
+            HiveConf.getTrimmedStringsVar(hiveConf, ConfVars.HIVE_SERVER2_THRIFT_RESULTSET_COMPRESSOR_LIST);
 
-      List<String> clientCompDes = new ArrayList<String>();
-      if (req.getConfiguration().containsKey("set:hiveconf:" + ConfVars.HIVE_SERVER2_THRIFT_RESULTSET_COMPRESSOR_LIST.varname)
-          && !req.getConfiguration().get("set:hiveconf:" + ConfVars.HIVE_SERVER2_THRIFT_RESULTSET_COMPRESSOR_LIST.varname).isEmpty()) {
-        HiveConf tempConf = new HiveConf();
-        tempConf.setVar(ConfVars.HIVE_SERVER2_THRIFT_RESULTSET_COMPRESSOR_LIST, req.getConfiguration().get("set:hiveconf:" + ConfVars.HIVE_SERVER2_THRIFT_RESULTSET_COMPRESSOR_LIST.varname));
-        clientCompDes =
-            Arrays.asList(HiveConf.getTrimmedStringsVar(tempConf, ConfVars.HIVE_SERVER2_THRIFT_RESULTSET_COMPRESSOR_LIST));
-      }
+        List<String> clientCompDes = new ArrayList<String>();
+        if (req.getConfiguration().containsKey("set:hiveconf:" + ConfVars.HIVE_SERVER2_THRIFT_RESULTSET_COMPRESSOR_LIST.varname)
+            && !req.getConfiguration().get("set:hiveconf:" + ConfVars.HIVE_SERVER2_THRIFT_RESULTSET_COMPRESSOR_LIST.varname).isEmpty()) {
+          HiveConf tempConf = new HiveConf();
+          tempConf.setVar(ConfVars.HIVE_SERVER2_THRIFT_RESULTSET_COMPRESSOR_LIST, req.getConfiguration().get("set:hiveconf:" + ConfVars.HIVE_SERVER2_THRIFT_RESULTSET_COMPRESSOR_LIST.varname));
+          clientCompDes =
+              Arrays.asList(HiveConf.getTrimmedStringsVar(tempConf, ConfVars.HIVE_SERVER2_THRIFT_RESULTSET_COMPRESSOR_LIST));
+        }
 
-      // CompDe negotiation
-      req.getConfiguration().put("set:hiveconf:" + ConfVars.HIVE_SERVER2_THRIFT_RESULTSET_COMPRESSOR.varname, "");
-      for (String compDeName : serverCompDes) {
-        if (clientCompDes.contains(compDeName)) {
-          // Client configuration overrides server defaults
-          Map<String, String> compDeConfig = 
-              hiveConf.getValByRegex(ConfVars.HIVE_SERVER2_THRIFT_RESULTSET_COMPRESSOR + "\\." + compDeName + "\\.[\\w|\\d]+");
-          for (Entry<String, String> entry : compDeConfig.entrySet()) {
-            if (req.getConfiguration().containsKey("set:hiveconf:" + entry.getKey())) {
-              compDeConfig.put(entry.getKey(), req.getConfiguration().get("set:hiveconf:" + entry.getKey()));
+        // CompDe negotiation
+        req.getConfiguration().remove("set:hiveconf:" + ConfVars.HIVE_SERVER2_THRIFT_RESULTSET_COMPRESSOR.varname);
+        for (String compDeName : serverCompDes) {
+          if (clientCompDes.contains(compDeName)) {
+            // Client configuration overrides server defaults
+            Map<String, String> compDeConfig = 
+                hiveConf.getValByRegex(ConfVars.HIVE_SERVER2_THRIFT_RESULTSET_COMPRESSOR + "\\." + compDeName + "\\.[\\w|\\d]+");
+            for (Entry<String, String> entry : compDeConfig.entrySet()) {
+              if (req.getConfiguration().containsKey("set:hiveconf:" + entry.getKey())) {
+                compDeConfig.put(entry.getKey(), req.getConfiguration().get("set:hiveconf:" + entry.getKey()));
+              }
             }
-          }
 
-          Map<String, String> compDeResponse = initCompDe(compDeName, compDeConfig);
+            Map<String, String> compDeResponse = initCompDe(compDeName, compDeConfig);
 
-          if (compDeResponse != null) {
-            LOG.info("Initialized CompDe plugin for " + compDeName);
-            resp.setCompressorConfiguration(compDeResponse);
-            resp.setCompressorName(compDeName);
-            // SessionState is initialized based on TOpenSessionRequest
-            req.getConfiguration().put("set:hiveconf:" + ConfVars.HIVE_SERVER2_THRIFT_RESULTSET_COMPRESSOR.varname, compDeName);
-            req.getConfiguration().putAll(compDeResponse);
-            break;
+            if (compDeResponse != null) {
+              LOG.info("Initialized CompDe plugin for " + compDeName);
+              resp.setCompressorConfiguration(compDeResponse);
+              resp.setCompressorName(compDeName);
+              // SessionState is initialized based on TOpenSessionRequest
+              req.getConfiguration().put("set:hiveconf:" + ConfVars.HIVE_SERVER2_THRIFT_RESULTSET_COMPRESSOR.varname, compDeName);
+              req.getConfiguration().putAll(compDeResponse);
+              break;
+            }
           }
         }
       }
@@ -370,9 +372,14 @@ public abstract class ThriftCLIService extends AbstractService implements TCLISe
   }
 
   protected Map<String, String> initCompDe(String compDeName, Map<String, String> compDeConfig) {
-    CompDe compDe = CompDeServiceLoader.getInstance().getCompDe(compDeName);
-    if (compDe != null) {
-      return compDe.init(compDeConfig);
+    if (CompDeServiceLoader.getInstance().hasCompDe(compDeName)) {
+      CompDe compDe = CompDeServiceLoader.getInstance().getCompDe(compDeName);
+      if (compDe.init(compDeConfig)) {
+        return compDe.getConfig();
+      }
+      else {
+        return null;
+      }
     }
     else {
       return null;

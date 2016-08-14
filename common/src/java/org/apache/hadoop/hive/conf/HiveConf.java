@@ -2486,10 +2486,10 @@ public class HiveConf extends Configuration {
       "Max number of rows sent in one Fetch RPC call by the server to the client."),
 
     // ResultSet compression settings
-    HIVE_SERVER2_THRIFT_RESULTSET_COMPRESSOR_LIST("hive.server2.thrift.resultset.compressor.list", "snappy.snappy",
+    HIVE_SERVER2_THRIFT_RESULTSET_COMPRESSOR_LIST("hive.server2.thrift.resultset.compressor.list", "",
         "A list of compressors ordered by the server's preference.\n " +
         "This list will be used to negotiate a CompDe for each session."),
-    HIVE_SERVER2_THRIFT_RESULTSET_COMPRESSOR("hive.server2.thrift.resultset.compressor", null,
+    HIVE_SERVER2_THRIFT_RESULTSET_COMPRESSOR("hive.server2.thrift.resultset.compressor", "",
         "A CompDe that will be used for the session.\n " +
         "This is determined by negotiation during OpenSession."),
 

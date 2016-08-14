@@ -580,10 +580,10 @@ public class HiveConnection implements java.sql.Connection {
       TOpenSessionResp openResp = client.OpenSession(openReq);
 
       // Server initialized CompDe
-      if (openResp.getCompressorName() != null) {
+      if (openResp.isSetCompressorName() && CompDeServiceLoader.getInstance().hasCompDe(openResp.getCompressorName())) {
         CompDe testCompDe = CompDeServiceLoader.getInstance().getCompDe(openResp.getCompressorName());
         // And the client initialized properly with the same config
-        if (testCompDe.init(openResp.getCompressorConfiguration()) != null) {
+        if (testCompDe.init(openResp.getCompressorConfiguration())) {
           sessCompDe = testCompDe;
         }
         else {
