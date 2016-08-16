@@ -28,13 +28,13 @@ import org.apache.hadoop.hive.serde2.thrift.ColumnBuffer;
 @InterfaceAudience.Private
 @InterfaceStability.Unstable
 public interface CompDe {
-  
+
   /**
    * Initialize the plug-in by overlaying the input configuration map
    * onto the plug-in's default configuration.
-   * 
+   *
    * @param config Overlay configuration map
-   * 
+   *
    * @return True if initialization was successful
    */
   public boolean init(Map<String, String> config);
@@ -45,36 +45,36 @@ public interface CompDe {
    * @return
    */
   public Map<String, String> getConfig();
-  
+
   /**
    * Compress a set of columns
-   * 
+   *
    * @param colSet
-   * 
+   *
    * @return Bytes representing the compressed set.
    */
   public byte[] compress(ColumnBuffer[] colSet);
-  
+
   /**
    * Decompress a set of columns
-   * 
+   *
    * @param input
    * @param inputOffset
    * @param inputLength
-   * 
+   *
    * @return The set of columns.
    */
   public ColumnBuffer[] decompress(byte[] input, int inputOffset, int inputLength);
-  
+
   /**
-   * 
+   *
    * @return The plug-in name
    */
   public String getName();
-  
+
   /**
    * Provide a namespace for the plug-in
-   * 
+   *
    * @return The vendor name
    */
   public String getVendor();

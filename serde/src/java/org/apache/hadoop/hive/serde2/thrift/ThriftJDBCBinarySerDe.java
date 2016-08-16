@@ -142,7 +142,7 @@ public class ThriftJDBCBinarySerDe extends AbstractSerDe {
         }
       }
     }
-    
+
     initializeRowAndColumns();
     serializedBytesWritable.set(output.getData(), 0, output.getLength());
     return serializedBytesWritable;

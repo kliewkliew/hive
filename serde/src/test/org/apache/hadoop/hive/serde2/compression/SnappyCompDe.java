@@ -45,25 +45,25 @@ public class SnappyCompDe implements CompDe {
   /**
    * Initialize the plug-in by overlaying the input configuration map
    * onto the plug-in's default configuration.
-   * 
+   *
    * @param config Overlay configuration map
-   * 
+   *
    * @return True is initialization was successful
    */
   @Override
   public boolean init(Map<String, String> config) {
     return true;
   }
-  
+
   /**
    * Return the configuration settings of the CompDe
-   * 
+   *
    * @return
    */
   public Map<String, String> getConfig() {
     return new HashMap<String, String>();
   }
-  
+
   /**
    * Compress a set of columns.
    * 1. write the number of columns
@@ -73,9 +73,9 @@ public class SnappyCompDe implements CompDe {
    *   - the nulls data
    *   - for string and binary rows: write the number of rows in the column followed by the size of each row
    *   - the actual data (string and binary columns are flattened)
-   * 
+   *
    * @param colSet
-   * 
+   *
    * @return Bytes representing the compressed set.
    */
   @Override
@@ -87,9 +87,9 @@ public class SnappyCompDe implements CompDe {
       bufferedStream.write(colSet.length);
 
       for (int colNum = 0; colNum < colSet.length; colNum++) {
-        
+
         bufferedStream.write(colSet[colNum].getType().toTType().getValue());
-        
+
         switch (TTypeId.findByValue(colSet[colNum].getType().toTType().getValue())) {
         case BOOLEAN_TYPE: {
           TBoolColumn column = colSet[colNum].toTColumn().getBoolVal();
@@ -143,7 +143,7 @@ public class SnappyCompDe implements CompDe {
           TBinaryColumn column = colSet[colNum].toTColumn().getBinaryVal();
 
           // Flatten the data for Snappy
-          int[] rowSizes = new int[column.getValuesSize()]; 
+          int[] rowSizes = new int[column.getValuesSize()];
           ByteArrayOutputStream flattenedData = new ByteArrayOutputStream();
 
           for (int rowNum = 0; rowNum < column.getValuesSize(); rowNum++) {
@@ -167,7 +167,7 @@ public class SnappyCompDe implements CompDe {
           TStringColumn column = colSet[colNum].toTColumn().getStringVal();
 
           // Flatten the data for Snappy
-          int[] rowSizes = new int[column.getValuesSize()]; 
+          int[] rowSizes = new int[column.getValuesSize()];
           ByteArrayOutputStream flattenedData = new ByteArrayOutputStream();
 
           for (int rowNum = 0; rowNum < column.getValuesSize(); rowNum++) {
@@ -197,13 +197,13 @@ public class SnappyCompDe implements CompDe {
     }
     return bytesOut.toByteArray();
   }
-  
+
   /**
    * Write the length, and data to the output stream.
-   * 
+   *
    * @param boxedVals A List of boxed Java-primitives.
    * @param outputStream
-   * @throws IOException 
+   * @throws IOException
    */
   private void writeBoxedBytes(List<Byte> boxedVals,  OutputStream outputStream) throws IOException {
     byte[] compressedVals = new byte[0];
@@ -235,7 +235,7 @@ public class SnappyCompDe implements CompDe {
    * Write the length, and data to the output stream.
    * @param primitives
    * @param outputStream
-   * @throws IOException 
+   * @throws IOException
    */
   private void writePrimitives(byte[] primitives, OutputStream outputStream) throws IOException {
     writeBytes(Snappy.compress(primitives), outputStream);
@@ -251,11 +251,11 @@ public class SnappyCompDe implements CompDe {
 
   /**
    * Decompress a set of columns
-   * 
+   *
    * @param input
    * @param inputOffset
    * @param inputLength
-   * 
+   *
    * @return The set of columns.
    */
   @Override
@@ -265,11 +265,11 @@ public class SnappyCompDe implements CompDe {
 
     try {
       int numOfCols = bufferedInput.read();
-  
+
       ColumnBuffer[] outputCols = new ColumnBuffer[numOfCols];
       for (int colNum = 0; colNum < numOfCols; colNum++) {
         int columnType = bufferedInput.read();
-  
+
         byte[] nulls = Snappy.uncompress(readCompressedChunk(bufferedInput));
 
         switch (TTypeId.findByValue(columnType)) {
@@ -365,7 +365,7 @@ public class SnappyCompDe implements CompDe {
   }
 
   /**
-   * Read a compressed chunk from a stream. 
+   * Read a compressed chunk from a stream.
    * @param input
    * @return
    * @throws IOException
@@ -378,7 +378,7 @@ public class SnappyCompDe implements CompDe {
   }
 
   /**
-   * 
+   *
    * @return The plug-in name
    */
   @Override
@@ -388,7 +388,7 @@ public class SnappyCompDe implements CompDe {
 
   /**
    * Provide a namespace for the plug-in
-   * 
+   *
    * @return The vendor name
    */
   @Override

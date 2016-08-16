@@ -37,7 +37,6 @@ public class CompDeServiceLoader {
     = new ConcurrentHashMap<String, Class<? extends CompDe>>();
   public static final Logger LOG = LoggerFactory.getLogger(CompDeServiceLoader.class);
 
-
   /**
    * Get the singleton instance or initialize the CompDeServiceLoader.
    *
@@ -59,10 +58,10 @@ public class CompDeServiceLoader {
 
   /**
    * Get the CompDe if the compressor class was loaded from CLASSPATH.
-   * 
+   *
    * @param compDeName
    *          The compressor name qualified by the vendor namespace.
-   *          
+   *
    * @return A CompDe implementation object
    */
   public CompDe getCompDe(String compDeName) {
@@ -76,10 +75,10 @@ public class CompDeServiceLoader {
 
   /**
    * Does the server have a plugin for the specified name?
-   * 
+   *
    * @param compDeName
    *          The compressor name qualified by the vendor namespace.
-   *          
+   *
    * @return
    */
   public boolean hasCompDe(String compDeName) {

@@ -332,7 +332,7 @@ public abstract class ThriftCLIService extends AbstractService implements TCLISe
         for (String compDeName : serverCompDes) {
           if (clientCompDes.contains(compDeName)) {
             // Client configuration overrides server defaults
-            Map<String, String> compDeConfig = 
+            Map<String, String> compDeConfig =
                 hiveConf.getValByRegex(ConfVars.HIVE_SERVER2_THRIFT_RESULTSET_COMPRESSOR + "\\." + compDeName + "\\.[\\w|\\d]+");
             for (Entry<String, String> entry : compDeConfig.entrySet()) {
               if (req.getConfiguration().containsKey("set:hiveconf:" + entry.getKey())) {

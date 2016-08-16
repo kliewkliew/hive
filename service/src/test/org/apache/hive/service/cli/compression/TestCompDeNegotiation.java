@@ -76,7 +76,7 @@ public class TestCompDeNegotiation {
     serverCompDeConf.set(noCompDeConfigPrefix("compde3") + ".test1", "serverVal1");
     serverCompDeConf.set(noCompDeConfigPrefix("compde3") + ".test2", "serverVal2");//overriden by client
     serverCompDeConf.set(noCompDeConfigPrefix("compde3") + ".test4", "serverVal4");//overriden by plug-in
-    
+
     clientCompDeConf = new HiveConf(baseConf);
     clientCompDeConf.set(clientCompressorListVarName(), "compde3");
     clientCompDeConf.set(clientCompDeConfigPrefix("compde3") + ".test2", "clientVal2");//overrides server
