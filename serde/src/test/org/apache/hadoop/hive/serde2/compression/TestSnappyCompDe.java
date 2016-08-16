@@ -18,6 +18,7 @@
 
 package org.apache.hadoop.hive.serde2.compression;
 
+import org.apache.commons.lang3.StringUtils;
 import org.apache.hadoop.hive.conf.HiveConf;
 import org.apache.hadoop.hive.conf.HiveConf.ConfVars;
 import org.apache.hadoop.hive.serde2.compression.SnappyCompDe;
@@ -59,6 +60,7 @@ public class TestSnappyCompDe {
     columnStr.addValue(Type.STRING_TYPE, "ABC");
     columnStr.addValue(Type.STRING_TYPE, "DEFG");
     columnStr.addValue(Type.STRING_TYPE, "HI");
+    columnStr.addValue(Type.STRING_TYPE, StringUtils.rightPad("", 70000, 'j'));
 
     // Test trailing `false` in column
     ColumnBuffer columnBool = new ColumnBuffer(Type.BOOLEAN_TYPE);

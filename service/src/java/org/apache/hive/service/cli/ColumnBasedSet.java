@@ -66,8 +66,11 @@ public class ColumnBasedSet implements RowSet {
       // Use TCompactProtocol to read serialized TColumns
 
       if (compDe != null) {
-        int size = tRowSet.getBinaryColumns()[0];
-        columns = Arrays.asList(compDe.decompress(tRowSet.getBinaryColumns(), 1, size));
+        TProtocol protocol =
+            new TCompactProtocol(new TIOStreamTransport(new ByteArrayInputStream(
+                tRowSet.getBinaryColumns())));
+        byte[] compressedBytes = protocol.readBinary().array();
+        columns = Arrays.asList(compDe.decompress(compressedBytes, 0, compressedBytes.length));
       }
       else {
         columns = new ArrayList<ColumnBuffer>();
