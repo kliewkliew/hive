@@ -23,15 +23,10 @@ import org.apache.hadoop.hive.conf.HiveConf;
 import org.apache.hadoop.hive.conf.HiveConf.ConfVars;
 import org.apache.hadoop.hive.serde2.compression.SnappyCompDe;
 import org.apache.hadoop.hive.serde2.thrift.ColumnBuffer;
-import org.apache.hadoop.hive.serde2.thrift.Type;
-import org.apache.hive.service.rpc.thrift.TBinaryColumn;
-import org.apache.hive.service.rpc.thrift.TColumn;
-import org.apache.hive.service.rpc.thrift.TStringColumn;
+import org.apache.hive.service.rpc.thrift.*;
 
 import static org.junit.Assert.assertArrayEquals;
-import static org.junit.Assert.assertTrue;
 
-import java.awt.List;
 import java.nio.ByteBuffer;
 import java.util.ArrayList;
 
@@ -41,62 +36,22 @@ import org.junit.Test;
 public class TestSnappyCompDe {
   private static HiveConf hiveConf = new HiveConf();
   private SnappyCompDe compDe = new SnappyCompDe();
+  byte[] noNullMask = {0};
+  byte[] firstNullMask = {1};
+  byte[] secondNullMask = {2};
+  byte[] thirdNullMask = {3};
+  ColumnBuffer columnBinary;
+  ColumnBuffer columnBool;
+  ColumnBuffer columnByte;
+  ColumnBuffer columnShort;
+  ColumnBuffer columnInt;
+  ColumnBuffer columnLong;
+  ColumnBuffer columnDouble;
+  ColumnBuffer columnStr;
 
   @Before
   public void init() {
     hiveConf.setVar(ConfVars.HIVE_SERVER2_THRIFT_RESULTSET_COMPRESSOR, compDe.getVendor() + "." + compDe.getName());
-  }
-
-  @Test
-  public void testCompDe() {
-    ColumnBuffer[] testCols;
-    ColumnBuffer columnInt = new ColumnBuffer(Type.INT_TYPE);
-    columnInt.addValue(Type.INT_TYPE, 0);
-    columnInt.addValue(Type.INT_TYPE, 1);
-    columnInt.addValue(Type.INT_TYPE, 2);
-    columnInt.addValue(Type.INT_TYPE, 3);
-
-    ColumnBuffer columnStr = new ColumnBuffer(Type.STRING_TYPE);
-    columnStr.addValue(Type.STRING_TYPE, "ABC");
-    columnStr.addValue(Type.STRING_TYPE, "DEFG");
-    columnStr.addValue(Type.STRING_TYPE, "HI");
-    columnStr.addValue(Type.STRING_TYPE, StringUtils.rightPad("", 65535, 'j'));
-
-    // Test trailing `false` in column
-    ColumnBuffer columnBool = new ColumnBuffer(Type.BOOLEAN_TYPE);
-    columnBool.addValue(Type.BOOLEAN_TYPE, true);
-    columnBool.addValue(Type.BOOLEAN_TYPE, false);
-
-    // Test nulls bitmask
-    byte[] firstNullMask = {1};
-    byte[] secondNullMask = {2};
-    byte[] thirdNullMask = {3};
-    ArrayList<String> someStrings = new ArrayList<String>();
-    someStrings.add("test1");
-    someStrings.add("test2");
-    ColumnBuffer columnStr2 = new ColumnBuffer(TColumn.stringVal(
-        new TStringColumn(someStrings, ByteBuffer.wrap(firstNullMask))));
-    ColumnBuffer columnStr3 = new ColumnBuffer(TColumn.stringVal(
-        new TStringColumn(someStrings, ByteBuffer.wrap(secondNullMask))));
-    ColumnBuffer columnStr4 = new ColumnBuffer(TColumn.stringVal(
-        new TStringColumn(someStrings, ByteBuffer.wrap(thirdNullMask))));
-
-    testCols = new ColumnBuffer[]{
-        columnInt,
-        columnStr,
-        columnBool,
-        columnStr2,
-        columnStr3,
-        columnStr4};
-    
-    byte[] compressedCols = compDe.compress(testCols);
-    ColumnBuffer[] decompressedCols = compDe.decompress(compressedCols, 0, compressedCols.length);
-    assertArrayEquals(testCols, decompressedCols);
-  }
-
-  @Test
-  public void testBinaryCol() {
-    ColumnBuffer[] testBinary;
 
     byte[] firstRow = {2, 33, 7, 75, 5};
     byte[] secondRow = {3, 21, 6};
@@ -105,15 +60,189 @@ public class TestSnappyCompDe {
     someBinaries.add(ByteBuffer.wrap(firstRow));
     someBinaries.add(ByteBuffer.wrap(secondRow));
     someBinaries.add(ByteBuffer.wrap(thirdRow));
-    ColumnBuffer columnBinary = new ColumnBuffer(TColumn.binaryVal(
+    columnBinary = new ColumnBuffer(TColumn.binaryVal(
         new TBinaryColumn(someBinaries, ByteBuffer.wrap(new byte[]{}))));
 
-    testBinary = new ColumnBuffer[]{
-        columnBinary
-    };
+    // Test leading and trailing `false` in column
+    ArrayList<Boolean> bools = new ArrayList<Boolean>();
+    bools.add(false);
+    bools.add(true);
+    bools.add(false);
+    bools.add(true);
+    bools.add(false);
+    columnBool = new ColumnBuffer(TColumn.boolVal(
+        new TBoolColumn(bools, ByteBuffer.wrap(noNullMask))));
 
-    byte[] compressedBinary = compDe.compress(testBinary);
-    ColumnBuffer[] decompressedBinary = compDe.decompress(compressedBinary, 0, compressedBinary.length);
-    assertTrue(testBinary[0].toTColumn().getBinaryVal().equals(decompressedBinary[0].toTColumn().getBinaryVal()));
+    ArrayList<Byte> bytes = new ArrayList<Byte>();
+    bytes.add((byte) 0);
+    bytes.add((byte) 1);
+    bytes.add((byte) 2);
+    bytes.add((byte) 3);
+    columnByte= new ColumnBuffer(TColumn.byteVal(
+        new TByteColumn(bytes, ByteBuffer.wrap(noNullMask))));
+
+    ArrayList<Short> shorts = new ArrayList<Short>();
+    shorts.add((short) 0);
+    shorts.add((short) 1);
+    shorts.add((short) -127);
+    shorts.add((short) 127);
+    columnShort= new ColumnBuffer(TColumn.i16Val(
+        new TI16Column(shorts, ByteBuffer.wrap(noNullMask))));
+
+    ArrayList<Integer> ints = new ArrayList<Integer>();
+    ints.add(0);
+    ints.add(1);
+    ints.add(-32767);
+    ints.add(32767);
+    columnInt= new ColumnBuffer(TColumn.i32Val(
+        new TI32Column(ints, ByteBuffer.wrap(noNullMask))));
+
+    ArrayList<Long> longs = new ArrayList<Long>();
+    longs.add((long) 0);
+    longs.add((long) 1);
+    longs.add((long) -2147483647 );
+    longs.add((long) 2147483647 );
+    columnLong = new ColumnBuffer(TColumn.i64Val(
+        new TI64Column(longs, ByteBuffer.wrap(noNullMask))));
+
+    ArrayList<Double> doubles = new ArrayList<Double>();
+    doubles.add((double) 0);
+    doubles.add((double) 1.0);
+    doubles.add((double) -2147483647.5 );
+    doubles.add((double) 2147483647.5 );
+    columnDouble= new ColumnBuffer(TColumn.doubleVal(
+        new TDoubleColumn(doubles, ByteBuffer.wrap(noNullMask))));
+
+    ArrayList<String> strings = new ArrayList<String>();
+    strings.add("ABC");
+    strings.add("DEFG");
+    strings.add("HI");
+    strings.add(StringUtils.rightPad("", 65535, 'j'));
+    strings.add("");
+    columnStr = new ColumnBuffer(TColumn.stringVal(
+        new TStringColumn(strings, ByteBuffer.wrap(noNullMask))));
+  }
+
+  @Test
+  public void testBinaryCol() {
+    ColumnBuffer[] inputCols = new ColumnBuffer[]{columnBinary};
+
+    byte[] compressed= compDe.compress(inputCols);
+    ColumnBuffer[] outputCols = compDe.decompress(compressed, 0, compressed.length);
+
+    assertArrayEquals(
+        inputCols[0].toTColumn().getBinaryVal().getValues().toArray(),
+        outputCols[0].toTColumn().getBinaryVal().getValues().toArray());
+  }
+
+  @Test
+  public void testBoolCol() {
+    ColumnBuffer[] inputCols = new ColumnBuffer[]{columnBool};
+
+    byte[] compressed = compDe.compress(inputCols);
+    ColumnBuffer[] outputCols = compDe.decompress(compressed, 0, compressed.length);
+
+    assertArrayEquals(
+        inputCols[0].toTColumn().getBoolVal().getValues().toArray(),
+        outputCols[0].toTColumn().getBoolVal().getValues().toArray());
+  }
+
+  @Test
+  public void testByteCol() {
+    ColumnBuffer[] inputCols = new ColumnBuffer[]{columnByte};
+
+    byte[] compressed = compDe.compress(inputCols);
+    ColumnBuffer[] outputCols = compDe.decompress(compressed, 0, compressed.length);
+
+    assertArrayEquals(
+        inputCols[0].toTColumn().getByteVal().getValues().toArray(),
+        outputCols[0].toTColumn().getByteVal().getValues().toArray());
+  }
+
+  @Test
+  public void testIntCol() {
+    ColumnBuffer[] inputCols = new ColumnBuffer[]{columnInt};
+
+    byte[] compressed = compDe.compress(inputCols);
+    ColumnBuffer[] outputCols = compDe.decompress(compressed, 0, compressed.length);
+
+    assertArrayEquals(
+        inputCols[0].toTColumn().getI32Val().getValues().toArray(),
+        outputCols[0].toTColumn().getI32Val().getValues().toArray());
+  }
+
+  @Test
+  public void testLongCol() {
+    ColumnBuffer[] inputCols = new ColumnBuffer[]{columnLong};
+
+    byte[] compressed = compDe.compress(inputCols);
+    ColumnBuffer[] outputCols = compDe.decompress(compressed, 0, compressed.length);
+
+    assertArrayEquals(
+        inputCols[0].toTColumn().getI64Val().getValues().toArray(),
+        outputCols[0].toTColumn().getI64Val().getValues().toArray());
+  }
+
+  @Test
+  public void testDoubleCol() {
+    ColumnBuffer[] inputCols = new ColumnBuffer[]{columnDouble};
+
+    byte[] compressed = compDe.compress(inputCols);
+    ColumnBuffer[] outputCols = compDe.decompress(compressed, 0, compressed.length);
+
+    assertArrayEquals(
+        inputCols[0].toTColumn().getDoubleVal().getValues().toArray(),
+        outputCols[0].toTColumn().getDoubleVal().getValues().toArray());
+  }
+
+  @Test
+  public void testStringCol() {
+    ColumnBuffer[] inputCols = new ColumnBuffer[]{columnStr};
+
+    byte[] compressed = compDe.compress(inputCols);
+    ColumnBuffer[] outputCols = compDe.decompress(compressed, 0, compressed.length);
+
+    assertArrayEquals(
+        inputCols[0].toTColumn().getStringVal().getValues().toArray(),
+        outputCols[0].toTColumn().getStringVal().getValues().toArray());
+  }
+
+  @Test
+  public void testNulls() {
+    ColumnBuffer[] inputCols;
+    ArrayList<String> someStrings = new ArrayList<String>();
+    someStrings.add("test1");
+    someStrings.add("test2");
+    ColumnBuffer columnStr1 = new ColumnBuffer(TColumn.stringVal(
+        new TStringColumn(someStrings, ByteBuffer.wrap(firstNullMask))));
+    ColumnBuffer columnStr2 = new ColumnBuffer(TColumn.stringVal(
+        new TStringColumn(someStrings, ByteBuffer.wrap(secondNullMask))));
+    ColumnBuffer columnStr3 = new ColumnBuffer(TColumn.stringVal(
+        new TStringColumn(someStrings, ByteBuffer.wrap(thirdNullMask))));
+
+    inputCols = new ColumnBuffer[]{
+        columnStr1,
+        columnStr2,
+        columnStr3};
+    
+    byte[] compressedCols = compDe.compress(inputCols);
+    ColumnBuffer[] outputCols = compDe.decompress(compressedCols, 0, compressedCols.length);
+    
+    assertArrayEquals(inputCols, outputCols);
+  }
+
+  @Test
+  public void testMulti() {
+    ColumnBuffer[] inputCols = new ColumnBuffer[]{columnInt, columnStr};
+
+    byte[] compressed = compDe.compress(inputCols);
+    ColumnBuffer[] outputCols = compDe.decompress(compressed, 0, compressed.length);
+    
+    assertArrayEquals(
+        inputCols[0].toTColumn().getI32Val().getValues().toArray(),
+        outputCols[0].toTColumn().getI32Val().getValues().toArray());
+    assertArrayEquals(
+        inputCols[1].toTColumn().getStringVal().getValues().toArray(),
+        outputCols[1].toTColumn().getStringVal().getValues().toArray());
   }
 }
