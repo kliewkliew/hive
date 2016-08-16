@@ -19,6 +19,9 @@
 package org.apache.hive.jdbc;
 
 import org.apache.commons.lang.StringUtils;
+import org.apache.hadoop.hive.conf.HiveConf.ConfVars;
+import org.apache.hadoop.hive.serde2.compression.CompDe;
+import org.apache.hadoop.hive.serde2.compression.CompDeServiceLoader;
 import org.apache.hive.jdbc.Utils.JdbcConnectionParams;
 import org.apache.hive.service.auth.HiveAuthFactory;
 import org.apache.hive.service.auth.KerberosSaslHelper;
@@ -125,6 +128,7 @@ public class HiveConnection implements java.sql.Connection {
   private int loginTimeout = 0;
   private TProtocolVersion protocol;
   private int fetchSize = HiveStatement.DEFAULT_FETCH_SIZE;
+  private CompDe sessCompDe;
 
   public HiveConnection(String uri, Properties info) throws SQLException {
     setupLoginTimeout();
@@ -575,6 +579,20 @@ public class HiveConnection implements java.sql.Connection {
     try {
       TOpenSessionResp openResp = client.OpenSession(openReq);
 
+      // Server initialized CompDe
+      if (openResp.isSetCompressorName() && CompDeServiceLoader.getInstance().hasCompDe(openResp.getCompressorName())) {
+        CompDe testCompDe = CompDeServiceLoader.getInstance().getCompDe(openResp.getCompressorName());
+        // And the client initialized properly with the same config
+        if (testCompDe.init(openResp.getCompressorConfiguration())
+            && testCompDe.getConfig().equals(openResp.getCompressorConfiguration())) {
+          sessCompDe = testCompDe;
+        }
+        else {
+          openReq.getConfiguration().remove("set:hiveconf:" + ConfVars.HIVE_SERVER2_THRIFT_RESULTSET_COMPRESSOR_LIST.varname);
+          openResp = client.OpenSession(openReq);
+        }
+      }
+
       // validate connection
       Utils.verifySuccess(openResp.getStatus());
       if (!supportedProtocols.contains(openResp.getServerProtocolVersion())) {
@@ -915,6 +933,10 @@ public class HiveConnection implements java.sql.Connection {
   public String getClientInfo(String name) throws SQLException {
     // TODO Auto-generated method stub
     throw new SQLException("Method not supported");
+  }
+
+  public CompDe getCompDe() {
+    return sessCompDe;
   }
 
   /*

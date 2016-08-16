@@ -85,6 +85,8 @@ import org.apache.hadoop.hive.ql.security.authorization.plugin.HiveAuthzSessionC
 import org.apache.hadoop.hive.ql.security.authorization.plugin.HiveAuthzSessionContext.CLIENT_TYPE;
 import org.apache.hadoop.hive.ql.security.authorization.plugin.HiveMetastoreClientFactoryImpl;
 import org.apache.hadoop.hive.ql.util.ResourceDownloader;
+import org.apache.hadoop.hive.serde2.compression.CompDe;
+import org.apache.hadoop.hive.serde2.compression.CompDeServiceLoader;
 import org.apache.hadoop.hive.shims.HadoopShims;
 import org.apache.hadoop.hive.shims.ShimLoader;
 import org.apache.hadoop.hive.shims.Utils;
@@ -284,7 +286,6 @@ public class SessionState {
   public HiveConf getConf() {
     return sessionConf;
   }
-
 
   public File getTmpOutputFile() {
     return tmpOutputFile;
