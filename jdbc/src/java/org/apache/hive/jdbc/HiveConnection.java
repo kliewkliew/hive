@@ -583,7 +583,8 @@ public class HiveConnection implements java.sql.Connection {
       if (openResp.isSetCompressorName() && CompDeServiceLoader.getInstance().hasCompDe(openResp.getCompressorName())) {
         CompDe testCompDe = CompDeServiceLoader.getInstance().getCompDe(openResp.getCompressorName());
         // And the client initialized properly with the same config
-        if (testCompDe.init(openResp.getCompressorConfiguration())) {
+        if (testCompDe.init(openResp.getCompressorConfiguration())
+            && testCompDe.getConfig().equals(openResp.getCompressorConfiguration())) {
           sessCompDe = testCompDe;
         }
         else {
