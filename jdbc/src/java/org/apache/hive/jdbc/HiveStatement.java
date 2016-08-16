@@ -916,7 +916,7 @@ public class HiveStatement implements java.sql.Statement {
 
     try {
       RowSet rowSet;
-      rowSet = RowSetFactory.create(tFetchResultsResp.getResults(), connection.getProtocol());
+      rowSet = RowSetFactory.create(tFetchResultsResp.getResults(), connection.getProtocol(), connection.getCompDe());
       for (Object[] row : rowSet) {
         logs.add(String.valueOf(row[0]));
       }
