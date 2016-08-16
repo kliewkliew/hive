@@ -40,7 +40,6 @@ import org.xerial.snappy.Snappy;
 
 public class SnappyCompDe implements CompDe {
 
-  
   /**
    * Initialize the plug-in by overlaying the input configuration map
    * onto the plug-in's default configuration.

@@ -224,10 +224,10 @@ public class TestSnappyCompDe {
         columnStr1,
         columnStr2,
         columnStr3};
-    
+
     byte[] compressedCols = compDe.compress(inputCols);
     ColumnBuffer[] outputCols = compDe.decompress(compressedCols, 0, compressedCols.length);
-    
+
     assertArrayEquals(inputCols, outputCols);
   }
 
@@ -237,7 +237,7 @@ public class TestSnappyCompDe {
 
     byte[] compressed = compDe.compress(inputCols);
     ColumnBuffer[] outputCols = compDe.decompress(compressed, 0, compressed.length);
-    
+
     assertArrayEquals(
         inputCols[0].toTColumn().getI32Val().getValues().toArray(),
         outputCols[0].toTColumn().getI32Val().getValues().toArray());

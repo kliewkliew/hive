@@ -38,10 +38,10 @@ public interface CompDe {
    * @return True if initialization was successful
    */
   public boolean init(Map<String, String> config);
-  
+
   /**
    * Return the configuration settings of the CompDe after initialization.
-   * 
+   *
    * @return
    */
   public Map<String, String> getConfig();
