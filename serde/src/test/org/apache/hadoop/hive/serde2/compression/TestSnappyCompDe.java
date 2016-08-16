@@ -60,7 +60,7 @@ public class TestSnappyCompDe {
     columnStr.addValue(Type.STRING_TYPE, "ABC");
     columnStr.addValue(Type.STRING_TYPE, "DEFG");
     columnStr.addValue(Type.STRING_TYPE, "HI");
-    columnStr.addValue(Type.STRING_TYPE, StringUtils.rightPad("", 70000, 'j'));
+    columnStr.addValue(Type.STRING_TYPE, StringUtils.rightPad("", 65535, 'j'));
 
     // Test trailing `false` in column
     ColumnBuffer columnBool = new ColumnBuffer(Type.BOOLEAN_TYPE);
