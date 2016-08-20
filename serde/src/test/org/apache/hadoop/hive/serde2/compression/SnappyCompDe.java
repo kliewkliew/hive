@@ -83,7 +83,7 @@ public class SnappyCompDe implements CompDe {
     DataOutputStream bufferedDataStream = new DataOutputStream(new BufferedOutputStream(bytesOut));
 
     try {
-      bufferedDataStream.write(colSet.length);
+      bufferedDataStream.writeInt(colSet.length);
 
       for (int colNum = 0; colNum < colSet.length; colNum++) {
 
@@ -102,7 +102,7 @@ public class SnappyCompDe implements CompDe {
           writePrimitives(column.getNulls(), bufferedDataStream);
 
           // BitSet won't write trailing zeroes so we encode the length
-          bufferedDataStream.write(column.getValuesSize());
+          bufferedDataStream.writeInt(column.getValuesSize());
 
           writePrimitives(bsBools.toByteArray(), bufferedDataStream);
 
@@ -263,7 +263,7 @@ public class SnappyCompDe implements CompDe {
     DataInputStream bufferedInput = new DataInputStream(new BufferedInputStream(inputStream));
 
     try {
-      int numOfCols = bufferedInput.read();
+      int numOfCols = bufferedInput.readInt();
 
       ColumnBuffer[] outputCols = new ColumnBuffer[numOfCols];
       for (int colNum = 0; colNum < numOfCols; colNum++) {
@@ -273,7 +273,7 @@ public class SnappyCompDe implements CompDe {
 
         switch (TTypeId.findByValue(columnType)) {
         case BOOLEAN_TYPE: {
-          int numRows = bufferedInput.read();
+          int numRows = bufferedInput.readInt();
           byte[] vals = Snappy.uncompress(readCompressedChunk(bufferedInput));
           BitSet bsBools = BitSet.valueOf(vals);
 
