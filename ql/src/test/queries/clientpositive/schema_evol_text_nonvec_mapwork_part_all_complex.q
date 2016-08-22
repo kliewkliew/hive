@@ -10,6 +10,7 @@ SET hive.vectorized.execution.enabled=false;
 set hive.exec.dynamic.partition.mode=nonstrict;
 set hive.metastore.disallow.incompatible.col.type.changes=false;
 set hive.default.fileformat=textfile;
+set hive.llap.io.enabled=false;
 
 -- SORT_QUERY_RESULTS
 --
@@ -29,7 +30,7 @@ load data local inpath '../../data/files/struct1_a.txt' overwrite into table str
 
 insert into table part_change_various_various_struct1 partition(part=1) select * from struct1_a_txt;
 
-select insert_num,part,s1,b from part_change_various_various_struct1 order by insert_num;
+select insert_num,part,s1,b from part_change_various_various_struct1;
 
 -- Table-Non-Cascade CHANGE COLUMNS ...
 alter table part_change_various_various_struct1 replace columns (insert_num int, s1 STRUCT<c1:STRING, c2:STRING, c3:STRING, c4:STRING, c5:STRING, c6:STRING, c7:STRING, c8:STRING, c9:STRING, c10:STRING, c11:STRING, c12:STRING, c13:STRING>, b STRING);
@@ -51,9 +52,9 @@ load data local inpath '../../data/files/struct1_c.txt' overwrite into table str
 insert into table part_change_various_various_struct1 partition(part=1) select * from struct1_c_txt;
 
 explain
-select insert_num,part,s1,b from part_change_various_various_struct1 order by insert_num;
+select insert_num,part,s1,b from part_change_various_various_struct1;
 
-select insert_num,part,s1,b from part_change_various_various_struct1 order by insert_num;
+select insert_num,part,s1,b from part_change_various_various_struct1;
 
 drop table part_change_various_various_struct1;
 
@@ -68,7 +69,7 @@ insert into table part_add_various_various_struct2 partition(part=1)
     values(1, 'original'),
           (2, 'original');
 
-select insert_num,part,b from part_add_various_various_struct2 order by insert_num;
+select insert_num,part,b from part_add_various_various_struct2;
 
 -- Table-Non-Cascade ADD COLUMN ...
 alter table part_add_various_various_struct2 ADD columns (s2 STRUCT<c1:BOOLEAN, c2:TINYINT, c3:SMALLINT, c4:INT, c5:BIGINT, c6:FLOAT, c7:DOUBLE, c8:DECIMAL(38,18), c9:CHAR(25), c10:VARCHAR(25), c11:TIMESTAMP, c12:DATE, c13:BINARY>);
@@ -89,7 +90,7 @@ load data local inpath '../../data/files/struct2_b.txt' overwrite into table str
 
 insert into table part_add_various_various_struct2 partition(part=2) select * from struct2_b_txt;
 
-select insert_num,part,b,s2 from part_add_various_various_struct2 order by insert_num;
+select insert_num,part,b,s2 from part_add_various_various_struct2;
 
 -- Table-Non-Cascade CHANGE COLUMNS ...
 alter table part_add_various_various_struct2 REPLACE columns (insert_num int, b STRING, s2 STRUCT<c1:STRING, c2:STRING, c3:STRING, c4:STRING, c5:STRING, c6:STRING, c7:STRING, c8:STRING, c9:STRING, c10:STRING, c11:STRING, c12:STRING, c13:STRING>);
@@ -111,9 +112,9 @@ load data local inpath '../../data/files/struct2_d.txt' overwrite into table str
 insert into table part_add_various_various_struct2 partition(part=1) select * from struct2_d_txt;
 
 explain
-select insert_num,part,b,s2 from part_add_various_various_struct2 order by insert_num;
+select insert_num,part,b,s2 from part_add_various_various_struct2;
 
-select insert_num,part,b,s2 from part_add_various_various_struct2 order by insert_num;
+select insert_num,part,b,s2 from part_add_various_various_struct2;
 
 drop table part_add_various_various_struct2;
 
@@ -133,7 +134,7 @@ load data local inpath '../../data/files/struct4_a.txt' overwrite into table str
 
 insert into table part_add_to_various_various_struct4 partition(part=1) select * from struct4_a_txt;
 
-select insert_num,part,b,s3 from part_add_to_various_various_struct4 order by insert_num;
+select insert_num,part,b,s3 from part_add_to_various_various_struct4;
 
 -- Table-Non-Cascade CHANGE COLUMNS ...
 alter table part_add_to_various_various_struct4 replace columns (insert_num int, b STRING, s3 STRUCT<c1:BOOLEAN, c2:TINYINT, c3:SMALLINT, c4:INT, c5:BIGINT, c6:FLOAT, c7:DOUBLE, c8:DECIMAL(38,18), c9:CHAR(25), c10:VARCHAR(25), c11:TIMESTAMP, c12:DATE, c13:BINARY>);
@@ -155,8 +156,8 @@ load data local inpath '../../data/files/struct4_c.txt' overwrite into table str
 insert into table part_add_to_various_various_struct4 partition(part=1) select * from struct4_c_txt;
 
 explain
-select insert_num,part,b,s3 from part_add_to_various_various_struct4 order by insert_num;
+select insert_num,part,b,s3 from part_add_to_various_various_struct4;
 
-select insert_num,part,b,s3 from part_add_to_various_various_struct4 order by insert_num;
+select insert_num,part,b,s3 from part_add_to_various_various_struct4;
 
 drop table part_add_to_various_various_struct4;

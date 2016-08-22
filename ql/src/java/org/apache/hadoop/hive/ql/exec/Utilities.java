@@ -407,6 +407,8 @@ public final class Utilities {
       if (gWork == null) {
         Path localPath = path;
         LOG.debug("local path = " + localPath);
+        final long serializedSize;
+        final String planMode;
         if (HiveConf.getBoolVar(conf, ConfVars.HIVE_RPC_QUERY_PLAN)) {
           LOG.debug("Loading plan from string: "+path.toUri().getPath());
           String planString = conf.getRaw(path.toUri().getPath());
@@ -414,12 +416,17 @@ public final class Utilities {
             LOG.info("Could not find plan string in conf");
             return null;
           }
+          serializedSize = planString.length();
+          planMode = "RPC";
           byte[] planBytes = Base64.decodeBase64(planString);
           in = new ByteArrayInputStream(planBytes);
           in = new InflaterInputStream(in);
         } else {
           LOG.debug("Open file to read in plan: " + localPath);
-          in = localPath.getFileSystem(conf).open(localPath);
+          FileSystem fs = localPath.getFileSystem(conf);
+          in = fs.open(localPath);
+          serializedSize = fs.getFileStatus(localPath).getLen();
+          planMode = "FILE";
         }
 
         if(MAP_PLAN_NAME.equals(name)){
@@ -451,6 +458,8 @@ public final class Utilities {
             throw new RuntimeException("Unknown work type: " + name);
           }
         }
+        LOG.info("Deserialized plan (via {}) - name: {} size: {}", planMode,
+            gWork.getName(), humanReadableByteCount(serializedSize));
         gWorkMap.get(conf).put(path, gWork);
       } else if (LOG.isDebugEnabled()) {
         LOG.debug("Found plan in cache for name: " + name);
@@ -539,6 +548,8 @@ public final class Utilities {
 
       OutputStream out = null;
 
+      final long serializedSize;
+      final String planMode;
       if (HiveConf.getBoolVar(conf, ConfVars.HIVE_RPC_QUERY_PLAN)) {
         // add it to the conf
         ByteArrayOutputStream byteOut = new ByteArrayOutputStream();
@@ -550,9 +561,10 @@ public final class Utilities {
         } finally {
           IOUtils.closeStream(out);
         }
-        LOG.info("Setting plan: "+planPath.toUri().getPath());
-        conf.set(planPath.toUri().getPath(),
-            Base64.encodeBase64String(byteOut.toByteArray()));
+        final String serializedPlan = Base64.encodeBase64String(byteOut.toByteArray());
+        serializedSize = serializedPlan.length();
+        planMode = "RPC";
+        conf.set(planPath.toUri().getPath(), serializedPlan);
       } else {
         // use the default file system of the conf
         FileSystem fs = planPath.getFileSystem(conf);
@@ -561,6 +573,9 @@ public final class Utilities {
           SerializationUtilities.serializePlan(kryo, w, out);
           out.close();
           out = null;
+          long fileLen = fs.getFileStatus(planPath).getLen();
+          serializedSize = fileLen;
+          planMode = "FILE";
         } finally {
           IOUtils.closeStream(out);
         }
@@ -583,6 +598,8 @@ public final class Utilities {
         }
       }
 
+      LOG.info("Serialized plan (via {}) - name: {} size: {}", planMode, w.getName(),
+          humanReadableByteCount(serializedSize));
       // Cache the plan in this process
       gWorkMap.get(conf).put(planPath, w);
       return planPath;
@@ -1666,6 +1683,16 @@ public final class Utilities {
       }
       return Integer.parseInt(m.group(2));
     }
+    // Check to see if the bucketName matches the pattern "bucket_([0-9]+).*"
+    // This can happen in ACID cases when we have splits on delta files, where the filenames
+    // are of the form delta_x_y/bucket_a.
+    if (bucketName.startsWith(AcidUtils.BUCKET_PREFIX)) {
+      m = AcidUtils.BUCKET_DIGIT_PATTERN.matcher(bucketName);
+      if (m.find()) {
+          return Integer.parseInt(m.group());
+      }
+      // Note that legacy bucket digit pattern are being ignored here.
+    }
     return -1;
   }
 
@@ -1878,13 +1905,9 @@ public final class Utilities {
   public static List<String> getColumnTypes(Properties props) {
     List<String> names = new ArrayList<String>();
     String colNames = props.getProperty(serdeConstants.LIST_COLUMN_TYPES);
-    String[] cols = colNames.trim().split(",");
-    if (cols != null) {
-      for (String col : cols) {
-        if (col != null && !col.trim().equals("")) {
-          names.add(col);
-        }
-      }
+    ArrayList<TypeInfo> cols = TypeInfoUtils.getTypeInfosFromTypeString(colNames);
+    for (TypeInfo col : cols) {
+      names.add(col.getTypeName());
     }
     return names;
   }
@@ -3700,5 +3723,15 @@ public final class Utilities {
       result[i] = columnNameToType.get(readColumnNames.get(i));
     }
     return result;
+  }
+
+  public static String humanReadableByteCount(long bytes) {
+    int unit = 1000; // use binary units instead?
+    if (bytes < unit) {
+      return bytes + "B";
+    }
+    int exp = (int) (Math.log(bytes) / Math.log(unit));
+    String suffix = "KMGTPE".charAt(exp-1) + "";
+    return String.format("%.2f%sB", bytes / Math.pow(unit, exp), suffix);
   }
 }
