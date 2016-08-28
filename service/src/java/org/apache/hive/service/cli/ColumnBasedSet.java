@@ -19,6 +19,7 @@
 package org.apache.hive.service.cli;
 
 import java.io.ByteArrayInputStream;
+import java.nio.ByteBuffer;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Iterator;
@@ -69,8 +70,8 @@ public class ColumnBasedSet implements RowSet {
         TProtocol protocol =
             new TCompactProtocol(new TIOStreamTransport(new ByteArrayInputStream(
                 tRowSet.getBinaryColumns())));
-        byte[] compressedBytes = protocol.readBinary().array();
-        columns = Arrays.asList(compDe.decompress(compressedBytes, 0, compressedBytes.length));
+        ByteBuffer compressedBytes = protocol.readBinary();
+        columns = Arrays.asList(compDe.decompress(compressedBytes, compressedBytes.limit()));
       }
       else {
         columns = new ArrayList<ColumnBuffer>();

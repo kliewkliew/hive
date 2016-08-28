@@ -60,12 +60,11 @@ public interface CompDe {
    * Decompress a set of columns
    *
    * @param input
-   * @param inputOffset
    * @param inputLength
    *
    * @return The set of columns.
    */
-  public ColumnBuffer[] decompress(byte[] input, int inputOffset, int inputLength);
+  public ColumnBuffer[] decompress(ByteBuffer input, int chunkSize);
 
   /**
    *
