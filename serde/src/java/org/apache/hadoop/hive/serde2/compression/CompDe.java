@@ -19,6 +19,7 @@
 
 package org.apache.hadoop.hive.serde2.compression;
 
+import java.nio.ByteBuffer;
 import java.util.Map;
 
 import org.apache.hadoop.classification.InterfaceAudience;
@@ -53,7 +54,7 @@ public interface CompDe {
    *
    * @return Bytes representing the compressed set.
    */
-  public byte[] compress(ColumnBuffer[] colSet);
+  public ByteBuffer compress(ColumnBuffer[] colSet);
 
   /**
    * Decompress a set of columns
