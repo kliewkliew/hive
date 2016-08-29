@@ -61,8 +61,8 @@ public class SnappyCompDe implements CompDe {
 
   /**
    * Compress a set of columns.
-   * 
-   * The header contains a compressed array of data types. 
+   *
+   * The header contains a compressed array of data types.
    * The body contains compressed columns and their metadata.
    * The footer contains a compressed array of chunk sizes. The final four bytes of the footer encode the byte size of that compressed array.
    *
@@ -86,7 +86,7 @@ public class SnappyCompDe implements CompDe {
     // Track the length of `List<Integer> compressedSize` which will be declared later.
     int uncompressedFooterLength = 1 + 2*colSet.length;
 
-    for (int colNum = 0; colNum < colSet.length; ++colNum) { 
+    for (int colNum = 0; colNum < colSet.length; ++colNum) {
       // Reserve space for the compressed columns.
       dataType[colNum] = colSet[colNum].getType().toTType().getValue();
       switch (TTypeId.findByValue(dataType[colNum])) {
@@ -255,7 +255,7 @@ public class SnappyCompDe implements CompDe {
 
           // Write the list of row sizes.
           compressedSize.add(writePrimitives(rowSizes, output));
-  
+
           // Write the flattened data.
           compressedSize.add(writePrimitives(flattenedData.toString().getBytes(StandardCharsets.UTF_8), output));
 
@@ -277,30 +277,30 @@ public class SnappyCompDe implements CompDe {
   }
 
   /**
-   * Write compressed data to the output ByteBuffer and update the position of the buffer. 
+   * Write compressed data to the output ByteBuffer and update the position of the buffer.
    * @param boxedVals A list of boxed Java primitives.
    * @param output
    * @return The number of bytes written.
    * @throws IOException
    */
-  private int writeBoxedBytes(List<Byte> boxedVals,  ByteBuffer output) throws IOException {
+  private int writeBoxedBytes(List<Byte> boxedVals, ByteBuffer output) throws IOException {
     return writePrimitives(ArrayUtils.toPrimitive(boxedVals.toArray(new Byte[0])), output);
   }
-  private int writeBoxedShorts(List<Short> boxedVals,  ByteBuffer output) throws IOException {
+  private int writeBoxedShorts(List<Short> boxedVals, ByteBuffer output) throws IOException {
     return writePrimitives(ArrayUtils.toPrimitive(boxedVals.toArray(new Short[0])), output);
   }
-  private int writeBoxedIntegers(List<Integer> boxedVals,  ByteBuffer output) throws IOException {
+  private int writeBoxedIntegers(List<Integer> boxedVals, ByteBuffer output) throws IOException {
     return writePrimitives(ArrayUtils.toPrimitive(boxedVals.toArray(new Integer[0])), output);
   }
-  private int writeBoxedLongs(List<Long> boxedVals,  ByteBuffer output) throws IOException {
+  private int writeBoxedLongs(List<Long> boxedVals, ByteBuffer output) throws IOException {
     return writePrimitives(ArrayUtils.toPrimitive(boxedVals.toArray(new Long[0])), output);
   }
-  private int writeBoxedDoubles(List<Double> boxedVals,  ByteBuffer output) throws IOException {
+  private int writeBoxedDoubles(List<Double> boxedVals, ByteBuffer output) throws IOException {
     return writePrimitives(ArrayUtils.toPrimitive(boxedVals.toArray(new Double[0])), output);
   }
 
   /**
-   * Write compressed data to the output ByteBuffer and update the position of the buffer. 
+   * Write compressed data to the output ByteBuffer and update the position of the buffer.
    * @param primitives An array of primitive data types.
    * @param output The buffer to write into.
    * @return The number of bytes written.
@@ -335,7 +335,7 @@ public class SnappyCompDe implements CompDe {
   /**
    * Decompress a set of columns from a ByteBuffer and update the position of the buffer.
    *
-   * @param input A ByteBuffer with `position` indicating the starting point of the compressed chunk. 
+   * @param input A ByteBuffer with `position` indicating the starting point of the compressed chunk.
    * @param chunkSize The length of the compressed chunk to be decompressed from the input buffer.
    *
    * @return The set of columns.
@@ -459,8 +459,8 @@ public class SnappyCompDe implements CompDe {
    * @throws IOException
    */
   private byte[] readBytes(int chunkSize, ByteBuffer input) throws IOException {
-    byte[] vals = new byte[Snappy.uncompressedLength(input.array(), input.arrayOffset() + input.position(), chunkSize)]; 
-    Snappy.uncompress(input.array(), input.position(), chunkSize, vals, 0);
+    byte[] vals = new byte[Snappy.uncompressedLength(input.array(), input.arrayOffset() + input.position(), chunkSize)];
+    Snappy.uncompress(input.array(), input.arrayOffset() + input.position(), chunkSize, vals, 0);
     input.position(input.position() + chunkSize);
     return vals;
   }
