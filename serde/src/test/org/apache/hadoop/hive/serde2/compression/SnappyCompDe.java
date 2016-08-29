@@ -72,12 +72,12 @@ public class SnappyCompDe implements CompDe {
    */
   @Override
   public ByteBuffer compress(ColumnBuffer[] colSet) {
-    int[] dataType = new int[colSet.length];
 
     // Many compression libraries allow you to avoid allocation of intermediate arrays.
     // To use these API, we need to preallocate the output container.
 
     // Reserve space for the header.
+    int[] dataType = new int[colSet.length];
     int maxCompressedSize = Snappy.maxCompressedLength(4*dataType.length);
 
     // Reserve space for the compressed nulls BitSet for each column.
@@ -493,7 +493,7 @@ public class SnappyCompDe implements CompDe {
    */
   @Override
   public String getName(){
-    return "snappy";
+    return "hive";
   }
 
   /**
