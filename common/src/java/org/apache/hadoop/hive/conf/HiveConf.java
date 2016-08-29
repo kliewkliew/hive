@@ -2488,9 +2488,16 @@ public class HiveConf extends Configuration {
     HIVE_SERVER2_THRIFT_RESULTSET_SERIALIZE_IN_TASKS("hive.server2.thrift.resultset.serialize.in.tasks", false,
       "Whether we should serialize the Thrift structures used in JDBC ResultSet RPC in task nodes.\n " +
       "We use SequenceFile and ThriftJDBCBinarySerDe to read and write the final results if this is true."),
-    // TODO: Make use of this config to configure fetch size
     HIVE_SERVER2_THRIFT_RESULTSET_MAX_FETCH_SIZE("hive.server2.thrift.resultset.max.fetch.size", 1000,
       "Max number of rows sent in one Fetch RPC call by the server to the client."),
+
+    // ResultSet compression settings
+    HIVE_SERVER2_THRIFT_RESULTSET_COMPRESSOR_LIST("hive.server2.thrift.resultset.compressor.list", "",
+        "A list of compressors ordered by the server's preference.\n " +
+        "This list will be used to negotiate a CompDe for each session."),
+    HIVE_SERVER2_THRIFT_RESULTSET_COMPRESSOR("hive.server2.thrift.resultset.compressor", "",
+        "A CompDe that will be used for the session.\n " +
+        "This is determined by negotiation during OpenSession."),
 
     HIVE_SERVER2_XSRF_FILTER_ENABLED("hive.server2.xsrf.filter.enabled",false,
         "If enabled, HiveServer2 will block any requests made to it over http " +
