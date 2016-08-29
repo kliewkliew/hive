@@ -18,12 +18,6 @@
 
 package org.apache.hadoop.hive.serde2.compression;
 
-import java.io.BufferedInputStream;
-import java.io.BufferedOutputStream;
-import java.io.ByteArrayInputStream;
-import java.io.ByteArrayOutputStream;
-import java.io.DataInputStream;
-import java.io.DataOutputStream;
 import java.io.IOException;
 import java.nio.ByteBuffer;
 import java.nio.charset.StandardCharsets;
@@ -106,27 +100,27 @@ public class SnappyCompDe implements CompDe {
       dataType[colNum] = colSet[colNum].getType().toTType().getValue();
       switch (TTypeId.findByValue(dataType[colNum])) {
       case BOOLEAN_TYPE:
-        maxCompressedSize += 4; // This is for the encoded length that we will write.
+        maxCompressedSize += Integer.SIZE / Byte.SIZE; // This is for the encoded length that we will write.
         maxCompressedSize += Snappy.maxCompressedLength((colSet.length/8) + 1);
         break;
       case TINYINT_TYPE:
         maxCompressedSize += Snappy.maxCompressedLength(colSet.length);
         break;
       case SMALLINT_TYPE:
-        maxCompressedSize += Snappy.maxCompressedLength(colSet.length * 2);
+        maxCompressedSize += Snappy.maxCompressedLength(colSet.length * Short.SIZE / Byte.SIZE);
         break;
       case INT_TYPE:
-        maxCompressedSize += Snappy.maxCompressedLength(colSet.length * 4);
+        maxCompressedSize += Snappy.maxCompressedLength(colSet.length * Integer.SIZE / Byte.SIZE);
         break;
       case BIGINT_TYPE:
-        maxCompressedSize += Snappy.maxCompressedLength(colSet.length * 8);
+        maxCompressedSize += Snappy.maxCompressedLength(colSet.length * Long.SIZE / Byte.SIZE);
         break;
       case DOUBLE_TYPE:
-        maxCompressedSize += Snappy.maxCompressedLength(colSet.length * 8);
+        maxCompressedSize += Snappy.maxCompressedLength(colSet.length * Double.SIZE / Byte.SIZE);
         break;
       case BINARY_TYPE:
         // Reserve space for the size of the compressed array of row sizes
-        maxCompressedSize += Snappy.maxCompressedLength(4*colSet.length);
+        maxCompressedSize += Snappy.maxCompressedLength(colSet.length * Integer.SIZE / Byte.SIZE);
 
         // Reserve space for the size of the compressed flattened bytes.
         for (ByteBuffer nextBuffer : colSet[colNum].toTColumn().getBinaryVal().getValues()) {
@@ -139,11 +133,11 @@ public class SnappyCompDe implements CompDe {
         break;
       case STRING_TYPE:
         // Reserve space for the size of the compressed array of row sizes
-        maxCompressedSize += Snappy.maxCompressedLength(4*colSet.length);
+        maxCompressedSize += Snappy.maxCompressedLength(colSet.length * Integer.SIZE / Byte.SIZE);
 
         // Reserve space for the size of the compressed flattened bytes.
         for (String nextString: colSet[colNum].toTColumn().getStringVal().getValues()) {
-          maxCompressedSize += Snappy.maxCompressedLength(nextString.getBytes(StandardCharsets.UTF_8).length);
+          maxCompressedSize += Snappy.maxCompressedLength(nextString.getBytes(StandardCharsets.UTF_8).length * 2 /*2 bytes for each UTF-8 character*/);
         }
 
         // Add an additional value to the list of compressed chunk sizes
@@ -155,7 +149,7 @@ public class SnappyCompDe implements CompDe {
       }
     }
     // Reserve space for the footer
-    maxCompressedSize += Snappy.maxCompressedLength(4 * uncompressedFooterLength);
+    maxCompressedSize += Snappy.maxCompressedLength(uncompressedFooterLength * Integer.SIZE / Byte.SIZE);
 
     ByteBuffer output = ByteBuffer.allocate(maxCompressedSize);
     ArrayList<Integer> compressedSize = new ArrayList<Integer>(uncompressedFooterLength);
@@ -318,27 +312,27 @@ public class SnappyCompDe implements CompDe {
    * @throws IOException
    */
   private int writePrimitives(byte[] primitives, ByteBuffer output) throws IOException {
-    int bytesWritten = Snappy.rawCompress(primitives, 0, primitives.length, output.array(), output.position());
+    int bytesWritten = Snappy.rawCompress(primitives, 0, primitives.length, output.array(), output.arrayOffset() + output.position());
     output.position(output.position() + bytesWritten);
     return bytesWritten;
   }
   private int writePrimitives(short[] primitives, ByteBuffer output) throws IOException {
-    int bytesWritten = Snappy.rawCompress(primitives, 0, primitives.length, output.array(), output.position());
+    int bytesWritten = Snappy.rawCompress(primitives, 0, primitives.length * Short.SIZE / Byte.SIZE, output.array(), output.arrayOffset() + output.position());
     output.position(output.position() + bytesWritten);
     return bytesWritten;
   }
   private int writePrimitives(int[] primitives, ByteBuffer output) throws IOException {
-    int bytesWritten = Snappy.rawCompress(primitives, 0, primitives.length, output.array(), output.position());
+    int bytesWritten = Snappy.rawCompress(primitives, 0, primitives.length * Integer.SIZE / Byte.SIZE, output.array(), output.arrayOffset() + output.position());
     output.position(output.position() + bytesWritten);
     return bytesWritten;
   }
   private int writePrimitives(long[] primitives, ByteBuffer output) throws IOException {
-    int bytesWritten = Snappy.rawCompress(primitives, 0, primitives.length, output.array(), output.position());
+    int bytesWritten = Snappy.rawCompress(primitives, 0, primitives.length * Long.SIZE / Byte.SIZE, output.array(), output.arrayOffset() + output.position());
     output.position(output.position() + bytesWritten);
     return bytesWritten;
   }
   private int writePrimitives(double[] primitives, ByteBuffer output) throws IOException {
-    int bytesWritten = Snappy.rawCompress(primitives, 0, primitives.length, output.array(), output.position());
+    int bytesWritten = Snappy.rawCompress(primitives, 0, primitives.length * Double.SIZE / Byte.SIZE, output.array(), output.arrayOffset() + output.position());
     output.position(output.position() + bytesWritten);
     return bytesWritten;
   }
@@ -354,25 +348,24 @@ public class SnappyCompDe implements CompDe {
   @Override
   public ColumnBuffer[] decompress(ByteBuffer input, int chunkSize) {
     int startPos = input.position();
-    ByteBuffer roInput = input.asReadOnlyBuffer();
     try {
       // Read the footer.
-      int footerSize = roInput.getInt(roInput.limit() - 1);
-      Iterator<Integer> compressedSize = Arrays.asList(ArrayUtils.toObject(Snappy.uncompressIntArray(roInput.array(), roInput.limit() - 1 - footerSize, footerSize))).iterator();
+      int footerSize = input.getInt(startPos + chunkSize - 4);
+      Iterator<Integer> compressedSize = Arrays.asList(ArrayUtils.toObject(Snappy.uncompressIntArray(input.array(), input.arrayOffset() + startPos + chunkSize - 4 - footerSize, footerSize))).iterator();
 
       // Read the header.
-      int[] dataType = readIntegers(compressedSize.next(), roInput);
+      int[] dataType = readIntegers(compressedSize.next(), input);
       int numOfCols = dataType.length;
 
       // Read the columns.
       ColumnBuffer[] outputCols = new ColumnBuffer[numOfCols];
       for (int colNum = 0; colNum < numOfCols; colNum++) {
-        byte[] nulls = readBytes(compressedSize.next(), roInput);
+        byte[] nulls = readBytes(compressedSize.next(), input);
 
         switch (TTypeId.findByValue(dataType[colNum])) {
         case BOOLEAN_TYPE: {
-          int numRows = roInput.getInt();
-          byte[] vals = readBytes(compressedSize.next(), roInput);
+          int numRows = input.getInt();
+          byte[] vals = readBytes(compressedSize.next(), input);
           BitSet bsBools = BitSet.valueOf(vals);
 
           boolean[] bools = new boolean[numRows];
@@ -385,39 +378,39 @@ public class SnappyCompDe implements CompDe {
           break;
         }
         case TINYINT_TYPE: {
-          byte[] vals = readBytes(compressedSize.next(), roInput);
+          byte[] vals = readBytes(compressedSize.next(), input);
           TByteColumn column = new TByteColumn(Arrays.asList(ArrayUtils.toObject(vals)), ByteBuffer.wrap(nulls));
           outputCols[colNum] = new ColumnBuffer(TColumn.byteVal(column));
           break;
         }
         case SMALLINT_TYPE: {
-          short[] vals = readShorts(compressedSize.next(), roInput);
+          short[] vals = readShorts(compressedSize.next(), input);
           TI16Column column = new TI16Column(Arrays.asList(ArrayUtils.toObject(vals)), ByteBuffer.wrap(nulls));
           outputCols[colNum] = new ColumnBuffer(TColumn.i16Val(column));
           break;
         }
         case INT_TYPE: {
-          int[] vals = readIntegers(compressedSize.next(), roInput);
+          int[] vals = readIntegers(compressedSize.next(), input);
           TI32Column column = new TI32Column(Arrays.asList(ArrayUtils.toObject(vals)), ByteBuffer.wrap(nulls));
           outputCols[colNum] = new ColumnBuffer(TColumn.i32Val(column));
           break;
         }
         case BIGINT_TYPE: {
-          long[] vals = readLongs(compressedSize.next(), roInput);
+          long[] vals = readLongs(compressedSize.next(), input);
           TI64Column column = new TI64Column(Arrays.asList(ArrayUtils.toObject(vals)), ByteBuffer.wrap(nulls));
           outputCols[colNum] = new ColumnBuffer(TColumn.i64Val(column));
           break;
         }
         case DOUBLE_TYPE: {
-          double[] vals = readDoubles(compressedSize.next(), roInput);
+          double[] vals = readDoubles(compressedSize.next(), input);
           TDoubleColumn column = new TDoubleColumn(Arrays.asList(ArrayUtils.toObject(vals)), ByteBuffer.wrap(nulls));
           outputCols[colNum] = new ColumnBuffer(TColumn.doubleVal(column));
           break;
         }
         case BINARY_TYPE: {
-          int[] rowSize = readIntegers(compressedSize.next(), roInput);
+          int[] rowSize = readIntegers(compressedSize.next(), input);
 
-          ByteBuffer flattenedData = ByteBuffer.wrap(readBytes(compressedSize.next(), roInput));
+          ByteBuffer flattenedData = ByteBuffer.wrap(readBytes(compressedSize.next(), input));
           ByteBuffer[] vals = new ByteBuffer[rowSize.length];
 
           for (int rowNum = 0; rowNum < rowSize.length; rowNum++) {
@@ -430,9 +423,9 @@ public class SnappyCompDe implements CompDe {
           break;
         }
         case STRING_TYPE: {
-          int[] rowSize = readIntegers(compressedSize.next(), roInput);
+          int[] rowSize = readIntegers(compressedSize.next(), input);
 
-          ByteBuffer flattenedData = ByteBuffer.wrap(readBytes(compressedSize.next(), roInput));
+          ByteBuffer flattenedData = ByteBuffer.wrap(readBytes(compressedSize.next(), input));
 
           String[] vals = new String[rowSize.length];
 
@@ -465,29 +458,29 @@ public class SnappyCompDe implements CompDe {
    * @throws IOException
    */
   private byte[] readBytes(int chunkSize, ByteBuffer input) throws IOException {
-    byte[] vals = new byte[Snappy.uncompressedLength(input.array(), input.position(), chunkSize)]; 
+    byte[] vals = new byte[Snappy.uncompressedLength(input.array(), input.arrayOffset() + input.position(), chunkSize)]; 
     Snappy.uncompress(input.array(), input.position(), chunkSize, vals, 0);
     input.position(input.position() + chunkSize);
     return vals;
   }
   private short[] readShorts(int chunkSize, ByteBuffer input) throws IOException {
-    short[] vals = Snappy.uncompressShortArray(input.array(), input.position(), chunkSize);
+    short[] vals = Snappy.uncompressShortArray(input.array(), input.arrayOffset() + input.position(), chunkSize);
     input.position(input.position() + chunkSize);
     return vals;
   }
   private int[] readIntegers(int chunkSize, ByteBuffer input) throws IOException {
-    int[] vals = Snappy.uncompressIntArray(input.array(), input.position(), chunkSize);
+    int[] vals = Snappy.uncompressIntArray(input.array(), input.arrayOffset() + input.position(), chunkSize);
     input.position(input.position() + chunkSize);
     return vals;
   }
   private long[] readLongs(int chunkSize, ByteBuffer input) throws IOException {
-    long[] vals = Snappy.uncompressLongArray(input.array(), input.position(), chunkSize);
+    long[] vals = Snappy.uncompressLongArray(input.array(), input.arrayOffset() + input.position(), chunkSize);
     input.position(input.position() + chunkSize);
     return vals;
   }
   private double[] readDoubles(int chunkSize, ByteBuffer input) throws IOException {
-    byte[] doubleBytes = new byte[Snappy.uncompressedLength(input.array(), input.position(), chunkSize)];
-    input.get(doubleBytes, input.position(), chunkSize);
+    byte[] doubleBytes = new byte[chunkSize];
+    System.arraycopy(input.array(), input.arrayOffset() + input.position(), doubleBytes, 0, chunkSize);
     double[] vals = Snappy.uncompressDoubleArray(doubleBytes);
     return vals;
   }
