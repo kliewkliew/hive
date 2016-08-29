@@ -53,13 +53,16 @@ public class TestSnappyCompDe {
   public void init() {
     hiveConf.setVar(ConfVars.HIVE_SERVER2_THRIFT_RESULTSET_COMPRESSOR, compDe.getVendor() + "." + compDe.getName());
 
-    byte[] firstRow = {2, 33, 7, 75, 5};
-    byte[] secondRow = {3, 21, 6};
-    byte[] thirdRow = {52, 25, 74, 74, 64};
+    ByteBuffer firstRow = ByteBuffer.wrap(new byte[]{2, 33, 7, 75, 5});
+    ByteBuffer secondRow = ByteBuffer.wrap(new byte[]{3, 21, 6});
+    ByteBuffer thirdRow = ByteBuffer.wrap(new byte[]{52, 25, 74, 74, 64});
+    firstRow.flip();
+    secondRow.flip();
+    thirdRow.flip();
     ArrayList<ByteBuffer> someBinaries = new ArrayList<ByteBuffer>();
-    someBinaries.add(ByteBuffer.wrap(firstRow));
-    someBinaries.add(ByteBuffer.wrap(secondRow));
-    someBinaries.add(ByteBuffer.wrap(thirdRow));
+    someBinaries.add(firstRow);
+    someBinaries.add(secondRow);
+    someBinaries.add(thirdRow);
     columnBinary = new ColumnBuffer(TColumn.binaryVal(
         new TBinaryColumn(someBinaries, ByteBuffer.wrap(new byte[]{}))));
 
@@ -127,8 +130,8 @@ public class TestSnappyCompDe {
   public void testBinaryCol() {
     ColumnBuffer[] inputCols = new ColumnBuffer[]{columnBinary};
 
-    byte[] compressed= compDe.compress(inputCols);
-    ColumnBuffer[] outputCols = compDe.decompress(compressed, 0, compressed.length);
+    ByteBuffer compressed = compDe.compress(inputCols);
+    ColumnBuffer[] outputCols = compDe.decompress(compressed, compressed.limit());
 
     assertArrayEquals(
         inputCols[0].toTColumn().getBinaryVal().getValues().toArray(),
@@ -139,8 +142,8 @@ public class TestSnappyCompDe {
   public void testBoolCol() {
     ColumnBuffer[] inputCols = new ColumnBuffer[]{columnBool};
 
-    byte[] compressed = compDe.compress(inputCols);
-    ColumnBuffer[] outputCols = compDe.decompress(compressed, 0, compressed.length);
+    ByteBuffer compressed = compDe.compress(inputCols);
+    ColumnBuffer[] outputCols = compDe.decompress(compressed, compressed.limit());
 
     assertArrayEquals(
         inputCols[0].toTColumn().getBoolVal().getValues().toArray(),
@@ -151,8 +154,8 @@ public class TestSnappyCompDe {
   public void testByteCol() {
     ColumnBuffer[] inputCols = new ColumnBuffer[]{columnByte};
 
-    byte[] compressed = compDe.compress(inputCols);
-    ColumnBuffer[] outputCols = compDe.decompress(compressed, 0, compressed.length);
+    ByteBuffer compressed = compDe.compress(inputCols);
+    ColumnBuffer[] outputCols = compDe.decompress(compressed, compressed.limit());
 
     assertArrayEquals(
         inputCols[0].toTColumn().getByteVal().getValues().toArray(),
@@ -163,8 +166,8 @@ public class TestSnappyCompDe {
   public void testIntCol() {
     ColumnBuffer[] inputCols = new ColumnBuffer[]{columnInt};
 
-    byte[] compressed = compDe.compress(inputCols);
-    ColumnBuffer[] outputCols = compDe.decompress(compressed, 0, compressed.length);
+    ByteBuffer compressed = compDe.compress(inputCols);
+    ColumnBuffer[] outputCols = compDe.decompress(compressed, compressed.limit());
 
     assertArrayEquals(
         inputCols[0].toTColumn().getI32Val().getValues().toArray(),
@@ -175,8 +178,8 @@ public class TestSnappyCompDe {
   public void testLongCol() {
     ColumnBuffer[] inputCols = new ColumnBuffer[]{columnLong};
 
-    byte[] compressed = compDe.compress(inputCols);
-    ColumnBuffer[] outputCols = compDe.decompress(compressed, 0, compressed.length);
+    ByteBuffer compressed = compDe.compress(inputCols);
+    ColumnBuffer[] outputCols = compDe.decompress(compressed, compressed.limit());
 
     assertArrayEquals(
         inputCols[0].toTColumn().getI64Val().getValues().toArray(),
@@ -187,8 +190,8 @@ public class TestSnappyCompDe {
   public void testDoubleCol() {
     ColumnBuffer[] inputCols = new ColumnBuffer[]{columnDouble};
 
-    byte[] compressed = compDe.compress(inputCols);
-    ColumnBuffer[] outputCols = compDe.decompress(compressed, 0, compressed.length);
+    ByteBuffer compressed = compDe.compress(inputCols);
+    ColumnBuffer[] outputCols = compDe.decompress(compressed, compressed.limit());
 
     assertArrayEquals(
         inputCols[0].toTColumn().getDoubleVal().getValues().toArray(),
@@ -199,8 +202,8 @@ public class TestSnappyCompDe {
   public void testStringCol() {
     ColumnBuffer[] inputCols = new ColumnBuffer[]{columnStr};
 
-    byte[] compressed = compDe.compress(inputCols);
-    ColumnBuffer[] outputCols = compDe.decompress(compressed, 0, compressed.length);
+    ByteBuffer compressed = compDe.compress(inputCols);
+    ColumnBuffer[] outputCols = compDe.decompress(compressed, compressed.limit());
 
     assertArrayEquals(
         inputCols[0].toTColumn().getStringVal().getValues().toArray(),
@@ -225,8 +228,8 @@ public class TestSnappyCompDe {
         columnStr2,
         columnStr3};
 
-    byte[] compressedCols = compDe.compress(inputCols);
-    ColumnBuffer[] outputCols = compDe.decompress(compressedCols, 0, compressedCols.length);
+    ByteBuffer compressed = compDe.compress(inputCols);
+    ColumnBuffer[] outputCols = compDe.decompress(compressed, compressed.limit());
 
     assertArrayEquals(inputCols, outputCols);
   }
@@ -235,8 +238,8 @@ public class TestSnappyCompDe {
   public void testMulti() {
     ColumnBuffer[] inputCols = new ColumnBuffer[]{columnInt, columnStr};
 
-    byte[] compressed = compDe.compress(inputCols);
-    ColumnBuffer[] outputCols = compDe.decompress(compressed, 0, compressed.length);
+    ByteBuffer compressed = compDe.compress(inputCols);
+    ColumnBuffer[] outputCols = compDe.decompress(compressed, compressed.limit());
 
     assertArrayEquals(
         inputCols[0].toTColumn().getI32Val().getValues().toArray(),
