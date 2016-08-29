@@ -60,20 +60,11 @@ public class SnappyCompDe implements CompDe {
   }
 
   /**
-   * TODO: update docs
-   * 
-   * The size of compressed chunks are located in the footer because we write directly
-   * to the buffer to avoid array allocation and copying and we don't know the compressed
-   * size until after it has been written.
-   * 
    * Compress a set of columns.
-   * 1. write the number of columns
-   * 2. for each column, write:
-   *   - the data type
-   *   - the size of the nulls binary
-   *   - the nulls data
-   *   - for string and binary rows: write the number of rows in the column followed by the size of each row
-   *   - the actual data (string and binary columns are flattened)
+   * 
+   * The header contains a compressed array of data types. 
+   * The body contains compressed columns and their metadata.
+   * The footer contains a compressed array of chunk sizes. The final four bytes of the footer encode the byte size of that compressed array.
    *
    * @param colSet
    *
@@ -83,10 +74,10 @@ public class SnappyCompDe implements CompDe {
   public ByteBuffer compress(ColumnBuffer[] colSet) {
     int[] dataType = new int[colSet.length];
 
-    // Many compression libraries allow you to avoid array allocation and copying.
+    // Many compression libraries allow you to avoid allocation of intermediate arrays.
     // To use these API, we need to preallocate the output container.
 
-    // Reserve space for the header
+    // Reserve space for the header.
     int maxCompressedSize = Snappy.maxCompressedLength(4*dataType.length);
 
     // Reserve space for the compressed nulls BitSet for each column.
@@ -100,7 +91,7 @@ public class SnappyCompDe implements CompDe {
       dataType[colNum] = colSet[colNum].getType().toTType().getValue();
       switch (TTypeId.findByValue(dataType[colNum])) {
       case BOOLEAN_TYPE:
-        maxCompressedSize += Integer.SIZE / Byte.SIZE; // This is for the encoded length that we will write.
+        maxCompressedSize += Integer.SIZE / Byte.SIZE; // This is for the encoded length.
         maxCompressedSize += Snappy.maxCompressedLength((colSet.length/8) + 1);
         break;
       case TINYINT_TYPE:
@@ -119,7 +110,7 @@ public class SnappyCompDe implements CompDe {
         maxCompressedSize += Snappy.maxCompressedLength(colSet.length * Double.SIZE / Byte.SIZE);
         break;
       case BINARY_TYPE:
-        // Reserve space for the size of the compressed array of row sizes
+        // Reserve space for the size of the compressed array of row sizes.
         maxCompressedSize += Snappy.maxCompressedLength(colSet.length * Integer.SIZE / Byte.SIZE);
 
         // Reserve space for the size of the compressed flattened bytes.
@@ -127,20 +118,20 @@ public class SnappyCompDe implements CompDe {
           maxCompressedSize += Snappy.maxCompressedLength(nextBuffer.limit());
         }
 
-        // Add an additional value to the list of compressed chunk sizes
+        // Add an additional value to the list of compressed chunk sizes (length of `rowSize` array).
         uncompressedFooterLength++;
 
         break;
       case STRING_TYPE:
-        // Reserve space for the size of the compressed array of row sizes
+        // Reserve space for the size of the compressed array of row sizes.
         maxCompressedSize += Snappy.maxCompressedLength(colSet.length * Integer.SIZE / Byte.SIZE);
 
         // Reserve space for the size of the compressed flattened bytes.
         for (String nextString: colSet[colNum].toTColumn().getStringVal().getValues()) {
-          maxCompressedSize += Snappy.maxCompressedLength(nextString.getBytes(StandardCharsets.UTF_8).length * 2 /*2 bytes for each UTF-8 character*/);
+          maxCompressedSize += Snappy.maxCompressedLength(nextString.getBytes(StandardCharsets.UTF_8).length);
         }
 
-        // Add an additional value to the list of compressed chunk sizes
+        // Add an additional value to the list of compressed chunk sizes (length of `rowSize` array).
         uncompressedFooterLength++;
 
         break;
@@ -148,18 +139,22 @@ public class SnappyCompDe implements CompDe {
         throw new IllegalStateException("Unrecognized column type");
       }
     }
-    // Reserve space for the footer
+    // Reserve space for the footer.
     maxCompressedSize += Snappy.maxCompressedLength(uncompressedFooterLength * Integer.SIZE / Byte.SIZE);
 
+    // Allocate the output container.
     ByteBuffer output = ByteBuffer.allocate(maxCompressedSize);
+
+    // Allocate the footer. This goes in the footer because we don't know the chunk sizes until after
+    // the columns have been compressed and written.
     ArrayList<Integer> compressedSize = new ArrayList<Integer>(uncompressedFooterLength);
 
-    // Write the compressed data
+    // Write to the output buffer.
     try {
       // Write the header.
       compressedSize.add(writePrimitives(dataType, output));
 
-      // Write the compressed columns.
+      // Write the compressed columns and metadata.
       for (int colNum = 0; colNum < colSet.length; colNum++) {
         switch (TTypeId.findByValue(dataType[colNum])) {
         case BOOLEAN_TYPE: {
@@ -227,13 +222,13 @@ public class SnappyCompDe implements CompDe {
             flattenedData.put(column.getValues().get(rowNum));
           }
 
-          // Write nulls bitmap
+          // Write nulls bitmap.
           compressedSize.add(writePrimitives(column.getNulls(), output));
 
-          // Write the list of row sizes
+          // Write the list of row sizes.
           compressedSize.add(writePrimitives(rowSizes, output));
 
-          // Write the compressed, flattened data
+          // Write the compressed, flattened data.
           compressedSize.add(writePrimitives(flattenedData.array(), output));
 
           break;
@@ -255,13 +250,13 @@ public class SnappyCompDe implements CompDe {
             flattenedData.append(column.getValues().get(rowNum));
           }
 
-          // Write nulls bitmap
+          // Write nulls bitmap.
           compressedSize.add(writePrimitives(column.getNulls(), output));
 
-          // Write the list of row sizes
+          // Write the list of row sizes.
           compressedSize.add(writePrimitives(rowSizes, output));
   
-          // Write the flattened data
+          // Write the flattened data.
           compressedSize.add(writePrimitives(flattenedData.toString().getBytes(StandardCharsets.UTF_8), output));
 
           break;
@@ -307,7 +302,7 @@ public class SnappyCompDe implements CompDe {
   /**
    * Write compressed data to the output ByteBuffer and update the position of the buffer. 
    * @param primitives An array of primitive data types.
-   * @param output
+   * @param output The buffer to write into.
    * @return The number of bytes written.
    * @throws IOException
    */
@@ -341,7 +336,7 @@ public class SnappyCompDe implements CompDe {
    * Decompress a set of columns from a ByteBuffer and update the position of the buffer.
    *
    * @param input A ByteBuffer with `position` indicating the starting point of the compressed chunk. 
-   * @param inputLength The length of the compressed chunk.
+   * @param chunkSize The length of the compressed chunk to be decompressed from the input buffer.
    *
    * @return The set of columns.
    */
@@ -351,7 +346,13 @@ public class SnappyCompDe implements CompDe {
     try {
       // Read the footer.
       int footerSize = input.getInt(startPos + chunkSize - 4);
-      Iterator<Integer> compressedSize = Arrays.asList(ArrayUtils.toObject(Snappy.uncompressIntArray(input.array(), input.arrayOffset() + startPos + chunkSize - 4 - footerSize, footerSize))).iterator();
+      Iterator<Integer> compressedSize =
+          Arrays.asList(ArrayUtils.toObject(
+              Snappy.uncompressIntArray(
+                  input.array(),
+                  input.arrayOffset() + startPos + chunkSize - Integer.SIZE / Byte.SIZE - footerSize,
+                  footerSize)))
+          .iterator();
 
       // Read the header.
       int[] dataType = readIntegers(compressedSize.next(), input);
@@ -482,6 +483,7 @@ public class SnappyCompDe implements CompDe {
     byte[] doubleBytes = new byte[chunkSize];
     System.arraycopy(input.array(), input.arrayOffset() + input.position(), doubleBytes, 0, chunkSize);
     double[] vals = Snappy.uncompressDoubleArray(doubleBytes);
+    input.position(input.position() + chunkSize);
     return vals;
   }
 

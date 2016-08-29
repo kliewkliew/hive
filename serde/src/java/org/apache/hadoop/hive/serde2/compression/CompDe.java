@@ -34,9 +34,9 @@ public interface CompDe {
    * Initialize the plug-in by overlaying the input configuration map
    * onto the plug-in's default configuration.
    *
-   * @param config Overlay configuration map
+   * @param config Overlay configuration map.
    *
-   * @return True if initialization was successful
+   * @return True if initialization was successful.
    */
   public boolean init(Map<String, String> config);
 
@@ -48,19 +48,19 @@ public interface CompDe {
   public Map<String, String> getConfig();
 
   /**
-   * Compress a set of columns
+   * Compress a set of columns.
    *
    * @param colSet
    *
-   * @return Bytes representing the compressed set.
+   * @return ByteBuffer representing the compressed set.
    */
   public ByteBuffer compress(ColumnBuffer[] colSet);
 
   /**
-   * Decompress a set of columns
+   * Decompress a set of columns from a ByteBuffer and update the position of the buffer.
    *
-   * @param input
-   * @param inputLength
+   * @param input A ByteBuffer with `position` indicating the starting point of the compressed chunk. 
+   * @param chunkSize The length of the compressed chunk to be decompressed from the input buffer.
    *
    * @return The set of columns.
    */
@@ -68,14 +68,14 @@ public interface CompDe {
 
   /**
    *
-   * @return The plug-in name
+   * @return The plug-in name.
    */
   public String getName();
 
   /**
-   * Provide a namespace for the plug-in
+   * Provide a namespace for the plug-in.
    *
-   * @return The vendor name
+   * @return The vendor name.
    */
   public String getVendor();
 }
