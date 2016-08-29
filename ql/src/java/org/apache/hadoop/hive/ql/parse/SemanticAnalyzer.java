@@ -55,6 +55,7 @@ import org.apache.hadoop.fs.FileStatus;
 import org.apache.hadoop.fs.FileSystem;
 import org.apache.hadoop.fs.Path;
 import org.apache.hadoop.fs.permission.FsAction;
+import org.apache.hadoop.hive.common.BlobStorageUtils;
 import org.apache.hadoop.hive.ql.plan.AlterTableDesc;
 import org.apache.hadoop.hive.common.FileUtils;
 import org.apache.hadoop.hive.common.ObjectPair;
@@ -133,6 +134,7 @@ import org.apache.hadoop.hive.ql.optimizer.lineage.Generator;
 import org.apache.hadoop.hive.ql.optimizer.unionproc.UnionProcContext;
 import org.apache.hadoop.hive.ql.parse.BaseSemanticAnalyzer.TableSpec.SpecType;
 import org.apache.hadoop.hive.ql.parse.CalcitePlanner.ASTSearcher;
+import org.apache.hadoop.hive.ql.parse.ExplainConfiguration.AnalyzeState;
 import org.apache.hadoop.hive.ql.parse.PTFInvocationSpec.OrderExpression;
 import org.apache.hadoop.hive.ql.parse.PTFInvocationSpec.OrderSpec;
 import org.apache.hadoop.hive.ql.parse.PTFInvocationSpec.PTFInputSpec;
@@ -863,6 +865,7 @@ public class SemanticAnalyzer extends BaseSemanticAnalyzer {
     // this file.
     Path tablePath = null;
     FileSystem fs = null;
+    FSDataOutputStream out = null;
     try {
       if(dataDir == null) {
         tablePath = Warehouse.getDnsPath(new Path(ss.getTempTableSpace(), tableName), conf);
@@ -875,7 +878,7 @@ public class SemanticAnalyzer extends BaseSemanticAnalyzer {
       fs = tablePath.getFileSystem(conf);
       fs.mkdirs(tablePath);
       Path dataFile = new Path(tablePath, "data_file");
-      FSDataOutputStream out = fs.create(dataFile);
+      out = fs.create(dataFile);
       List<FieldSchema> fields = new ArrayList<FieldSchema>();
 
       boolean firstRow = true;
@@ -899,7 +902,6 @@ public class SemanticAnalyzer extends BaseSemanticAnalyzer {
         writeAsText("\n", out);
         firstRow = false;
       }
-      out.close();
 
       // Step 2, create a temp table, using the created file as the data
       StorageFormat format = new StorageFormat(conf);
@@ -923,6 +925,8 @@ public class SemanticAnalyzer extends BaseSemanticAnalyzer {
         } catch (IOException swallowIt) {}
       }
       throw new SemanticException(errMsg, e);
+    } finally {
+        IOUtils.closeStream(out);
     }
 
     // Step 3, return a new subtree with a from clause built around that temp table
@@ -2588,12 +2592,7 @@ public class SemanticAnalyzer extends BaseSemanticAnalyzer {
           || ((rightCondAl1.size() == 0) && (rightCondAl2.size() == 0))) {
         if (type.equals(JoinType.LEFTOUTER) ||
             type.equals(JoinType.FULLOUTER)) {
-          if (conf.getBoolVar(HiveConf.ConfVars.HIVEOUTERJOINSUPPORTSFILTERS)) {
             joinTree.getFilters().get(0).add(joinCond);
-          } else {
-            LOG.warn(ErrorMsg.OUTERJOIN_USES_FILTERS.getErrorCodedMsg());
-            joinTree.getFiltersForPushing().get(0).add(joinCond);
-          }
         } else {
           /*
            * If the rhs references table sources and this QBJoinTree has a leftTree;
@@ -2677,12 +2676,7 @@ public class SemanticAnalyzer extends BaseSemanticAnalyzer {
           || ((rightCondAl1.size() == 0) && (rightCondAl2.size() == 0))) {
         if (type.equals(JoinType.RIGHTOUTER)
             || type.equals(JoinType.FULLOUTER)) {
-          if (conf.getBoolVar(HiveConf.ConfVars.HIVEOUTERJOINSUPPORTSFILTERS)) {
             joinTree.getFilters().get(1).add(joinCond);
-          } else {
-            LOG.warn(ErrorMsg.OUTERJOIN_USES_FILTERS.getErrorCodedMsg());
-            joinTree.getFiltersForPushing().get(1).add(joinCond);
-          }
         } else {
           joinTree.getFiltersForPushing().get(1).add(joinCond);
         }
@@ -2697,24 +2691,14 @@ public class SemanticAnalyzer extends BaseSemanticAnalyzer {
     } else if (rightCondAl1.size() != 0) {
       if (type.equals(JoinType.LEFTOUTER)
           || type.equals(JoinType.FULLOUTER)) {
-        if (conf.getBoolVar(HiveConf.ConfVars.HIVEOUTERJOINSUPPORTSFILTERS)) {
           joinTree.getFilters().get(0).add(joinCond);
-        } else {
-          LOG.warn(ErrorMsg.OUTERJOIN_USES_FILTERS.getErrorCodedMsg());
-          joinTree.getFiltersForPushing().get(0).add(joinCond);
-        }
       } else {
         joinTree.getFiltersForPushing().get(0).add(joinCond);
       }
     } else {
       if (type.equals(JoinType.RIGHTOUTER)
           || type.equals(JoinType.FULLOUTER)) {
-        if (conf.getBoolVar(HiveConf.ConfVars.HIVEOUTERJOINSUPPORTSFILTERS)) {
           joinTree.getFilters().get(1).add(joinCond);
-        } else {
-          LOG.warn(ErrorMsg.OUTERJOIN_USES_FILTERS.getErrorCodedMsg());
-          joinTree.getFiltersForPushing().get(1).add(joinCond);
-        }
       } else if (type.equals(JoinType.LEFTSEMI)) {
         joinTree.getExpressions().get(0).add(leftCondn);
         joinTree.getExpressions().get(1).add(rightCondn);
@@ -2865,24 +2849,14 @@ public class SemanticAnalyzer extends BaseSemanticAnalyzer {
       if (!leftAliasNull) {
         if (type.equals(JoinType.LEFTOUTER)
             || type.equals(JoinType.FULLOUTER)) {
-          if (conf.getBoolVar(HiveConf.ConfVars.HIVEOUTERJOINSUPPORTSFILTERS)) {
             joinTree.getFilters().get(0).add(joinCond);
-          } else {
-            LOG.warn(ErrorMsg.OUTERJOIN_USES_FILTERS.getErrorCodedMsg());
-            joinTree.getFiltersForPushing().get(0).add(joinCond);
-          }
         } else {
           joinTree.getFiltersForPushing().get(0).add(joinCond);
         }
       } else {
         if (type.equals(JoinType.RIGHTOUTER)
             || type.equals(JoinType.FULLOUTER)) {
-          if (conf.getBoolVar(HiveConf.ConfVars.HIVEOUTERJOINSUPPORTSFILTERS)) {
             joinTree.getFilters().get(1).add(joinCond);
-          } else {
-            LOG.warn(ErrorMsg.OUTERJOIN_USES_FILTERS.getErrorCodedMsg());
-            joinTree.getFiltersForPushing().get(1).add(joinCond);
-          }
         } else {
           joinTree.getFiltersForPushing().get(1).add(joinCond);
         }
@@ -6642,7 +6616,7 @@ public class SemanticAnalyzer extends BaseSemanticAnalyzer {
       if (isNonNativeTable) {
         queryTmpdir = dest_path;
       } else {
-        queryTmpdir = ctx.getExtTmpPathRelTo(dest_path);
+        queryTmpdir = ctx.getTempDirForPath(dest_path);
       }
       if (dpCtx != null) {
         // set the root of the temporary path where dynamic partition columns will populate
@@ -6759,7 +6733,7 @@ public class SemanticAnalyzer extends BaseSemanticAnalyzer {
       dest_path = new Path(tabPath.toUri().getScheme(), tabPath.toUri()
           .getAuthority(), partPath.toUri().getPath());
 
-      queryTmpdir = ctx.getExternalTmpPath(dest_path);
+      queryTmpdir = ctx.getTempDirForPath(dest_path);
       table_desc = Utilities.getTableDesc(dest_tab);
 
       // Add sorting/bucketing if needed
@@ -6807,7 +6781,7 @@ public class SemanticAnalyzer extends BaseSemanticAnalyzer {
 
         try {
           Path qPath = FileUtils.makeQualified(dest_path, conf);
-          queryTmpdir = ctx.getExtTmpPathRelTo(qPath);
+          queryTmpdir = ctx.getTempDirForPath(qPath);
         } catch (Exception e) {
           throw new SemanticException("Error creating temporary folder on: "
               + dest_path, e);
@@ -7015,7 +6989,7 @@ public class SemanticAnalyzer extends BaseSemanticAnalyzer {
     fileSinkDesc.setStatsAggPrefix(fileSinkDesc.getDirName().toString());
     if (!destTableIsMaterialization &&
             HiveConf.getVar(conf, HIVESTATSDBCLASS).equalsIgnoreCase(StatDB.fs.name())) {
-      String statsTmpLoc = ctx.getExtTmpPathRelTo(queryTmpdir).toString();
+      String statsTmpLoc = ctx.getTempDirForPath(dest_path).toString();
       fileSinkDesc.setStatsTmpDir(statsTmpLoc);
       LOG.debug("Set stats collection dir : " + statsTmpLoc);
     }
@@ -7090,7 +7064,7 @@ public class SemanticAnalyzer extends BaseSemanticAnalyzer {
     LOG.info("Generate an operator pipleline to autogather column stats for table " + tableName
         + " in query " + ctx.getCmd());
     ColumnStatsAutoGatherContext columnStatsAutoGatherContext = null;
-    columnStatsAutoGatherContext = new ColumnStatsAutoGatherContext(this, conf, curr, table, partSpec, isInsertInto);
+    columnStatsAutoGatherContext = new ColumnStatsAutoGatherContext(this, conf, curr, table, partSpec, isInsertInto, ctx);
     columnStatsAutoGatherContext.insertAnalyzePipeline();
     columnStatsAutoGatherContexts.add(columnStatsAutoGatherContext);
   }
@@ -9507,8 +9481,8 @@ public class SemanticAnalyzer extends BaseSemanticAnalyzer {
     // This can be easily merged into 1 union
     RowResolver leftRR = opParseCtx.get(leftOp).getRowResolver();
     RowResolver rightRR = opParseCtx.get(rightOp).getRowResolver();
-    HashMap<String, ColumnInfo> leftmap = leftRR.getFieldMap(leftalias);
-    HashMap<String, ColumnInfo> rightmap = rightRR.getFieldMap(rightalias);
+    LinkedHashMap<String, ColumnInfo> leftmap = leftRR.getFieldMap(leftalias);
+    LinkedHashMap<String, ColumnInfo> rightmap = rightRR.getFieldMap(rightalias);
     // make sure the schemas of both sides are the same
     ASTNode tabref = qb.getAliases().isEmpty() ? null :
         qb.getParseInfo().getSrcForAlias(qb.getAliases().get(0));
@@ -10853,6 +10827,9 @@ public class SemanticAnalyzer extends BaseSemanticAnalyzer {
 
     // 5. Take care of view creation
     if (createVwDesc != null) {
+      if (ctx.getExplainAnalyze() == AnalyzeState.RUNNING) {
+        return;
+      }
       saveViewDefinition();
 
       // validate the create view statement at this point, the createVwDesc gets
@@ -10935,7 +10912,7 @@ public class SemanticAnalyzer extends BaseSemanticAnalyzer {
     }
 
     // 11. if desired check we're not going over partition scan limits
-    if (!ctx.getExplain()) {
+    if (!ctx.isExplainSkipExecution()) {
       enforceScanLimits(pCtx, origFetchTask);
     }
 
@@ -11720,7 +11697,7 @@ public class SemanticAnalyzer extends BaseSemanticAnalyzer {
     case CTAS: // create table as select
 
       if (isTemporary) {
-        if (!ctx.getExplain() && !isMaterialization) {
+        if (!ctx.isExplainSkipExecution() && !isMaterialization) {
           String dbName = qualifiedTabName[0];
           String tblName = qualifiedTabName[1];
           SessionState ss = SessionState.get();
@@ -11739,7 +11716,7 @@ public class SemanticAnalyzer extends BaseSemanticAnalyzer {
         // dumpTable is only used to check the conflict for non-temporary tables
         try {
           Table dumpTable = db.newTable(dbDotTab);
-          if (null != db.getTable(dumpTable.getDbName(), dumpTable.getTableName(), false) && !ctx.getExplain()) {
+          if (null != db.getTable(dumpTable.getDbName(), dumpTable.getTableName(), false) && !ctx.isExplainSkipExecution()) {
             throw new SemanticException(ErrorMsg.TABLE_ALREADY_EXISTS.getMsg(dbDotTab));
           }
         } catch (HiveException e) {

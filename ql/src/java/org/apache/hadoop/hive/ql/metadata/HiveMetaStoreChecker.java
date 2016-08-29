@@ -310,7 +310,7 @@ public class HiveMetaStoreChecker {
     // now check the table folder and see if we find anything
     // that isn't in the metastore
     Set<Path> allPartDirs = new HashSet<Path>();
-    getAllLeafDirs(tablePath, allPartDirs);
+    checkPartitionDirs(tablePath, allPartDirs, table.getPartCols().size());
     // don't want the table dir
     allPartDirs.remove(tablePath);
 
@@ -358,26 +358,28 @@ public class HiveMetaStoreChecker {
   }
 
   /**
-   * Recursive method to get the leaf directories of a base path. Example:
-   * base/dir1/dir2 base/dir3
-   *
-   * This will return dir2 and dir3 but not dir1.
+   * Assume that depth is 2, i.e., partition columns are a and b
+   * tblPath/a=1  => throw exception
+   * tblPath/a=1/file => throw exception
+   * tblPath/a=1/b=2/file => return a=1/b=2
+   * tblPath/a=1/b=2/c=3 => return a=1/b=2
+   * tblPath/a=1/b=2/c=3/file => return a=1/b=2
    *
    * @param basePath
    *          Start directory
    * @param allDirs
    *          This set will contain the leaf paths at the end.
+   * @param maxDepth
+   *          Specify how deep the search goes.
    * @throws IOException
    *           Thrown if we can't get lists from the fs.
    * @throws HiveException 
    */
 
-  private void getAllLeafDirs(Path basePath, Set<Path> allDirs) throws IOException, HiveException {
+  private void checkPartitionDirs(Path basePath, Set<Path> allDirs, int maxDepth) throws IOException, HiveException {
     ConcurrentLinkedQueue<Path> basePaths = new ConcurrentLinkedQueue<>();
     basePaths.add(basePath);
-    // we only use the keySet of ConcurrentHashMap
-    // Neither the key nor the value can be null.
-    Map<Path, Object> dirSet = new ConcurrentHashMap<>();
+    Set<Path> dirSet = Collections.newSetFromMap(new ConcurrentHashMap<Path, Boolean>());    
     // Here we just reuse the THREAD_COUNT configuration for
     // HIVE_MOVE_FILES_THREAD_COUNT
     final ExecutorService pool = conf.getInt(ConfVars.HIVE_MOVE_FILES_THREAD_COUNT.varname, 25) > 0 ? Executors
@@ -390,32 +392,50 @@ public class HiveMetaStoreChecker {
       LOG.debug("Using threaded version of MSCK-GetPaths with number of threads "
           + ((ThreadPoolExecutor) pool).getPoolSize());
     }
-    getAllLeafDirs(pool, basePaths, dirSet, basePath.getFileSystem(conf));
+    checkPartitionDirs(pool, basePaths, dirSet, basePath.getFileSystem(conf), maxDepth, maxDepth);
     pool.shutdown();
-    allDirs.addAll(dirSet.keySet());
+    allDirs.addAll(dirSet);
   }
 
   // process the basePaths in parallel and then the next level of basePaths
-  private void getAllLeafDirs(final ExecutorService pool, final ConcurrentLinkedQueue<Path> basePaths,
-      final Map<Path, Object> allDirs, final FileSystem fs) throws IOException, HiveException {
+  private void checkPartitionDirs(final ExecutorService pool,
+      final ConcurrentLinkedQueue<Path> basePaths, final Set<Path> allDirs,
+      final FileSystem fs, final int depth, final int maxDepth) throws IOException, HiveException {
     final ConcurrentLinkedQueue<Path> nextLevel = new ConcurrentLinkedQueue<>();
     if (null == pool) {
       for (final Path path : basePaths) {
         FileStatus[] statuses = fs.listStatus(path, FileUtils.HIDDEN_FILES_PATH_FILTER);
-        boolean directoryFound = false;
+        boolean fileFound = false;
         for (FileStatus status : statuses) {
-          if (status.isDir()) {
-            directoryFound = true;
+          if (status.isDirectory()) {
             nextLevel.add(status.getPath());
+          } else {
+            fileFound = true;
           }
         }
-
-        if (!directoryFound) {
-          // true is just a boolean object place holder because neither the key nor the value can be null.
-          allDirs.put(path, true);
-        }
-        if (!nextLevel.isEmpty()) {
-          getAllLeafDirs(pool, nextLevel, allDirs, fs);
+        if (depth != 0) {
+          // we are in the middle of the search and we find a file
+          if (fileFound) {
+            if ("throw".equals(HiveConf.getVar(conf, HiveConf.ConfVars.HIVE_MSCK_PATH_VALIDATION))) {
+              throw new HiveException(
+                  "MSCK finds a file rather than a folder when it searches for " + path.toString());
+            } else {
+              LOG.warn("MSCK finds a file rather than a folder when it searches for "
+                  + path.toString());
+            }
+          }
+          if (!nextLevel.isEmpty()) {
+            checkPartitionDirs(pool, nextLevel, allDirs, fs, depth - 1, maxDepth);
+          } else if (depth != maxDepth) {
+            // since nextLevel is empty, we are missing partition columns.
+            if ("throw".equals(HiveConf.getVar(conf, HiveConf.ConfVars.HIVE_MSCK_PATH_VALIDATION))) {
+              throw new HiveException("MSCK is missing partition columns under " + path.toString());
+            } else {
+              LOG.warn("MSCK is missing partition columns under " + path.toString());
+            }
+          }
+        } else {
+          allDirs.add(path);
         }
       }
     } else {
@@ -425,17 +445,41 @@ public class HiveMetaStoreChecker {
           @Override
           public Void call() throws Exception {
             FileStatus[] statuses = fs.listStatus(path, FileUtils.HIDDEN_FILES_PATH_FILTER);
-            boolean directoryFound = false;
-
+            boolean fileFound = false;
             for (FileStatus status : statuses) {
-              if (status.isDir()) {
-                directoryFound = true;
+              if (status.isDirectory()) {
                 nextLevel.add(status.getPath());
+              } else {
+                fileFound = true;
               }
             }
-
-            if (!directoryFound) {
-              allDirs.put(path, true);
+            if (depth != 0) {
+              // we are in the middle of the search and we find a file
+              if (fileFound) {
+                if ("throw".equals(HiveConf.getVar(conf,
+                    HiveConf.ConfVars.HIVE_MSCK_PATH_VALIDATION))) {
+                  throw new HiveException(
+                      "MSCK finds a file rather than a folder when it searches for "
+                          + path.toString());
+                } else {
+                  LOG.warn("MSCK finds a file rather than a folder when it searches for "
+                      + path.toString());
+                }
+              }
+              if (!nextLevel.isEmpty()) {
+                checkPartitionDirs(pool, nextLevel, allDirs, fs, depth - 1, maxDepth);
+              } else if (depth != maxDepth) {
+                // since nextLevel is empty, we are missing partition columns.
+                if ("throw".equals(HiveConf.getVar(conf,
+                    HiveConf.ConfVars.HIVE_MSCK_PATH_VALIDATION))) {
+                  throw new HiveException("MSCK is missing partition columns under "
+                      + path.toString());
+                } else {
+                  LOG.warn("MSCK is missing partition columns under " + path.toString());
+                }
+              }
+            } else {
+              allDirs.add(path);
             }
             return null;
           }
@@ -450,10 +494,9 @@ public class HiveMetaStoreChecker {
           throw new HiveException(e.getCause());
         }
       }
-      if (!nextLevel.isEmpty()) {
-        getAllLeafDirs(pool, nextLevel, allDirs, fs);
+      if (!nextLevel.isEmpty() && depth != 0) {
+        checkPartitionDirs(pool, nextLevel, allDirs, fs, depth - 1, maxDepth);
       }
     }
   }
-
 }

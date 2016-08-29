@@ -39,6 +39,9 @@ import java.util.concurrent.locks.ReentrantLock;
 import org.apache.commons.lang.StringUtils;
 import org.apache.hadoop.fs.FSDataInputStream;
 import org.apache.hadoop.hive.common.ValidTxnList;
+import org.apache.hadoop.hive.common.metrics.common.Metrics;
+import org.apache.hadoop.hive.common.metrics.common.MetricsConstant;
+import org.apache.hadoop.hive.common.metrics.common.MetricsFactory;
 import org.apache.hadoop.hive.conf.HiveConf;
 import org.apache.hadoop.hive.conf.HiveConf.ConfVars;
 import org.apache.hadoop.hive.conf.HiveVariableSource;
@@ -84,6 +87,7 @@ import org.apache.hadoop.hive.ql.optimizer.ppr.PartitionPruner;
 import org.apache.hadoop.hive.ql.parse.ASTNode;
 import org.apache.hadoop.hive.ql.parse.BaseSemanticAnalyzer;
 import org.apache.hadoop.hive.ql.parse.ColumnAccessInfo;
+import org.apache.hadoop.hive.ql.parse.ExplainSemanticAnalyzer;
 import org.apache.hadoop.hive.ql.parse.HiveSemanticAnalyzerHook;
 import org.apache.hadoop.hive.ql.parse.HiveSemanticAnalyzerHookContext;
 import org.apache.hadoop.hive.ql.parse.HiveSemanticAnalyzerHookContextImpl;
@@ -94,6 +98,7 @@ import org.apache.hadoop.hive.ql.parse.ParseUtils;
 import org.apache.hadoop.hive.ql.parse.PrunedPartitionList;
 import org.apache.hadoop.hive.ql.parse.SemanticAnalyzer;
 import org.apache.hadoop.hive.ql.parse.SemanticAnalyzerFactory;
+import org.apache.hadoop.hive.ql.parse.ExplainConfiguration.AnalyzeState;
 import org.apache.hadoop.hive.ql.plan.FileSinkDesc;
 import org.apache.hadoop.hive.ql.plan.HiveOperation;
 import org.apache.hadoop.hive.ql.plan.TableDesc;
@@ -309,6 +314,11 @@ public class Driver implements CommandProcessor {
     this(new QueryState(conf), null);
   }
 
+  public Driver(HiveConf conf, Context ctx) {
+    this(new QueryState(conf), null);
+    this.ctx = ctx;
+  }
+
   public Driver(HiveConf conf, String userName) {
     this(new QueryState(conf), userName);
   }
@@ -360,7 +370,7 @@ public class Driver implements CommandProcessor {
       LOG.warn("WARNING! Query command could not be redacted." + e);
     }
 
-    if (ctx != null) {
+    if (ctx != null && ctx.getExplainAnalyze() != AnalyzeState.RUNNING) {
       close();
     }
 
@@ -401,7 +411,9 @@ public class Driver implements CommandProcessor {
       };
       ShutdownHookManager.addShutdownHook(shutdownRunner, SHUTDOWN_HOOK_PRIORITY);
 
-      ctx = new Context(conf);
+      if (ctx == null) {
+        ctx = new Context(conf);
+      }
       ctx.setTryCount(getTryCount());
       ctx.setCmd(command);
       ctx.setHDFSCleanup(true);
@@ -1195,6 +1207,17 @@ public class Driver implements CommandProcessor {
   private static final ReentrantLock globalCompileLock = new ReentrantLock();
   private int compileInternal(String command) {
     int ret;
+
+    Metrics metrics = MetricsFactory.getInstance();
+    if (metrics != null) {
+      try {
+        metrics.incrementCounter(MetricsConstant.WAITING_COMPILE_OPS, 1);
+      } catch (IOException e) {
+        // This won't happen if we are using the newer CodaHale metrics. Same for below.
+        LOG.warn("Error while incrementing metrics counter.", e);
+      }
+    }
+
     final ReentrantLock compileLock = tryAcquireCompileLock(isParallelEnabled,
       command);
     if (compileLock == null) {
@@ -1202,6 +1225,13 @@ public class Driver implements CommandProcessor {
     }
 
     try {
+      if (metrics != null) {
+        try {
+          metrics.decrementCounter(MetricsConstant.WAITING_COMPILE_OPS, 1);
+        } catch (IOException e) {
+          LOG.warn("Error while decrementing metrics counter.", e);
+        }
+      }
       ret = compile(command);
     } finally {
       compileLock.unlock();
