@@ -431,7 +431,7 @@ public class SnappyCompDe implements CompDe {
           String[] vals = new String[rowSize.length];
 
           for (int rowNum = 0; rowNum < rowSize.length; rowNum++) {
-            vals[rowNum] = new String(flattenedData.array(), flattenedData.position(), rowSize[rowNum]);
+            vals[rowNum] = new String(flattenedData.array(), flattenedData.position(), rowSize[rowNum], StandardCharsets.UTF_8);
             flattenedData.position(flattenedData.position() + rowSize[rowNum]);
           }
 
