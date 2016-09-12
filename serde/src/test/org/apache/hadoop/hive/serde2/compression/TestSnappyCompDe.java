@@ -19,8 +19,6 @@
 package org.apache.hadoop.hive.serde2.compression;
 
 import org.apache.commons.lang3.StringUtils;
-import org.apache.hadoop.hive.conf.HiveConf;
-import org.apache.hadoop.hive.conf.HiveConf.ConfVars;
 import org.apache.hadoop.hive.serde2.compression.SnappyCompDe;
 import org.apache.hadoop.hive.serde2.thrift.ColumnBuffer;
 import org.apache.hive.service.rpc.thrift.*;
@@ -29,12 +27,12 @@ import static org.junit.Assert.assertArrayEquals;
 
 import java.nio.ByteBuffer;
 import java.util.ArrayList;
+import java.util.HashMap;
 
 import org.junit.Before;
 import org.junit.Test;
 
 public class TestSnappyCompDe {
-  private static HiveConf hiveConf = new HiveConf();
   private SnappyCompDe compDe = new SnappyCompDe();
   byte[] noNullMask = {0};
   byte[] firstNullMask = {1};
@@ -51,8 +49,6 @@ public class TestSnappyCompDe {
 
   @Before
   public void init() {
-    hiveConf.setVar(ConfVars.HIVE_SERVER2_THRIFT_RESULTSET_COMPRESSOR, compDe.getVendor() + "." + compDe.getName());
-
     ByteBuffer firstRow = ByteBuffer.wrap(new byte[]{2, 33, 7, 75, 5});
     ByteBuffer secondRow = ByteBuffer.wrap(new byte[]{3, 21, 6});
     ByteBuffer thirdRow = ByteBuffer.wrap(new byte[]{52, 25, 74, 74, 64});
@@ -124,6 +120,8 @@ public class TestSnappyCompDe {
     strings.add("");
     columnStr = new ColumnBuffer(TColumn.stringVal(
         new TStringColumn(strings, ByteBuffer.wrap(noNullMask))));
+
+    compDe.init(new HashMap<String, String>());
   }
 
   @Test

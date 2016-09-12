@@ -59,7 +59,7 @@ public interface CompDe {
   /**
    * Decompress a set of columns from a ByteBuffer and update the position of the buffer.
    *
-   * @param input A ByteBuffer with `position` indicating the starting point of the compressed chunk. 
+   * @param input A ByteBuffer with `position` indicating the starting point of the compressed chunk.
    * @param chunkSize The length of the compressed chunk to be decompressed from the input buffer.
    *
    * @return The set of columns.
