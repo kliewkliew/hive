@@ -19,7 +19,7 @@ parser grammar FromClauseParser;
 options
 {
 output=AST;
-ASTLabelType=CommonTree;
+ASTLabelType=ASTNode;
 backtrack=false;
 k=3;
 }
@@ -34,9 +34,6 @@ k=3;
   public void displayRecognitionError(String[] tokenNames,
       RecognitionException e) {
     gParent.errors.add(new ParseError(gParent, e, tokenNames));
-  }
-  protected boolean useSQL11ReservedKeywordsForIdentifier() {
-    return gParent.useSQL11ReservedKeywordsForIdentifier();
   }
 }
 
@@ -145,7 +142,7 @@ tableAlias
 
 fromSource
 @init { gParent.pushMsg("from source", state); }
-@after { gParent.popMsg(state); }
+@after { $fromSource.tree.matchedText = $fromSource.text; gParent.popMsg(state); }
     :
     (LPAREN KW_VALUES) => fromSource0
     | (LPAREN) => LPAREN joinSource RPAREN -> joinSource
@@ -222,7 +219,7 @@ subQuerySource
 @init { gParent.pushMsg("subquery source", state); }
 @after { gParent.popMsg(state); }
     :
-    LPAREN queryStatementExpression[false] RPAREN KW_AS? identifier -> ^(TOK_SUBQUERY queryStatementExpression identifier)
+    LPAREN queryStatementExpression RPAREN KW_AS? identifier -> ^(TOK_SUBQUERY queryStatementExpression identifier)
     ;
 
 //---------------------- Rules for parsing PTF clauses -----------------------------
@@ -281,7 +278,7 @@ searchCondition
 // INSERT INTO <table> (col1,col2,...) SELECT * FROM (VALUES(1,2,3),(4,5,6),...) as Foo(a,b,c)
 valueRowConstructor
 @init { gParent.pushMsg("value row constructor", state); }
-@after { gParent.popMsg(state); }
+@after { $valueRowConstructor.tree.matchedText = $valueRowConstructor.text; gParent.popMsg(state); }
     :
     LPAREN precedenceUnaryPrefixExpression (COMMA precedenceUnaryPrefixExpression)* RPAREN -> ^(TOK_VALUE_ROW precedenceUnaryPrefixExpression+)
     ;

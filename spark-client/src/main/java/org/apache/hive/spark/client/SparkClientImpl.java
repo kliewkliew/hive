@@ -45,6 +45,7 @@ import java.io.Writer;
 import java.net.URI;
 import java.net.URL;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.List;
 import java.util.Map;
 import java.util.Properties;
@@ -53,6 +54,7 @@ import java.util.concurrent.Future;
 import java.util.concurrent.TimeoutException;
 import java.util.concurrent.atomic.AtomicInteger;
 
+import org.apache.hadoop.hive.conf.Constants;
 import org.apache.hadoop.hive.conf.HiveConf;
 import org.apache.hadoop.hive.conf.HiveConf.ConfVars;
 import org.apache.hadoop.hive.shims.Utils;
@@ -136,7 +138,12 @@ class SparkClientImpl implements SparkClient {
 
   @Override
   public <T extends Serializable> JobHandle<T> submit(Job<T> job) {
-    return protocol.submit(job);
+    return protocol.submit(job, Collections.<JobHandle.Listener<T>>emptyList());
+  }
+
+  @Override
+  public <T extends Serializable> JobHandle<T> submit(Job<T> job, List<JobHandle.Listener<T>> listeners) {
+    return protocol.submit(job, listeners);
   }
 
   @Override
@@ -206,6 +213,7 @@ class SparkClientImpl implements SparkClient {
 
     if (conf.containsKey(SparkClientFactory.CONF_KEY_IN_PROCESS)) {
       // Mostly for testing things quickly. Do not do this in production.
+      // when invoked in-process it inherits the environment variables of the parent
       LOG.warn("!!!! Running remote driver in-process. !!!!");
       runnable = new Runnable() {
         @Override
@@ -440,7 +448,12 @@ class SparkClientImpl implements SparkClient {
       // Prevent hive configurations from being visible in Spark.
       pb.environment().remove("HIVE_HOME");
       pb.environment().remove("HIVE_CONF_DIR");
-
+      // Add credential provider password to the child process's environment
+      // In case of Spark the credential provider location is provided in the jobConf when the job is submitted
+      String password = getSparkJobCredentialProviderPassword();
+      if(password != null) {
+        pb.environment().put(Constants.HADOOP_CREDENTIAL_PASSWORD_ENVVAR, password);
+      }
       if (isTesting != null) {
         pb.environment().put("SPARK_TESTING", isTesting);
       }
@@ -485,6 +498,15 @@ class SparkClientImpl implements SparkClient {
     return thread;
   }
 
+  private String getSparkJobCredentialProviderPassword() {
+    if (conf.containsKey("spark.yarn.appMasterEnv.HADOOP_CREDSTORE_PASSWORD")) {
+      return conf.get("spark.yarn.appMasterEnv.HADOOP_CREDSTORE_PASSWORD");
+    } else if (conf.containsKey("spark.executorEnv.HADOOP_CREDSTORE_PASSWORD")) {
+      return conf.get("spark.executorEnv.HADOOP_CREDSTORE_PASSWORD");
+    }
+    return null;
+  }
+
   private void redirect(String name, Redirector redirector) {
     Thread thread = new Thread(redirector);
     thread.setName(name);
@@ -494,10 +516,11 @@ class SparkClientImpl implements SparkClient {
 
   private class ClientProtocol extends BaseProtocol {
 
-    <T extends Serializable> JobHandleImpl<T> submit(Job<T> job) {
+    <T extends Serializable> JobHandleImpl<T> submit(Job<T> job, List<JobHandle.Listener<T>> listeners) {
       final String jobId = UUID.randomUUID().toString();
       final Promise<T> promise = driverRpc.createPromise();
-      final JobHandleImpl<T> handle = new JobHandleImpl<T>(SparkClientImpl.this, promise, jobId);
+      final JobHandleImpl<T> handle =
+          new JobHandleImpl<T>(SparkClientImpl.this, promise, jobId, listeners);
       jobs.put(jobId, handle);
 
       final io.netty.util.concurrent.Future<Void> rpc = driverRpc.call(new JobRequest(jobId, job));
@@ -620,6 +643,14 @@ class SparkClientImpl implements SparkClient {
               errLogs.add(line);
             }
           }
+        }
+      } catch (IOException e) {
+        if (isAlive) {
+          LOG.warn("I/O error in redirector thread.", e);
+        } else {
+          // When stopping the remote driver the process might be destroyed during reading from the stream.
+          // We should not log the related exceptions in a visible level as they might mislead the user.
+          LOG.debug("I/O error in redirector thread while stopping the remote driver", e);
         }
       } catch (Exception e) {
         LOG.warn("Error in redirector thread.", e);

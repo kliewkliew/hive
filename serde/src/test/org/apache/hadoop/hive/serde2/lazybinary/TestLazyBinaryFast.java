@@ -23,7 +23,7 @@ import java.util.Random;
 import junit.framework.TestCase;
 
 import org.apache.hadoop.hive.serde2.ByteStream.Output;
-import org.apache.hadoop.hive.serde2.SerDe;
+import org.apache.hadoop.hive.serde2.AbstractSerDe;
 import org.apache.hadoop.hive.serde2.SerdeRandomRowSource;
 import org.apache.hadoop.hive.serde2.VerifyFast;
 import org.apache.hadoop.hive.serde2.binarysortable.MyTestClass;
@@ -39,8 +39,8 @@ public class TestLazyBinaryFast extends TestCase {
 
   private void testLazyBinaryFast(
       SerdeRandomRowSource source, Object[][] rows,
-      SerDe serde, StructObjectInspector rowOI,
-      SerDe serde_fewer, StructObjectInspector writeRowOI,
+      AbstractSerDe serde, StructObjectInspector rowOI,
+      AbstractSerDe serde_fewer, StructObjectInspector writeRowOI,
       PrimitiveTypeInfo[] primitiveTypeInfos,
       boolean useIncludeColumns, boolean doWriteFewerColumns, Random r) throws Throwable {
 
@@ -91,18 +91,17 @@ public class TestLazyBinaryFast extends TestCase {
       // Specifying the right type info length tells LazyBinaryDeserializeRead which is the last
       // column.
       LazyBinaryDeserializeRead lazyBinaryDeserializeRead =
-              new LazyBinaryDeserializeRead(writePrimitiveTypeInfos);
-
-      if (useIncludeColumns) {
-        lazyBinaryDeserializeRead.setColumnsToInclude(columnsToInclude);
-      }
+              new LazyBinaryDeserializeRead(
+                  writePrimitiveTypeInfos,
+                  /* useExternalBuffer */ false);
 
       BytesWritable bytesWritable = serializeWriteBytes[i];
       lazyBinaryDeserializeRead.set(bytesWritable.getBytes(), 0, bytesWritable.getLength());
 
       for (int index = 0; index < columnCount; index++) {
-        if (index >= writeColumnCount ||
-            (useIncludeColumns && !columnsToInclude[index])) {
+        if (useIncludeColumns && !columnsToInclude[index]) {
+          lazyBinaryDeserializeRead.skipNextField();
+        } else if (index >= writeColumnCount) {
           // Should come back a null.
           VerifyFast.verifyDeserializeRead(lazyBinaryDeserializeRead, primitiveTypeInfos[index], null);
         } else {
@@ -110,13 +109,9 @@ public class TestLazyBinaryFast extends TestCase {
           VerifyFast.verifyDeserializeRead(lazyBinaryDeserializeRead, primitiveTypeInfos[index], writable);
         }
       }
-      lazyBinaryDeserializeRead.extraFieldsCheck();
-      if (doWriteFewerColumns) {
-        TestCase.assertTrue(lazyBinaryDeserializeRead.readBeyondConfiguredFieldsWarned());
-      } else {
-        TestCase.assertTrue(!lazyBinaryDeserializeRead.readBeyondConfiguredFieldsWarned());
+      if (writeColumnCount == columnCount) {
+        TestCase.assertTrue(lazyBinaryDeserializeRead.isEndOfInputReached());
       }
-      TestCase.assertTrue(!lazyBinaryDeserializeRead.bufferRangeHasExtraDataWarned());
     }
 
     // Try to deserialize using SerDe class our Writable row objects created by SerializeWrite.
@@ -191,18 +186,17 @@ public class TestLazyBinaryFast extends TestCase {
 
       // When doWriteFewerColumns, try to read more fields than exist in buffer.
       LazyBinaryDeserializeRead lazyBinaryDeserializeRead =
-              new LazyBinaryDeserializeRead(primitiveTypeInfos);
-
-      if (useIncludeColumns) {
-        lazyBinaryDeserializeRead.setColumnsToInclude(columnsToInclude);
-      }
+              new LazyBinaryDeserializeRead(
+                  primitiveTypeInfos,
+                  /* useExternalBuffer */ false);
 
       BytesWritable bytesWritable = serdeBytes[i];
       lazyBinaryDeserializeRead.set(bytesWritable.getBytes(), 0, bytesWritable.getLength());
 
       for (int index = 0; index < columnCount; index++) {
-        if (index >= writeColumnCount ||
-            (useIncludeColumns && !columnsToInclude[index])) {
+        if (useIncludeColumns && !columnsToInclude[index]) {
+          lazyBinaryDeserializeRead.skipNextField();
+        } else if (index >= writeColumnCount) {
           // Should come back a null.
           VerifyFast.verifyDeserializeRead(lazyBinaryDeserializeRead, primitiveTypeInfos[index], null);
         } else {
@@ -210,9 +204,9 @@ public class TestLazyBinaryFast extends TestCase {
           VerifyFast.verifyDeserializeRead(lazyBinaryDeserializeRead, primitiveTypeInfos[index], writable);
         }
       }
-      lazyBinaryDeserializeRead.extraFieldsCheck();
-      TestCase.assertTrue(!lazyBinaryDeserializeRead.readBeyondConfiguredFieldsWarned());
-      TestCase.assertTrue(!lazyBinaryDeserializeRead.bufferRangeHasExtraDataWarned());
+      if (writeColumnCount == columnCount) {
+        TestCase.assertTrue(lazyBinaryDeserializeRead.isEndOfInputReached());
+      }
     }
   }
 
@@ -248,9 +242,9 @@ public class TestLazyBinaryFast extends TestCase {
     String fieldNames = ObjectInspectorUtils.getFieldNames(rowStructObjectInspector);
     String fieldTypes = ObjectInspectorUtils.getFieldTypes(rowStructObjectInspector);
 
-    SerDe serde = TestLazyBinarySerDe.getSerDe(fieldNames, fieldTypes);
+    AbstractSerDe serde = TestLazyBinarySerDe.getSerDe(fieldNames, fieldTypes);
 
-    SerDe serde_fewer = null;
+    AbstractSerDe serde_fewer = null;
     if (doWriteFewerColumns) {
       String partialFieldNames = ObjectInspectorUtils.getFieldNames(writeRowStructObjectInspector);
       String partialFieldTypes = ObjectInspectorUtils.getFieldTypes(writeRowStructObjectInspector);

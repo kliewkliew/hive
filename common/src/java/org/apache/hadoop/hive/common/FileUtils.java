@@ -43,6 +43,7 @@ import org.apache.hadoop.fs.PathFilter;
 import org.apache.hadoop.fs.Trash;
 import org.apache.hadoop.fs.permission.FsAction;
 import org.apache.hadoop.hive.conf.HiveConf;
+import org.apache.hadoop.hive.conf.HiveConfUtil;
 import org.apache.hadoop.hive.io.HdfsUtils;
 import org.apache.hadoop.hive.shims.HadoopShims;
 import org.apache.hadoop.hive.shims.ShimLoader;
@@ -559,6 +560,14 @@ public final class FileUtils {
     }
   }
 
+  public static Path makeAbsolute(FileSystem fileSystem, Path path) throws IOException {
+    if (path.isAbsolute()) {
+      return path;
+    } else {
+      return new Path(fileSystem.getWorkingDirectory(), path);
+    }
+  }
+
   /**
    * Copies files between filesystems.
    */
@@ -576,6 +585,7 @@ public final class FileUtils {
         srcFS.getFileStatus(src).getLen() > conf.getLongVar(HiveConf.ConfVars.HIVE_EXEC_COPYFILE_MAXSIZE)) {
       LOG.info("Source is " + srcFS.getFileStatus(src).getLen() + " bytes. (MAX: " + conf.getLongVar(HiveConf.ConfVars.HIVE_EXEC_COPYFILE_MAXSIZE) + ")");
       LOG.info("Launch distributed copy (distcp) job.");
+      HiveConfUtil.updateJobCredentialProviders(conf);
       copied = shims.runDistCp(src, dst, conf);
       if (copied && deleteSource) {
         srcFS.delete(src, true);

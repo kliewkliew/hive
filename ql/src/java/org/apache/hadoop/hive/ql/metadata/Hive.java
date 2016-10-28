@@ -125,9 +125,10 @@ import org.apache.hadoop.hive.ql.exec.FunctionTask;
 import org.apache.hadoop.hive.ql.exec.FunctionUtils;
 import org.apache.hadoop.hive.ql.exec.SerializationUtilities;
 import org.apache.hadoop.hive.ql.exec.Utilities;
-import org.apache.hadoop.hive.ql.exec.tez.InPlaceUpdates;
+import org.apache.hadoop.hive.ql.exec.InPlaceUpdates;
 import org.apache.hadoop.hive.ql.index.HiveIndexHandler;
 import org.apache.hadoop.hive.ql.io.AcidUtils;
+import org.apache.hadoop.hive.ql.log.PerfLogger;
 import org.apache.hadoop.hive.metastore.SynchronizedMetaStoreClient;
 import org.apache.hadoop.hive.ql.optimizer.listbucketingpruner.ListBucketingPrunerUtils;
 import org.apache.hadoop.hive.ql.plan.AddPartitionDesc;
@@ -1313,7 +1314,7 @@ public class Hive {
    * @throws HiveException
    */
   public List<String> getAllTables() throws HiveException {
-    return getAllTables(SessionState.get().getCurrentDatabase());
+    return getTablesByType(SessionState.get().getCurrentDatabase(), null, null);
   }
 
   /**
@@ -1323,7 +1324,7 @@ public class Hive {
    * @throws HiveException
    */
   public List<String> getAllTables(String dbName) throws HiveException {
-    return getTablesByPattern(dbName, ".*");
+    return getTablesByType(dbName, ".*", null);
   }
 
   /**
@@ -1336,8 +1337,8 @@ public class Hive {
    * @throws HiveException
    */
   public List<String> getTablesByPattern(String tablePattern) throws HiveException {
-    return getTablesByPattern(SessionState.get().getCurrentDatabase(),
-        tablePattern);
+    return getTablesByType(SessionState.get().getCurrentDatabase(),
+        tablePattern, null);
   }
 
   /**
@@ -1349,11 +1350,7 @@ public class Hive {
    * @throws HiveException
    */
   public List<String> getTablesByPattern(String dbName, String tablePattern) throws HiveException {
-    try {
-      return getMSC().getTables(dbName, tablePattern);
-    } catch (Exception e) {
-      throw new HiveException(e);
-    }
+    return getTablesByType(dbName, tablePattern, null);
   }
 
   /**
@@ -1369,8 +1366,38 @@ public class Hive {
    */
   public List<String> getTablesForDb(String database, String tablePattern)
       throws HiveException {
+    return getTablesByType(database, tablePattern, null);
+  }
+
+  /**
+   * Returns all existing tables of a type (VIRTUAL_VIEW|EXTERNAL_TABLE|MANAGED_TABLE) from the specified
+   * database which match the given pattern. The matching occurs as per Java regular expressions.
+   * @param dbName Database name to find the tables in. if null, uses the current database in this session.
+   * @param pattern A pattern to match for the table names.If null, returns all names from this DB.
+   * @param type The type of tables to return. VIRTUAL_VIEWS for views. If null, returns all tables and views.
+   * @return list of table names that match the pattern.
+   * @throws HiveException
+   */
+  public List<String> getTablesByType(String dbName, String pattern, TableType type)
+      throws HiveException {
+    List<String> retList = new ArrayList<String>();
+    if (dbName == null)
+      dbName = SessionState.get().getCurrentDatabase();
+
     try {
-      return getMSC().getTables(database, tablePattern);
+      if (type != null) {
+        if (pattern != null) {
+          return getMSC().getTables(dbName, pattern, type);
+        } else {
+          return getMSC().getTables(dbName, ".*", type);
+        }
+      } else {
+        if (pattern != null) {
+          return getMSC().getTables(dbName, pattern);
+        } else {
+          return getMSC().getTables(dbName, ".*");
+        }
+      }
     } catch (Exception e) {
       throw new HiveException(e);
     }
@@ -1541,6 +1568,8 @@ public class Hive {
         newPartPath = oldPartPath;
       }
       List<Path> newFiles = null;
+      PerfLogger perfLogger = SessionState.getPerfLogger();
+      perfLogger.PerfLogBegin("MoveTask", "FileMoves");
       if (replace || (oldPart == null && !isAcid)) {
         replaceFiles(tbl.getPath(), loadPath, newPartPath, oldPartPath, getConf(),
             isSrcLocal);
@@ -1552,6 +1581,7 @@ public class Hive {
         FileSystem fs = tbl.getDataLocation().getFileSystem(conf);
         Hive.copyFiles(conf, loadPath, newPartPath, fs, isSrcLocal, isAcid, newFiles);
       }
+      perfLogger.PerfLogEnd("MoveTask", "FileMoves");
       Partition newTPart = oldPart != null ? oldPart : new Partition(tbl, partSpec, newPartPath);
       alterPartitionSpecInMemory(tbl, partSpec, newTPart.getTPartition(), inheritTableSpecs, newPartPath.toString());
       validatePartition(newTPart);
@@ -1864,7 +1894,7 @@ private void constructOneLBLocationMap(FileStatus fSta,
         for (Partition p : partitionsMap.values()) {
           partNames.add(p.getName());
         }
-        metaStoreClient.addDynamicPartitions(txnId, tbl.getDbName(), tbl.getTableName(),
+        getMSC().addDynamicPartitions(txnId, tbl.getDbName(), tbl.getTableName(),
           partNames, AcidUtils.toDataOperationType(operation));
       }
       LOG.info("Loaded " + partitionsMap.size() + " partitions");
@@ -3365,7 +3395,7 @@ private void constructOneLBLocationMap(FileStatus fSta,
    * @return true if deletion successful
    * @throws IOException
    */
-  private boolean trashFiles(final FileSystem fs, final FileStatus[] statuses, final Configuration conf)
+  public static boolean trashFiles(final FileSystem fs, final FileStatus[] statuses, final Configuration conf)
       throws IOException {
     boolean result = true;
 

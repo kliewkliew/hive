@@ -63,6 +63,7 @@ import org.apache.hadoop.mapreduce.MRJobConfig;
 import org.apache.hadoop.mapreduce.TaskAttemptID;
 import org.apache.hadoop.security.Credentials;
 import org.apache.hadoop.security.token.Token;
+import org.apache.hadoop.util.StringUtils;
 import org.apache.hadoop.yarn.api.ApplicationConstants;
 import org.apache.hadoop.yarn.api.records.ApplicationAttemptId;
 import org.apache.hadoop.yarn.api.records.ApplicationId;
@@ -159,7 +160,7 @@ public class LlapBaseInputFormat<V extends WritableComparable<?>>
     SubmitWorkRequestProto request = constructSubmitWorkRequestProto(
         submitWorkInfo, llapSplit.getSplitNum(), attemptNum, llapClient.getAddress(),
         submitWorkInfo.getToken(), llapSplit.getFragmentBytes(),
-        llapSplit.getFragmentBytesSignature());
+        llapSplit.getFragmentBytesSignature(), job);
     llapClient.submitWork(request, host, llapSubmitPort);
 
     Socket socket = new Socket(host, serviceInstance.getOutputFormatPort());
@@ -207,7 +208,8 @@ public class LlapBaseInputFormat<V extends WritableComparable<?>>
       throw new IOException(e);
     }
 
-    String sql = String.format(SPLIT_QUERY, query, numSplits);
+    String escapedQuery = StringUtils.escapeString(query, ESCAPE_CHAR, escapedChars);
+    String sql = String.format(SPLIT_QUERY, escapedQuery, numSplits);
     try (
       Connection con = DriverManager.getConnection(url,user,pwd);
       Statement stmt = con.createStatement();
@@ -288,7 +290,7 @@ public class LlapBaseInputFormat<V extends WritableComparable<?>>
 
   private SubmitWorkRequestProto constructSubmitWorkRequestProto(SubmitWorkInfo submitWorkInfo,
       int taskNum, int attemptNum, InetSocketAddress address, Token<JobTokenIdentifier> token,
-      byte[] fragmentBytes, byte[] fragmentBytesSignature) throws IOException {
+      byte[] fragmentBytes, byte[] fragmentBytesSignature, JobConf job) throws IOException {
     ApplicationId appId = submitWorkInfo.getFakeAppId();
 
     // This works, assuming the executor is running within YARN.
@@ -323,7 +325,7 @@ public class LlapBaseInputFormat<V extends WritableComparable<?>>
     builder.setFragmentNumber(taskNum);
     builder.setAttemptNumber(attemptNum);
     builder.setContainerIdString(containerId.toString());
-    builder.setAmHost(address.getHostName());
+    builder.setAmHost(LlapUtil.getAmHostNameFromAddress(address, job));
     builder.setAmPort(address.getPort());
     builder.setCredentialsBinary(ByteString.copyFrom(credentialsBinary));
     builder.setFragmentRuntimeInfo(runtimeInfo.build());
@@ -341,6 +343,12 @@ public class LlapBaseInputFormat<V extends WritableComparable<?>>
     containerCredentials.writeTokenStorageToStream(containerTokens_dob);
     return ByteBuffer.wrap(containerTokens_dob.getData(), 0, containerTokens_dob.getLength());
   }
+
+  private static final char ESCAPE_CHAR = '\\';
+
+  private static final char[] escapedChars = {
+    '"', ESCAPE_CHAR
+  };
 
   private static class LlapRecordReaderTaskUmbilicalExternalResponder implements LlapTaskUmbilicalExternalResponder {
     protected LlapBaseRecordReader<?> recordReader = null;

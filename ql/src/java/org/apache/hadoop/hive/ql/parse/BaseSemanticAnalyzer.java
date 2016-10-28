@@ -63,6 +63,7 @@ import org.apache.hadoop.hive.ql.metadata.HiveException;
 import org.apache.hadoop.hive.ql.metadata.InvalidTableException;
 import org.apache.hadoop.hive.ql.metadata.Partition;
 import org.apache.hadoop.hive.ql.metadata.Table;
+import org.apache.hadoop.hive.ql.metadata.VirtualColumn;
 import org.apache.hadoop.hive.ql.optimizer.listbucketingpruner.ListBucketingPrunerUtils;
 import org.apache.hadoop.hive.ql.plan.ExprNodeConstantDesc;
 import org.apache.hadoop.hive.ql.plan.ExprNodeDesc;
@@ -670,6 +671,7 @@ public abstract class BaseSemanticAnalyzer {
        throw new SemanticException(
          ErrorMsg.INVALID_PK_SYNTAX.getMsg(" VALIDATE feature not supported yet"));
      }
+      checkColumnName(grandChild.getText());
      pkInfos.add(
        new PKInfo(
          unescapeIdentifier(grandChild.getText().toLowerCase()),
@@ -783,6 +785,7 @@ public abstract class BaseSemanticAnalyzer {
     for (int j = 0; j < child.getChild(fkIndex).getChildCount(); j++) {
       SQLForeignKey sqlForeignKey = new SQLForeignKey();
       Tree fkgrandChild = child.getChild(fkIndex).getChild(j);
+      checkColumnName(fkgrandChild.getText());
       boolean rely = child.getChild(relyIndex).getType() == HiveParser.TOK_VALIDATE;
       boolean enable =  child.getChild(relyIndex+1).getType() == HiveParser.TOK_ENABLE;
       boolean validate =  child.getChild(relyIndex+2).getType() == HiveParser.TOK_VALIDATE;
@@ -807,6 +810,12 @@ public abstract class BaseSemanticAnalyzer {
         sqlForeignKey.setFk_name(unescapeIdentifier(child.getChild(0).getText().toLowerCase()));
       }
       foreignKeys.add(sqlForeignKey);
+    }
+  }
+
+  private static void checkColumnName(String columnName) throws SemanticException {
+    if (VirtualColumn.VIRTUAL_COLUMN_NAMES.contains(columnName.toUpperCase())) {
+      throw new SemanticException(ErrorMsg.INVALID_COLUMN_NAME.getMsg(columnName));
     }
   }
 
@@ -837,6 +846,7 @@ public abstract class BaseSemanticAnalyzer {
           if(lowerCase) {
             name = name.toLowerCase();
           }
+          checkColumnName(name);
           // child 0 is the name of the column
           col.setName(unescapeIdentifier(name));
           // child 1 is the type of the column
@@ -995,7 +1005,8 @@ public abstract class BaseSemanticAnalyzer {
       assert (ast.getToken().getType() == HiveParser.TOK_TAB
           || ast.getToken().getType() == HiveParser.TOK_TABLE_PARTITION
           || ast.getToken().getType() == HiveParser.TOK_TABTYPE
-          || ast.getToken().getType() == HiveParser.TOK_CREATETABLE);
+          || ast.getToken().getType() == HiveParser.TOK_CREATETABLE
+          || ast.getToken().getType() == HiveParser.TOK_CREATE_MATERIALIZED_VIEW);
       int childIndex = 0;
       numDynParts = 0;
 
@@ -1007,7 +1018,8 @@ public abstract class BaseSemanticAnalyzer {
           tableName = conf.getVar(HiveConf.ConfVars.HIVETESTMODEPREFIX)
               + tableName;
         }
-        if (ast.getToken().getType() != HiveParser.TOK_CREATETABLE) {
+        if (ast.getToken().getType() != HiveParser.TOK_CREATETABLE &&
+            ast.getToken().getType() != HiveParser.TOK_CREATE_MATERIALIZED_VIEW) {
           tableHandle = db.getTable(tableName);
         }
       } catch (InvalidTableException ite) {
@@ -1019,7 +1031,8 @@ public abstract class BaseSemanticAnalyzer {
       }
 
       // get partition metadata if partition specified
-      if (ast.getChildCount() == 2 && ast.getToken().getType() != HiveParser.TOK_CREATETABLE) {
+      if (ast.getChildCount() == 2 && ast.getToken().getType() != HiveParser.TOK_CREATETABLE &&
+          ast.getToken().getType() != HiveParser.TOK_CREATE_MATERIALIZED_VIEW) {
         childIndex = 1;
         ASTNode partspec = (ASTNode) ast.getChild(1);
         partitions = new ArrayList<Partition>();
@@ -1594,8 +1607,12 @@ public abstract class BaseSemanticAnalyzer {
   }
 
   protected WriteEntity toWriteEntity(Path location) throws SemanticException {
+    return toWriteEntity(location,conf);
+  }
+
+  public static WriteEntity toWriteEntity(Path location, HiveConf conf) throws SemanticException {
     try {
-      Path path = tryQualifyPath(location);
+      Path path = tryQualifyPath(location,conf);
       return new WriteEntity(path, FileUtils.isLocalFile(conf, path.toUri()));
     } catch (Exception e) {
       throw new SemanticException(e);
@@ -1607,8 +1624,12 @@ public abstract class BaseSemanticAnalyzer {
   }
 
   protected ReadEntity toReadEntity(Path location) throws SemanticException {
+    return toReadEntity(location, conf);
+  }
+
+  public static ReadEntity toReadEntity(Path location, HiveConf conf) throws SemanticException {
     try {
-      Path path = tryQualifyPath(location);
+      Path path = tryQualifyPath(location, conf);
       return new ReadEntity(path, FileUtils.isLocalFile(conf, path.toUri()));
     } catch (Exception e) {
       throw new SemanticException(e);
@@ -1616,6 +1637,10 @@ public abstract class BaseSemanticAnalyzer {
   }
 
   private Path tryQualifyPath(Path path) throws IOException {
+    return tryQualifyPath(path,conf);
+  }
+
+  public static Path tryQualifyPath(Path path, HiveConf conf) throws IOException {
     try {
       return path.getFileSystem(conf).makeQualified(path);
     } catch (IOException e) {

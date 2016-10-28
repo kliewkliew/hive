@@ -33,11 +33,11 @@ public class TestMTQueries extends BaseTestQueries {
   }
 
   public void testMTQueries1() throws Exception {
-    String[] testNames = new String[] {"join1.q", "join2.q", "groupby1.q",
-        "groupby2.q", "join3.q", "input1.q", "input19.q"};
+    String[] testNames = new String[] {"join2.q", "groupby1.q", "input1.q", "input19.q"};
 
     File[] qfiles = setupQFiles(testNames);
-    QTestUtil[] qts = QTestUtil.queryListRunnerSetup(qfiles, resDir, logDir);
+    QTestUtil[] qts = QTestUtil.queryListRunnerSetup(qfiles, resDir, logDir, "q_test_init_src_with_stats.sql",
+      "q_test_cleanup_src_with_stats.sql");
     for (QTestUtil util : qts) {
       // derby fails creating multiple stats aggregator concurrently
       util.getConf().setBoolean("hive.exec.submitviachild", true);

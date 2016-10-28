@@ -61,4 +61,16 @@ public class MetricsConstant {
   // The number of Hive operations that are waiting to enter the compile block
   public static final String WAITING_COMPILE_OPS = "waiting_compile_ops";
 
+  // The number of map reduce tasks executed by the HiveServer2 since the last restart
+  public static final String HIVE_MR_TASKS = "hive_mapred_tasks";
+  // The number of spark tasks executed by the HiveServer2 since the last restart
+  public static final String HIVE_SPARK_TASKS = "hive_spark_tasks";
+  // The number of tez tasks executed by the HiveServer2 since the last restart
+  public static final String HIVE_TEZ_TASKS = "hive_tez_tasks";
+  public static final String HS2_OPEN_SESSIONS = "hs2_open_sessions";
+  public static final String HS2_ACTIVE_SESSIONS = "hs2_active_sessions";
+  public static final String HS2_ABANDONED_SESSIONS = "hs2_abandoned_sessions";
+  public static final String HS2_AVG_OPEN_SESSION_TIME = "hs2_avg_open_session_time";
+  public static final String HS2_AVG_ACTIVE_SESSION_TIME = "hs2_avg_active_session_time";
+
 }

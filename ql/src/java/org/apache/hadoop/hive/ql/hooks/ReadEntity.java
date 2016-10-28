@@ -53,6 +53,9 @@ public class ReadEntity extends Entity implements Serializable {
   // important because in that case we shouldn't acquire a lock for it or authorize the read.
   // These will be handled by the output to the table instead.
   private boolean isUpdateOrDelete = false;
+  //https://issues.apache.org/jira/browse/HIVE-15048
+  public transient boolean isFromTopLevelQuery = true;
+
 
   // For views, the entities can be nested - by default, entities are at the top level
   // Must be deterministic order set for consistent q-test output across Java versions
@@ -148,7 +151,7 @@ public class ReadEntity extends Entity implements Serializable {
 
     if (o instanceof ReadEntity) {
       ReadEntity ore = (ReadEntity) o;
-      return (toString().equalsIgnoreCase(ore.toString()));
+      return (getName().equalsIgnoreCase(ore.getName()));
     } else {
       return false;
     }

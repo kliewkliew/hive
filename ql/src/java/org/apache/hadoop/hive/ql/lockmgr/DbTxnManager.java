@@ -105,7 +105,7 @@ public class DbTxnManager extends HiveTxnManagerImpl {
       };
 
   private static AtomicInteger heartbeaterMSClientCount = new AtomicInteger(0);
-  private int heartbeaterThreadPoolSize = 0;
+  private static int heartbeaterThreadPoolSize = 0;
 
   private static SynchronizedMetaStoreClient getThreadLocalMSClient() {
     return threadLocalMSClient.get();
@@ -321,6 +321,7 @@ public class DbTxnManager extends HiveTxnManagerImpl {
       if(t != null && AcidUtils.isAcidTable(t)) {
         compBuilder.setIsAcid(true);
       }
+      compBuilder.setIsDynamicPartitionWrite(output.isDynamicPartitionWrite());
       LockComponent comp = compBuilder.build();
       LOG.debug("Adding lock component to lock request " + comp.toString());
       rqstBuilder.addLockComponent(comp);
@@ -335,9 +336,6 @@ public class DbTxnManager extends HiveTxnManagerImpl {
     }
 
     List<HiveLock> locks = new ArrayList<HiveLock>(1);
-    if(isTxnOpen()) {
-      statementId++;
-    }
     LockState lockState = lockMgr.lock(rqstBuilder.build(), queryId, isBlocking, locks);
     ctx.setHiveLocks(locks);
     return lockState;
@@ -625,6 +623,7 @@ public class DbTxnManager extends HiveTxnManagerImpl {
   public static class HeartbeaterThread extends Thread {
     public HeartbeaterThread(Runnable target, String name) {
       super(target, name);
+      setDaemon(true);
     }
 
     @Override
@@ -649,8 +648,9 @@ public class DbTxnManager extends HiveTxnManagerImpl {
     return txnId;
   }
   @Override
-  public int getStatementId() {
-    return statementId;
+  public int getWriteIdAndIncrement() {
+    assert isTxnOpen();
+    return statementId++;
   }
 
   private static long getHeartbeatInterval(Configuration conf) throws LockException {

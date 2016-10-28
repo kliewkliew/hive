@@ -1548,6 +1548,13 @@ public class MetaStoreUtils {
     return TableType.INDEX_TABLE.toString().equals(table.getTableType());
   }
 
+  public static boolean isMaterializedViewTable(Table table) {
+    if (table == null) {
+      return false;
+    }
+    return TableType.MATERIALIZED_VIEW.toString().equals(table.getTableType());
+  }
+
   /**
    * Given a map of partition column names to values, this creates a filter
    * string that can be used to call the *byFilter methods
@@ -1640,7 +1647,7 @@ public class MetaStoreUtils {
     }
     for (int i = 0; i < parameterTypes.length; i++) {
       Class<?> clazz = parameterTypes[i];
-      if (!(clazz.isInstance(initargs[i]))) {
+      if (initargs[i] != null && !(clazz.isInstance(initargs[i]))) {
         throw new IllegalArgumentException("Object : " + initargs[i]
             + " is not an instance of " + clazz);
       }

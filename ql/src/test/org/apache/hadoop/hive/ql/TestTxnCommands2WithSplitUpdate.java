@@ -18,21 +18,16 @@
 
 package org.apache.hadoop.hive.ql;
 
-import java.io.File;
 import java.util.Arrays;
 import java.util.List;
 
 import org.apache.hadoop.fs.FileStatus;
 import org.apache.hadoop.fs.FileSystem;
-import org.apache.hadoop.fs.FileUtil;
 import org.apache.hadoop.fs.Path;
 import org.apache.hadoop.hive.common.FileUtils;
-import org.apache.hadoop.hive.conf.HiveConf;
-import org.apache.hadoop.hive.metastore.txn.TxnDbUtil;
-import org.apache.hadoop.hive.ql.io.HiveInputFormat;
-import org.apache.hadoop.hive.ql.session.SessionState;
 import org.junit.Assert;
 import org.junit.Before;
+import org.junit.Ignore;
 import org.junit.Rule;
 import org.junit.Test;
 import org.junit.rules.ExpectedException;
@@ -56,42 +51,6 @@ public class TestTxnCommands2WithSplitUpdate extends TestTxnCommands2 {
   @Before
   public void setUp() throws Exception {
     setUpWithTableProperties("'transactional'='true','transactional_properties'='default'");
-  }
-
-  @Override
-  @Test
-  public void testOrcPPD() throws Exception  {
-    final String defaultUnset = "unset";
-    String oldSplitStrategyValue = hiveConf.get(HiveConf.ConfVars.HIVE_ORC_SPLIT_STRATEGY.varname, defaultUnset);
-    // TODO: Setting split strategy as 'BI' is workaround for HIVE-14448 until it is resolved.
-    hiveConf.set(HiveConf.ConfVars.HIVE_ORC_SPLIT_STRATEGY.varname, "BI");
-
-    super.testOrcPPD();
-
-    // Restore the previous value for split strategy, or unset if not previously set.
-    if (oldSplitStrategyValue.equals(defaultUnset)) {
-      hiveConf.unset(HiveConf.ConfVars.HIVE_ORC_SPLIT_STRATEGY.varname);
-    } else {
-      hiveConf.set(HiveConf.ConfVars.HIVE_ORC_SPLIT_STRATEGY.varname, oldSplitStrategyValue);
-    }
-  }
-
-  @Override
-  @Test
-  public void testOrcNoPPD() throws Exception {
-    final String defaultUnset = "unset";
-    String oldSplitStrategyValue = hiveConf.get(HiveConf.ConfVars.HIVE_ORC_SPLIT_STRATEGY.varname, defaultUnset);
-    // TODO: Setting split strategy as 'BI' is workaround for HIVE-14448 until it is resolved.
-    hiveConf.set(HiveConf.ConfVars.HIVE_ORC_SPLIT_STRATEGY.varname, "BI");
-
-    super.testOrcNoPPD();
-
-    // Restore the previous value for split strategy, or unset if not previously set.
-    if (oldSplitStrategyValue.equals(defaultUnset)) {
-      hiveConf.unset(HiveConf.ConfVars.HIVE_ORC_SPLIT_STRATEGY.varname);
-    } else {
-      hiveConf.set(HiveConf.ConfVars.HIVE_ORC_SPLIT_STRATEGY.varname, oldSplitStrategyValue);
-    }
   }
 
   @Override
@@ -581,4 +540,10 @@ public class TestTxnCommands2WithSplitUpdate extends TestTxnCommands2 {
     resultCount = 2;
     Assert.assertEquals(resultCount, Integer.parseInt(rs.get(0)));
   }
+  @Test
+  @Ignore
+  public void testMergeType2SCD01() throws Exception {}
+  @Test
+  @Ignore
+  public void testMergeType2SCD02() throws Exception {}
 }

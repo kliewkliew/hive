@@ -22,12 +22,6 @@
  */
 package org.apache.hive.beeline;
 
-import org.apache.hadoop.hive.conf.HiveConf;
-import org.apache.hadoop.hive.conf.HiveVariableSource;
-import org.apache.hadoop.hive.conf.SystemVariables;
-import org.apache.hadoop.hive.conf.VariableSubstitution;
-import org.apache.hadoop.io.IOUtils;
-
 import java.io.BufferedReader;
 import java.io.File;
 import java.io.FileInputStream;
@@ -46,8 +40,8 @@ import java.sql.DatabaseMetaData;
 import java.sql.Driver;
 import java.sql.ResultSet;
 import java.sql.SQLException;
-import java.sql.Statement;
 import java.sql.SQLWarning;
+import java.sql.Statement;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.HashMap;
@@ -60,6 +54,12 @@ import java.util.Set;
 import java.util.TreeSet;
 
 import org.apache.hadoop.hive.common.cli.ShellCmdExecutor;
+import org.apache.hadoop.hive.conf.HiveConf;
+import org.apache.hadoop.hive.conf.HiveConf.ConfVars;
+import org.apache.hadoop.hive.conf.HiveVariableSource;
+import org.apache.hadoop.hive.conf.SystemVariables;
+import org.apache.hadoop.hive.conf.VariableSubstitution;
+import org.apache.hadoop.io.IOUtils;
 import org.apache.hive.jdbc.HiveStatement;
 import org.apache.hive.jdbc.Utils;
 import org.apache.hive.jdbc.Utils.JdbcConnectionParams;
@@ -742,10 +742,12 @@ public class Commands {
   private Map<String, String> getHiveVariables() {
     Map<String, String> result = new HashMap<>();
     BufferedRows rows = getConfInternal(true);
-    while (rows.hasNext()) {
-      Rows.Row row = (Rows.Row) rows.next();
-      if (!row.isMeta) {
-        result.put(row.values[0], row.values[1]);
+    if (rows != null) {
+      while (rows.hasNext()) {
+        Rows.Row row = (Rows.Row) rows.next();
+        if (!row.isMeta) {
+          result.put(row.values[0], row.values[1]);
+        }
       }
     }
     return result;
@@ -784,13 +786,19 @@ public class Commands {
     Statement stmnt = null;
     BufferedRows rows = null;
     try {
-      boolean hasResults;
-      if (call) {
-        stmnt = beeLine.getDatabaseConnection().getConnection().prepareCall("set");
-        hasResults = ((CallableStatement) stmnt).execute();
-      } else {
-        stmnt = beeLine.createStatement();
-        hasResults = stmnt.execute("set");
+      boolean hasResults = false;
+      DatabaseConnection dbconn = beeLine.getDatabaseConnection();
+      Connection conn = null;
+      if (dbconn != null)
+        conn = dbconn.getConnection();
+      if (conn != null) {
+        if (call) {
+          stmnt = conn.prepareCall("set");
+          hasResults = ((CallableStatement) stmnt).execute();
+        } else {
+          stmnt = beeLine.createStatement();
+          hasResults = stmnt.execute("set");
+        }
       }
       if (hasResults) {
         ResultSet rs = stmnt.getResultSet();
@@ -823,7 +831,8 @@ public class Commands {
       return;
     } else {
       String[] kv = val.split("=", 2);
-      hiveConf.set(kv[0], kv[1]);
+      if (kv.length == 2)
+        hiveConf.set(kv[0], kv[1]);
     }
   }
 
@@ -1027,11 +1036,12 @@ public class Commands {
     return true;
   }
 
+  /*
+   * Check if the input line is a multi-line command which needs to read further
+   */
   public String handleMultiLineCmd(String line) throws IOException {
-    //When using -e, console reader is not initialized and command is a single line
-    while (beeLine.getConsoleReader() != null && !(line.trim().endsWith(";")) && beeLine.getOpts()
-        .isAllowMultiLineCommand()) {
-
+    //When using -e, console reader is not initialized and command is always a single line
+    while (isMultiLine(line) && beeLine.getOpts().isAllowMultiLineCommand()) {
       StringBuilder prompt = new StringBuilder(beeLine.getPrompt());
       if (!beeLine.getOpts().isSilent()) {
         for (int i = 0; i < prompt.length() - 1; i++) {
@@ -1040,8 +1050,12 @@ public class Commands {
           }
         }
       }
-
       String extra;
+      //avoid NPE below if for some reason -e argument has multi-line command
+      if (beeLine.getConsoleReader() == null) {
+        throw new RuntimeException("Console reader not initialized. This could happen when there "
+            + "is a multi-line command using -e option and which requires further reading from console");
+      }
       if (beeLine.getOpts().isSilent() && beeLine.getOpts().getScriptFile() != null) {
         extra = beeLine.getConsoleReader().readLine(null, jline.console.ConsoleReader.NULL_MASK);
       } else {
@@ -1056,6 +1070,23 @@ public class Commands {
       }
     }
     return line;
+  }
+
+  //returns true if statement represented by line is
+  //not complete and needs additional reading from
+  //console. Used in handleMultiLineCmd method
+  //assumes line would never be null when this method is called
+  private boolean isMultiLine(String line) {
+    line = line.trim();
+    if (line.endsWith(";") || beeLine.isComment(line)) {
+      return false;
+    }
+    // handles the case like line = show tables; --test comment
+    List<String> cmds = getCmdList(line, false);
+    if (!cmds.isEmpty() && cmds.get(cmds.size() - 1).trim().startsWith("--")) {
+      return false;
+    }
+    return true;
   }
 
   public boolean sql(String line, boolean entireLineAsCommand) {
@@ -1085,7 +1116,8 @@ public class Commands {
     }
 
     line = line.substring("sh".length()).trim();
-    line = substituteVariables(getHiveConf(false), line.trim());
+    if (!beeLine.isBeeLine())
+      line = substituteVariables(getHiveConf(false), line.trim());
 
     try {
       ShellCmdExecutor executor = new ShellCmdExecutor(line, beeLine.getOutputStream(),
@@ -1455,7 +1487,6 @@ public class Commands {
     return null;
   }
 
-
   public boolean connect(Properties props) throws IOException {
     String url = getProperty(props, new String[] {
         JdbcConnectionParams.PROPERTY_URL,
@@ -1497,12 +1528,13 @@ public class Commands {
 
     beeLine.info("Connecting to " + url);
     if (Utils.parsePropertyFromUrl(url, JdbcConnectionParams.AUTH_PRINCIPAL) == null) {
+      String urlForPrompt = url.substring(0, url.contains(";") ? url.indexOf(';') : url.length());
       if (username == null) {
-        username = beeLine.getConsoleReader().readLine("Enter username for " + url + ": ");
+        username = beeLine.getConsoleReader().readLine("Enter username for " + urlForPrompt + ": ");
       }
       props.setProperty(JdbcConnectionParams.AUTH_USER, username);
       if (password == null) {
-        password = beeLine.getConsoleReader().readLine("Enter password for " + url + ": ",
+        password = beeLine.getConsoleReader().readLine("Enter password for " + urlForPrompt + ": ",
           new Character('*'));
       }
       props.setProperty(JdbcConnectionParams.AUTH_PASSWD, password);
@@ -1528,7 +1560,6 @@ public class Commands {
       return beeLine.error(ioe);
     }
   }
-
 
   public boolean rehash(String line) {
     try {

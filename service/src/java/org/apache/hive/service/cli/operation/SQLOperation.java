@@ -60,7 +60,7 @@ import org.apache.hadoop.hive.ql.processors.CommandProcessorResponse;
 import org.apache.hadoop.hive.ql.session.OperationLog;
 import org.apache.hadoop.hive.ql.session.SessionState;
 import org.apache.hadoop.hive.serde.serdeConstants;
-import org.apache.hadoop.hive.serde2.SerDe;
+import org.apache.hadoop.hive.serde2.AbstractSerDe;
 import org.apache.hadoop.hive.serde2.SerDeException;
 import org.apache.hadoop.hive.serde2.SerDeUtils;
 import org.apache.hadoop.hive.serde2.lazy.LazySimpleSerDe;
@@ -93,7 +93,7 @@ public class SQLOperation extends ExecuteStatementOperation {
   private CommandProcessorResponse response;
   private TableSchema resultSchema = null;
   private Schema mResultSchema = null;
-  private SerDe serde = null;
+  private AbstractSerDe serde = null;
   private boolean fetchStarted = false;
   private volatile MetricsScope currentSQLStateScope;
   // Display for WebUI.
@@ -399,6 +399,17 @@ public class SQLOperation extends ExecuteStatementOperation {
 
   private synchronized void cleanup(OperationState state) throws HiveSQLException {
     setState(state);
+
+    if (shouldRunAsync()) {
+      Future<?> backgroundHandle = getBackgroundHandle();
+      if (backgroundHandle != null) {
+        boolean success = backgroundHandle.cancel(true);
+        if (success) {
+          LOG.info("The running operation has been successfully interrupted.");
+        }
+      }
+    }
+
     if (driver != null) {
       driver.close();
       driver.destroy();
@@ -411,13 +422,6 @@ public class SQLOperation extends ExecuteStatementOperation {
     } else {
       ss.deleteTmpOutputFile();
       ss.deleteTmpErrOutputFile();
-    }
-
-    if (shouldRunAsync()) {
-      Future<?> backgroundHandle = getBackgroundHandle();
-      if (backgroundHandle != null) {
-        backgroundHandle.cancel(true);
-      }
     }
 
     // Shutdown the timeout thread if any, while closing this operation
@@ -571,7 +575,7 @@ public class SQLOperation extends ExecuteStatementOperation {
     return rowSet;
   }
 
-  private SerDe getSerDe() throws SQLException {
+  private AbstractSerDe getSerDe() throws SQLException {
     if (serde != null) {
       return serde;
     }

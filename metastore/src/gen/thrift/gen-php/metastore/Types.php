@@ -167,6 +167,13 @@ final class FileMetadataExprType {
   );
 }
 
+final class ClientCapability {
+  const TEST_CAPABILITY = 1;
+  static public $__names = array(
+    1 => 'TEST_CAPABILITY',
+  );
+}
+
 class Version {
   static $_TSPEC;
 
@@ -11683,6 +11690,14 @@ class TxnInfo {
    * @var string
    */
   public $metaInfo = null;
+  /**
+   * @var int
+   */
+  public $startedTime = null;
+  /**
+   * @var int
+   */
+  public $lastHeartbeatTime = null;
 
   public function __construct($vals=null) {
     if (!isset(self::$_TSPEC)) {
@@ -11715,6 +11730,14 @@ class TxnInfo {
           'var' => 'metaInfo',
           'type' => TType::STRING,
           ),
+        8 => array(
+          'var' => 'startedTime',
+          'type' => TType::I64,
+          ),
+        9 => array(
+          'var' => 'lastHeartbeatTime',
+          'type' => TType::I64,
+          ),
         );
     }
     if (is_array($vals)) {
@@ -11738,6 +11761,12 @@ class TxnInfo {
       }
       if (isset($vals['metaInfo'])) {
         $this->metaInfo = $vals['metaInfo'];
+      }
+      if (isset($vals['startedTime'])) {
+        $this->startedTime = $vals['startedTime'];
+      }
+      if (isset($vals['lastHeartbeatTime'])) {
+        $this->lastHeartbeatTime = $vals['lastHeartbeatTime'];
       }
     }
   }
@@ -11810,6 +11839,20 @@ class TxnInfo {
             $xfer += $input->skip($ftype);
           }
           break;
+        case 8:
+          if ($ftype == TType::I64) {
+            $xfer += $input->readI64($this->startedTime);
+          } else {
+            $xfer += $input->skip($ftype);
+          }
+          break;
+        case 9:
+          if ($ftype == TType::I64) {
+            $xfer += $input->readI64($this->lastHeartbeatTime);
+          } else {
+            $xfer += $input->skip($ftype);
+          }
+          break;
         default:
           $xfer += $input->skip($ftype);
           break;
@@ -11856,6 +11899,16 @@ class TxnInfo {
     if ($this->metaInfo !== null) {
       $xfer += $output->writeFieldBegin('metaInfo', TType::STRING, 7);
       $xfer += $output->writeString($this->metaInfo);
+      $xfer += $output->writeFieldEnd();
+    }
+    if ($this->startedTime !== null) {
+      $xfer += $output->writeFieldBegin('startedTime', TType::I64, 8);
+      $xfer += $output->writeI64($this->startedTime);
+      $xfer += $output->writeFieldEnd();
+    }
+    if ($this->lastHeartbeatTime !== null) {
+      $xfer += $output->writeFieldBegin('lastHeartbeatTime', TType::I64, 9);
+      $xfer += $output->writeI64($this->lastHeartbeatTime);
       $xfer += $output->writeFieldEnd();
     }
     $xfer += $output->writeFieldStop();
@@ -12673,6 +12726,10 @@ class LockComponent {
    * @var bool
    */
   public $isAcid = false;
+  /**
+   * @var bool
+   */
+  public $isDynamicPartitionWrite = false;
 
   public function __construct($vals=null) {
     if (!isset(self::$_TSPEC)) {
@@ -12705,6 +12762,10 @@ class LockComponent {
           'var' => 'isAcid',
           'type' => TType::BOOL,
           ),
+        8 => array(
+          'var' => 'isDynamicPartitionWrite',
+          'type' => TType::BOOL,
+          ),
         );
     }
     if (is_array($vals)) {
@@ -12728,6 +12789,9 @@ class LockComponent {
       }
       if (isset($vals['isAcid'])) {
         $this->isAcid = $vals['isAcid'];
+      }
+      if (isset($vals['isDynamicPartitionWrite'])) {
+        $this->isDynamicPartitionWrite = $vals['isDynamicPartitionWrite'];
       }
     }
   }
@@ -12800,6 +12864,13 @@ class LockComponent {
             $xfer += $input->skip($ftype);
           }
           break;
+        case 8:
+          if ($ftype == TType::BOOL) {
+            $xfer += $input->readBool($this->isDynamicPartitionWrite);
+          } else {
+            $xfer += $input->skip($ftype);
+          }
+          break;
         default:
           $xfer += $input->skip($ftype);
           break;
@@ -12846,6 +12917,11 @@ class LockComponent {
     if ($this->isAcid !== null) {
       $xfer += $output->writeFieldBegin('isAcid', TType::BOOL, 7);
       $xfer += $output->writeBool($this->isAcid);
+      $xfer += $output->writeFieldEnd();
+    }
+    if ($this->isDynamicPartitionWrite !== null) {
+      $xfer += $output->writeFieldBegin('isDynamicPartitionWrite', TType::BOOL, 8);
+      $xfer += $output->writeBool($this->isDynamicPartitionWrite);
       $xfer += $output->writeFieldEnd();
     }
     $xfer += $output->writeFieldStop();
@@ -17484,6 +17560,568 @@ class GetAllFunctionsResponse {
           foreach ($this->functions as $iter568)
           {
             $xfer += $iter568->write($output);
+          }
+        }
+        $output->writeListEnd();
+      }
+      $xfer += $output->writeFieldEnd();
+    }
+    $xfer += $output->writeFieldStop();
+    $xfer += $output->writeStructEnd();
+    return $xfer;
+  }
+
+}
+
+class ClientCapabilities {
+  static $_TSPEC;
+
+  /**
+   * @var int[]
+   */
+  public $values = null;
+
+  public function __construct($vals=null) {
+    if (!isset(self::$_TSPEC)) {
+      self::$_TSPEC = array(
+        1 => array(
+          'var' => 'values',
+          'type' => TType::LST,
+          'etype' => TType::I32,
+          'elem' => array(
+            'type' => TType::I32,
+            ),
+          ),
+        );
+    }
+    if (is_array($vals)) {
+      if (isset($vals['values'])) {
+        $this->values = $vals['values'];
+      }
+    }
+  }
+
+  public function getName() {
+    return 'ClientCapabilities';
+  }
+
+  public function read($input)
+  {
+    $xfer = 0;
+    $fname = null;
+    $ftype = 0;
+    $fid = 0;
+    $xfer += $input->readStructBegin($fname);
+    while (true)
+    {
+      $xfer += $input->readFieldBegin($fname, $ftype, $fid);
+      if ($ftype == TType::STOP) {
+        break;
+      }
+      switch ($fid)
+      {
+        case 1:
+          if ($ftype == TType::LST) {
+            $this->values = array();
+            $_size569 = 0;
+            $_etype572 = 0;
+            $xfer += $input->readListBegin($_etype572, $_size569);
+            for ($_i573 = 0; $_i573 < $_size569; ++$_i573)
+            {
+              $elem574 = null;
+              $xfer += $input->readI32($elem574);
+              $this->values []= $elem574;
+            }
+            $xfer += $input->readListEnd();
+          } else {
+            $xfer += $input->skip($ftype);
+          }
+          break;
+        default:
+          $xfer += $input->skip($ftype);
+          break;
+      }
+      $xfer += $input->readFieldEnd();
+    }
+    $xfer += $input->readStructEnd();
+    return $xfer;
+  }
+
+  public function write($output) {
+    $xfer = 0;
+    $xfer += $output->writeStructBegin('ClientCapabilities');
+    if ($this->values !== null) {
+      if (!is_array($this->values)) {
+        throw new TProtocolException('Bad type in structure.', TProtocolException::INVALID_DATA);
+      }
+      $xfer += $output->writeFieldBegin('values', TType::LST, 1);
+      {
+        $output->writeListBegin(TType::I32, count($this->values));
+        {
+          foreach ($this->values as $iter575)
+          {
+            $xfer += $output->writeI32($iter575);
+          }
+        }
+        $output->writeListEnd();
+      }
+      $xfer += $output->writeFieldEnd();
+    }
+    $xfer += $output->writeFieldStop();
+    $xfer += $output->writeStructEnd();
+    return $xfer;
+  }
+
+}
+
+class GetTableRequest {
+  static $_TSPEC;
+
+  /**
+   * @var string
+   */
+  public $dbName = null;
+  /**
+   * @var string
+   */
+  public $tblName = null;
+  /**
+   * @var \metastore\ClientCapabilities
+   */
+  public $capabilities = null;
+
+  public function __construct($vals=null) {
+    if (!isset(self::$_TSPEC)) {
+      self::$_TSPEC = array(
+        1 => array(
+          'var' => 'dbName',
+          'type' => TType::STRING,
+          ),
+        2 => array(
+          'var' => 'tblName',
+          'type' => TType::STRING,
+          ),
+        3 => array(
+          'var' => 'capabilities',
+          'type' => TType::STRUCT,
+          'class' => '\metastore\ClientCapabilities',
+          ),
+        );
+    }
+    if (is_array($vals)) {
+      if (isset($vals['dbName'])) {
+        $this->dbName = $vals['dbName'];
+      }
+      if (isset($vals['tblName'])) {
+        $this->tblName = $vals['tblName'];
+      }
+      if (isset($vals['capabilities'])) {
+        $this->capabilities = $vals['capabilities'];
+      }
+    }
+  }
+
+  public function getName() {
+    return 'GetTableRequest';
+  }
+
+  public function read($input)
+  {
+    $xfer = 0;
+    $fname = null;
+    $ftype = 0;
+    $fid = 0;
+    $xfer += $input->readStructBegin($fname);
+    while (true)
+    {
+      $xfer += $input->readFieldBegin($fname, $ftype, $fid);
+      if ($ftype == TType::STOP) {
+        break;
+      }
+      switch ($fid)
+      {
+        case 1:
+          if ($ftype == TType::STRING) {
+            $xfer += $input->readString($this->dbName);
+          } else {
+            $xfer += $input->skip($ftype);
+          }
+          break;
+        case 2:
+          if ($ftype == TType::STRING) {
+            $xfer += $input->readString($this->tblName);
+          } else {
+            $xfer += $input->skip($ftype);
+          }
+          break;
+        case 3:
+          if ($ftype == TType::STRUCT) {
+            $this->capabilities = new \metastore\ClientCapabilities();
+            $xfer += $this->capabilities->read($input);
+          } else {
+            $xfer += $input->skip($ftype);
+          }
+          break;
+        default:
+          $xfer += $input->skip($ftype);
+          break;
+      }
+      $xfer += $input->readFieldEnd();
+    }
+    $xfer += $input->readStructEnd();
+    return $xfer;
+  }
+
+  public function write($output) {
+    $xfer = 0;
+    $xfer += $output->writeStructBegin('GetTableRequest');
+    if ($this->dbName !== null) {
+      $xfer += $output->writeFieldBegin('dbName', TType::STRING, 1);
+      $xfer += $output->writeString($this->dbName);
+      $xfer += $output->writeFieldEnd();
+    }
+    if ($this->tblName !== null) {
+      $xfer += $output->writeFieldBegin('tblName', TType::STRING, 2);
+      $xfer += $output->writeString($this->tblName);
+      $xfer += $output->writeFieldEnd();
+    }
+    if ($this->capabilities !== null) {
+      if (!is_object($this->capabilities)) {
+        throw new TProtocolException('Bad type in structure.', TProtocolException::INVALID_DATA);
+      }
+      $xfer += $output->writeFieldBegin('capabilities', TType::STRUCT, 3);
+      $xfer += $this->capabilities->write($output);
+      $xfer += $output->writeFieldEnd();
+    }
+    $xfer += $output->writeFieldStop();
+    $xfer += $output->writeStructEnd();
+    return $xfer;
+  }
+
+}
+
+class GetTableResult {
+  static $_TSPEC;
+
+  /**
+   * @var \metastore\Table
+   */
+  public $table = null;
+
+  public function __construct($vals=null) {
+    if (!isset(self::$_TSPEC)) {
+      self::$_TSPEC = array(
+        1 => array(
+          'var' => 'table',
+          'type' => TType::STRUCT,
+          'class' => '\metastore\Table',
+          ),
+        );
+    }
+    if (is_array($vals)) {
+      if (isset($vals['table'])) {
+        $this->table = $vals['table'];
+      }
+    }
+  }
+
+  public function getName() {
+    return 'GetTableResult';
+  }
+
+  public function read($input)
+  {
+    $xfer = 0;
+    $fname = null;
+    $ftype = 0;
+    $fid = 0;
+    $xfer += $input->readStructBegin($fname);
+    while (true)
+    {
+      $xfer += $input->readFieldBegin($fname, $ftype, $fid);
+      if ($ftype == TType::STOP) {
+        break;
+      }
+      switch ($fid)
+      {
+        case 1:
+          if ($ftype == TType::STRUCT) {
+            $this->table = new \metastore\Table();
+            $xfer += $this->table->read($input);
+          } else {
+            $xfer += $input->skip($ftype);
+          }
+          break;
+        default:
+          $xfer += $input->skip($ftype);
+          break;
+      }
+      $xfer += $input->readFieldEnd();
+    }
+    $xfer += $input->readStructEnd();
+    return $xfer;
+  }
+
+  public function write($output) {
+    $xfer = 0;
+    $xfer += $output->writeStructBegin('GetTableResult');
+    if ($this->table !== null) {
+      if (!is_object($this->table)) {
+        throw new TProtocolException('Bad type in structure.', TProtocolException::INVALID_DATA);
+      }
+      $xfer += $output->writeFieldBegin('table', TType::STRUCT, 1);
+      $xfer += $this->table->write($output);
+      $xfer += $output->writeFieldEnd();
+    }
+    $xfer += $output->writeFieldStop();
+    $xfer += $output->writeStructEnd();
+    return $xfer;
+  }
+
+}
+
+class GetTablesRequest {
+  static $_TSPEC;
+
+  /**
+   * @var string
+   */
+  public $dbName = null;
+  /**
+   * @var string[]
+   */
+  public $tblNames = null;
+  /**
+   * @var \metastore\ClientCapabilities
+   */
+  public $capabilities = null;
+
+  public function __construct($vals=null) {
+    if (!isset(self::$_TSPEC)) {
+      self::$_TSPEC = array(
+        1 => array(
+          'var' => 'dbName',
+          'type' => TType::STRING,
+          ),
+        2 => array(
+          'var' => 'tblNames',
+          'type' => TType::LST,
+          'etype' => TType::STRING,
+          'elem' => array(
+            'type' => TType::STRING,
+            ),
+          ),
+        3 => array(
+          'var' => 'capabilities',
+          'type' => TType::STRUCT,
+          'class' => '\metastore\ClientCapabilities',
+          ),
+        );
+    }
+    if (is_array($vals)) {
+      if (isset($vals['dbName'])) {
+        $this->dbName = $vals['dbName'];
+      }
+      if (isset($vals['tblNames'])) {
+        $this->tblNames = $vals['tblNames'];
+      }
+      if (isset($vals['capabilities'])) {
+        $this->capabilities = $vals['capabilities'];
+      }
+    }
+  }
+
+  public function getName() {
+    return 'GetTablesRequest';
+  }
+
+  public function read($input)
+  {
+    $xfer = 0;
+    $fname = null;
+    $ftype = 0;
+    $fid = 0;
+    $xfer += $input->readStructBegin($fname);
+    while (true)
+    {
+      $xfer += $input->readFieldBegin($fname, $ftype, $fid);
+      if ($ftype == TType::STOP) {
+        break;
+      }
+      switch ($fid)
+      {
+        case 1:
+          if ($ftype == TType::STRING) {
+            $xfer += $input->readString($this->dbName);
+          } else {
+            $xfer += $input->skip($ftype);
+          }
+          break;
+        case 2:
+          if ($ftype == TType::LST) {
+            $this->tblNames = array();
+            $_size576 = 0;
+            $_etype579 = 0;
+            $xfer += $input->readListBegin($_etype579, $_size576);
+            for ($_i580 = 0; $_i580 < $_size576; ++$_i580)
+            {
+              $elem581 = null;
+              $xfer += $input->readString($elem581);
+              $this->tblNames []= $elem581;
+            }
+            $xfer += $input->readListEnd();
+          } else {
+            $xfer += $input->skip($ftype);
+          }
+          break;
+        case 3:
+          if ($ftype == TType::STRUCT) {
+            $this->capabilities = new \metastore\ClientCapabilities();
+            $xfer += $this->capabilities->read($input);
+          } else {
+            $xfer += $input->skip($ftype);
+          }
+          break;
+        default:
+          $xfer += $input->skip($ftype);
+          break;
+      }
+      $xfer += $input->readFieldEnd();
+    }
+    $xfer += $input->readStructEnd();
+    return $xfer;
+  }
+
+  public function write($output) {
+    $xfer = 0;
+    $xfer += $output->writeStructBegin('GetTablesRequest');
+    if ($this->dbName !== null) {
+      $xfer += $output->writeFieldBegin('dbName', TType::STRING, 1);
+      $xfer += $output->writeString($this->dbName);
+      $xfer += $output->writeFieldEnd();
+    }
+    if ($this->tblNames !== null) {
+      if (!is_array($this->tblNames)) {
+        throw new TProtocolException('Bad type in structure.', TProtocolException::INVALID_DATA);
+      }
+      $xfer += $output->writeFieldBegin('tblNames', TType::LST, 2);
+      {
+        $output->writeListBegin(TType::STRING, count($this->tblNames));
+        {
+          foreach ($this->tblNames as $iter582)
+          {
+            $xfer += $output->writeString($iter582);
+          }
+        }
+        $output->writeListEnd();
+      }
+      $xfer += $output->writeFieldEnd();
+    }
+    if ($this->capabilities !== null) {
+      if (!is_object($this->capabilities)) {
+        throw new TProtocolException('Bad type in structure.', TProtocolException::INVALID_DATA);
+      }
+      $xfer += $output->writeFieldBegin('capabilities', TType::STRUCT, 3);
+      $xfer += $this->capabilities->write($output);
+      $xfer += $output->writeFieldEnd();
+    }
+    $xfer += $output->writeFieldStop();
+    $xfer += $output->writeStructEnd();
+    return $xfer;
+  }
+
+}
+
+class GetTablesResult {
+  static $_TSPEC;
+
+  /**
+   * @var \metastore\Table[]
+   */
+  public $tables = null;
+
+  public function __construct($vals=null) {
+    if (!isset(self::$_TSPEC)) {
+      self::$_TSPEC = array(
+        1 => array(
+          'var' => 'tables',
+          'type' => TType::LST,
+          'etype' => TType::STRUCT,
+          'elem' => array(
+            'type' => TType::STRUCT,
+            'class' => '\metastore\Table',
+            ),
+          ),
+        );
+    }
+    if (is_array($vals)) {
+      if (isset($vals['tables'])) {
+        $this->tables = $vals['tables'];
+      }
+    }
+  }
+
+  public function getName() {
+    return 'GetTablesResult';
+  }
+
+  public function read($input)
+  {
+    $xfer = 0;
+    $fname = null;
+    $ftype = 0;
+    $fid = 0;
+    $xfer += $input->readStructBegin($fname);
+    while (true)
+    {
+      $xfer += $input->readFieldBegin($fname, $ftype, $fid);
+      if ($ftype == TType::STOP) {
+        break;
+      }
+      switch ($fid)
+      {
+        case 1:
+          if ($ftype == TType::LST) {
+            $this->tables = array();
+            $_size583 = 0;
+            $_etype586 = 0;
+            $xfer += $input->readListBegin($_etype586, $_size583);
+            for ($_i587 = 0; $_i587 < $_size583; ++$_i587)
+            {
+              $elem588 = null;
+              $elem588 = new \metastore\Table();
+              $xfer += $elem588->read($input);
+              $this->tables []= $elem588;
+            }
+            $xfer += $input->readListEnd();
+          } else {
+            $xfer += $input->skip($ftype);
+          }
+          break;
+        default:
+          $xfer += $input->skip($ftype);
+          break;
+      }
+      $xfer += $input->readFieldEnd();
+    }
+    $xfer += $input->readStructEnd();
+    return $xfer;
+  }
+
+  public function write($output) {
+    $xfer = 0;
+    $xfer += $output->writeStructBegin('GetTablesResult');
+    if ($this->tables !== null) {
+      if (!is_array($this->tables)) {
+        throw new TProtocolException('Bad type in structure.', TProtocolException::INVALID_DATA);
+      }
+      $xfer += $output->writeFieldBegin('tables', TType::LST, 1);
+      {
+        $output->writeListBegin(TType::STRUCT, count($this->tables));
+        {
+          foreach ($this->tables as $iter589)
+          {
+            $xfer += $iter589->write($output);
           }
         }
         $output->writeListEnd();

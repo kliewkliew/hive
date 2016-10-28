@@ -26,6 +26,8 @@ import java.util.LinkedList;
 import java.util.List;
 import java.util.Map;
 
+import org.apache.hadoop.hive.common.metrics.common.Metrics;
+import org.apache.hadoop.hive.common.metrics.common.MetricsConstant;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.apache.hadoop.hive.conf.HiveConf;
@@ -96,6 +98,7 @@ public class SparkTask extends Task<SparkWork> {
       perfLogger.PerfLogEnd(CLASS_NAME, PerfLogger.SPARK_SUBMIT_JOB);
 
       addToHistory(jobRef);
+      this.jobID = jobRef.getSparkJobStatus().getAppID();
       rc = jobRef.monitorJob();
       SparkJobStatus sparkJobStatus = jobRef.getSparkJobStatus();
       if (rc == 0) {
@@ -110,6 +113,9 @@ public class SparkTask extends Task<SparkWork> {
         // ideally also cancel the app request here. But w/o facilities from Spark or YARN,
         // it's difficult to do it on hive side alone. See HIVE-12650.
         jobRef.cancelJob();
+      }
+      if (this.jobID == null) {
+        this.jobID = sparkJobStatus.getAppID();
       }
       sparkJobStatus.cleanup();
     } catch (Exception e) {
@@ -177,6 +183,11 @@ public class SparkTask extends Task<SparkWork> {
       }
     }
     return rc;
+  }
+
+  @Override
+  public void updateTaskMetrics(Metrics metrics) {
+    metrics.incrementCounter(MetricsConstant.HIVE_SPARK_TASKS);
   }
 
   @Override

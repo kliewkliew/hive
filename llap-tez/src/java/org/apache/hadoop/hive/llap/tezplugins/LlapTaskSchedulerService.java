@@ -15,7 +15,9 @@
 package org.apache.hadoop.hive.llap.tezplugins;
 
 import java.io.IOException;
+import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.Collection;
 import java.util.Comparator;
 import java.util.EnumSet;
 import java.util.HashMap;
@@ -265,7 +267,7 @@ public class LlapTaskSchedulerService extends TaskScheduler {
         new ThreadFactoryBuilder().setDaemon(true).setNameFormat("LlapScheduler").build());
     schedulerExecutor = MoreExecutors.listeningDecorator(schedulerExecutorServiceRaw);
 
-    if (initMetrics) {
+    if (initMetrics && !conf.getBoolean(ConfVars.HIVE_IN_TEST.varname, false)) {
       // Initialize the metrics system
       LlapMetricsSystem.initialize("LlapTaskScheduler");
       this.pauseMonitor = new JvmPauseMonitor(conf);
@@ -313,7 +315,7 @@ public class LlapTaskSchedulerService extends TaskScheduler {
       registry.start();
       registry.registerStateChangeListener(new NodeStateChangeListener());
       activeInstances = registry.getInstances();
-      for (ServiceInstance inst : activeInstances.getAll().values()) {
+      for (ServiceInstance inst : activeInstances.getAll()) {
         addNode(inst, new NodeInfo(inst, nodeBlacklistConf, clock, numSchedulableTasksPerNode,
             metrics));
       }
@@ -326,21 +328,21 @@ public class LlapTaskSchedulerService extends TaskScheduler {
     private final Logger LOG = LoggerFactory.getLogger(NodeStateChangeListener.class);
 
     @Override
-    public void onCreate(final ServiceInstance serviceInstance) {
+    public void onCreate(ServiceInstance serviceInstance) {
       addNode(serviceInstance, new NodeInfo(serviceInstance, nodeBlacklistConf, clock,
           numSchedulableTasksPerNode, metrics));
       LOG.info("Added node with identity: {}", serviceInstance.getWorkerIdentity());
     }
 
     @Override
-    public void onUpdate(final ServiceInstance serviceInstance) {
+    public void onUpdate(ServiceInstance serviceInstance) {
       instanceToNodeMap.put(serviceInstance.getWorkerIdentity(), new NodeInfo(serviceInstance,
           nodeBlacklistConf, clock, numSchedulableTasksPerNode, metrics));
       LOG.info("Updated node with identity: {}", serviceInstance.getWorkerIdentity());
     }
 
     @Override
-    public void onRemove(final ServiceInstance serviceInstance) {
+    public void onRemove(ServiceInstance serviceInstance) {
       // FIXME: disabling this for now
       // instanceToNodeMap.remove(serviceInstance.getWorkerIdentity());
       LOG.info("Removed node with identity: {}", serviceInstance.getWorkerIdentity());
@@ -444,7 +446,7 @@ public class LlapTaskSchedulerService extends TaskScheduler {
     readLock.lock();
     try {
       int numInstancesFound = 0;
-      for (ServiceInstance inst : activeInstances.getAll().values()) {
+      for (ServiceInstance inst : activeInstances.getAll()) {
         if (inst.isAlive()) {
           Resource r = inst.getResource();
           memory += r.getMemory();
@@ -494,7 +496,7 @@ public class LlapTaskSchedulerService extends TaskScheduler {
     readLock.lock();
     try {
       int n = 0;
-      for (ServiceInstance inst : activeInstances.getAll().values()) {
+      for (ServiceInstance inst : activeInstances.getAll()) {
         if (inst.isAlive()) {
           n++;
         }
@@ -781,27 +783,26 @@ public class LlapTaskSchedulerService extends TaskScheduler {
         }
       }
       /* fall through - miss in locality (random scheduling) or no locality-requested */
-      Entry<String, NodeInfo>[] all = instanceToNodeMap.entrySet().toArray(new Entry[0]);
-      // Check again
+      Collection<ServiceInstance> instances = activeInstances.getAll();
+      ArrayList<NodeInfo> all = new ArrayList<>(instances.size());
+      for (ServiceInstance inst : instances) {
+        NodeInfo nodeInfo = instanceToNodeMap.get(inst.getWorkerIdentity());
+        if (nodeInfo != null && nodeInfo.canAcceptTask()) {
+          all.add(nodeInfo);
+        }
+      }
       if (LOG.isDebugEnabled()) {
         LOG.debug("Attempting random allocation for task={}", request.task);
       }
-      if (all.length > 0) {
-        int n = random.nextInt(all.length);
-        // start at random offset and iterate whole list
-        for (int i = 0; i < all.length; i++) {
-          Entry<String, NodeInfo> inst = all[(i + n) % all.length];
-          if (inst.getValue().canAcceptTask()) {
-            LOG.info(
-                "Assigning " + nodeToString(inst.getValue().getServiceInstance(), inst.getValue()) +
-                    " when looking for any host, from #hosts=" + all.length + ", requestedHosts=" +
-                    ((requestedHosts == null || requestedHosts.length == 0) ? "null" :
-                        Arrays.toString(requestedHosts)));
-            return new SelectHostResult(inst.getValue().getServiceInstance(), inst.getValue());
-          }
-        }
+      if (all.isEmpty()) {
+        return SELECT_HOST_RESULT_DELAYED_RESOURCES;
       }
-      return SELECT_HOST_RESULT_DELAYED_RESOURCES;
+      NodeInfo randomNode = all.get(random.nextInt(all.size()));
+      LOG.info("Assigning " + nodeToString(randomNode.getServiceInstance(), randomNode)
+          + " when looking for any host, from #hosts=" + all.size() + ", requestedHosts="
+          + ((requestedHosts == null || requestedHosts.length == 0)
+              ? "null" : Arrays.toString(requestedHosts)));
+      return new SelectHostResult(randomNode.getServiceInstance(), randomNode);
     } finally {
       readLock.unlock();
     }
@@ -811,7 +812,7 @@ public class LlapTaskSchedulerService extends TaskScheduler {
     /* check again whether nodes are disabled or just missing */
     writeLock.lock();
     try {
-      for (ServiceInstance inst : activeInstances.getAll().values()) {
+      for (ServiceInstance inst : activeInstances.getAll()) {
         if (inst.isAlive() && instanceToNodeMap.containsKey(inst.getWorkerIdentity()) == false) {
           /* that's a good node, not added to the allocations yet */
           LOG.info("Found a new node: " + inst + ".");
@@ -825,7 +826,6 @@ public class LlapTaskSchedulerService extends TaskScheduler {
   }
 
   private void addNode(ServiceInstance inst, NodeInfo node) {
-    LOG.info("Adding node: " + inst);
     // we have just added a new node. Signal timeout monitor to reset timer
     if (activeInstances.size() == 1) {
       LOG.info("New node added. Signalling scheduler timeout monitor thread to stop timer.");

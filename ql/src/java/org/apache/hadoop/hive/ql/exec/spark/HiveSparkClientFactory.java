@@ -28,12 +28,14 @@ import java.util.Set;
 
 import org.apache.commons.compress.utils.CharsetNames;
 import org.apache.hadoop.fs.CommonConfigurationKeysPublic;
+import org.apache.hadoop.hive.common.LogUtils;
 import org.apache.hadoop.hive.ql.exec.Utilities;
 import org.apache.hadoop.hive.ql.session.SessionState;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.apache.hadoop.hbase.HBaseConfiguration;
 import org.apache.hadoop.hive.conf.HiveConf;
+import org.apache.hadoop.hive.conf.HiveConfUtil;
 import org.apache.hadoop.hive.ql.exec.vector.VectorizedRowBatch;
 import org.apache.hadoop.hive.ql.io.HiveKey;
 import org.apache.hadoop.io.BytesWritable;
@@ -99,7 +101,7 @@ public class HiveSparkClientFactory {
             sparkConf.put(propertyName, properties.getProperty(propertyName));
             LOG.info(String.format(
               "load spark property from %s (%s -> %s).",
-              SPARK_DEFAULT_CONF_FILE, propertyName, Utilities.maskIfPassword(propertyName,value)));
+              SPARK_DEFAULT_CONF_FILE, propertyName, LogUtils.maskIfPassword(propertyName,value)));
           }
         }
       }
@@ -136,7 +138,7 @@ public class HiveSparkClientFactory {
         sparkConf.put(propertyName, value);
         LOG.info(String.format(
           "load spark property from hive configuration (%s -> %s).",
-          propertyName, Utilities.maskIfPassword(propertyName,value)));
+          propertyName, LogUtils.maskIfPassword(propertyName,value)));
       } else if (propertyName.startsWith("yarn") &&
         (sparkMaster.equals("yarn-client") || sparkMaster.equals("yarn-cluster"))) {
         String value = hiveConf.get(propertyName);
@@ -146,7 +148,7 @@ public class HiveSparkClientFactory {
         sparkConf.put("spark.hadoop." + propertyName, value);
         LOG.info(String.format(
           "load yarn property from hive configuration in %s mode (%s -> %s).",
-          sparkMaster, propertyName, Utilities.maskIfPassword(propertyName,value)));
+          sparkMaster, propertyName, LogUtils.maskIfPassword(propertyName,value)));
       } else if (propertyName.equals(CommonConfigurationKeysPublic.FS_DEFAULT_NAME_KEY)) {
         String value = hiveConf.get(propertyName);
         if (value != null && !value.isEmpty()) {
@@ -159,7 +161,7 @@ public class HiveSparkClientFactory {
         String value = hiveConf.get(propertyName);
         sparkConf.put("spark.hadoop." + propertyName, value);
         LOG.info(String.format(
-          "load HBase configuration (%s -> %s).", propertyName, Utilities.maskIfPassword(propertyName,value)));
+          "load HBase configuration (%s -> %s).", propertyName, LogUtils.maskIfPassword(propertyName,value)));
       }
 
       if (RpcConfiguration.HIVE_SPARK_RSC_CONFIGS.contains(propertyName)) {
@@ -167,7 +169,7 @@ public class HiveSparkClientFactory {
         sparkConf.put(propertyName, value);
         LOG.info(String.format(
           "load RPC property from hive configuration (%s -> %s).",
-          propertyName, Utilities.maskIfPassword(propertyName,value)));
+          propertyName, LogUtils.maskIfPassword(propertyName,value)));
       }
     }
 
@@ -194,7 +196,20 @@ public class HiveSparkClientFactory {
       sparkConf.put(SPARK_WAIT_APP_COMPLETE, "false");
     }
 
+    // Set the credential provider passwords if found, if there is job specific password
+    // the credential provider location is set directly in the execute method of LocalSparkClient
+    // and submit method of RemoteHiveSparkClient when the job config is created
+    String password = HiveConfUtil.getJobCredentialProviderPassword(hiveConf);
+    if(password != null) {
+      addCredentialProviderPassword(sparkConf, password);
+    }
     return sparkConf;
+  }
+
+  private static void addCredentialProviderPassword(Map<String, String> sparkConf,
+      String jobCredstorePassword) {
+    sparkConf.put("spark.yarn.appMasterEnv.HADOOP_CREDSTORE_PASSWORD", jobCredstorePassword);
+    sparkConf.put("spark.executorEnv.HADOOP_CREDSTORE_PASSWORD", jobCredstorePassword);
   }
 
   static SparkConf generateSparkConf(Map<String, String> conf) {

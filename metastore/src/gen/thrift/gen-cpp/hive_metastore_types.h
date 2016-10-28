@@ -158,6 +158,14 @@ struct FileMetadataExprType {
 
 extern const std::map<int, const char*> _FileMetadataExprType_VALUES_TO_NAMES;
 
+struct ClientCapability {
+  enum type {
+    TEST_CAPABILITY = 1
+  };
+};
+
+extern const std::map<int, const char*> _ClientCapability_VALUES_TO_NAMES;
+
 class Version;
 
 class FieldSchema;
@@ -385,6 +393,16 @@ class CacheFileMetadataResult;
 class CacheFileMetadataRequest;
 
 class GetAllFunctionsResponse;
+
+class ClientCapabilities;
+
+class GetTableRequest;
+
+class GetTableResult;
+
+class GetTablesRequest;
+
+class GetTablesResult;
 
 class TableMeta;
 
@@ -4753,10 +4771,12 @@ inline std::ostream& operator<<(std::ostream& out, const Function& obj)
 }
 
 typedef struct _TxnInfo__isset {
-  _TxnInfo__isset() : agentInfo(true), heartbeatCount(true), metaInfo(false) {}
+  _TxnInfo__isset() : agentInfo(true), heartbeatCount(true), metaInfo(false), startedTime(false), lastHeartbeatTime(false) {}
   bool agentInfo :1;
   bool heartbeatCount :1;
   bool metaInfo :1;
+  bool startedTime :1;
+  bool lastHeartbeatTime :1;
 } _TxnInfo__isset;
 
 class TxnInfo {
@@ -4764,7 +4784,7 @@ class TxnInfo {
 
   TxnInfo(const TxnInfo&);
   TxnInfo& operator=(const TxnInfo&);
-  TxnInfo() : id(0), state((TxnState::type)0), user(), hostname(), agentInfo("Unknown"), heartbeatCount(0), metaInfo() {
+  TxnInfo() : id(0), state((TxnState::type)0), user(), hostname(), agentInfo("Unknown"), heartbeatCount(0), metaInfo(), startedTime(0), lastHeartbeatTime(0) {
   }
 
   virtual ~TxnInfo() throw();
@@ -4775,6 +4795,8 @@ class TxnInfo {
   std::string agentInfo;
   int32_t heartbeatCount;
   std::string metaInfo;
+  int64_t startedTime;
+  int64_t lastHeartbeatTime;
 
   _TxnInfo__isset __isset;
 
@@ -4791,6 +4813,10 @@ class TxnInfo {
   void __set_heartbeatCount(const int32_t val);
 
   void __set_metaInfo(const std::string& val);
+
+  void __set_startedTime(const int64_t val);
+
+  void __set_lastHeartbeatTime(const int64_t val);
 
   bool operator == (const TxnInfo & rhs) const
   {
@@ -4813,6 +4839,14 @@ class TxnInfo {
     if (__isset.metaInfo != rhs.__isset.metaInfo)
       return false;
     else if (__isset.metaInfo && !(metaInfo == rhs.metaInfo))
+      return false;
+    if (__isset.startedTime != rhs.__isset.startedTime)
+      return false;
+    else if (__isset.startedTime && !(startedTime == rhs.startedTime))
+      return false;
+    if (__isset.lastHeartbeatTime != rhs.__isset.lastHeartbeatTime)
+      return false;
+    else if (__isset.lastHeartbeatTime && !(lastHeartbeatTime == rhs.lastHeartbeatTime))
       return false;
     return true;
   }
@@ -5163,11 +5197,12 @@ inline std::ostream& operator<<(std::ostream& out, const CommitTxnRequest& obj)
 }
 
 typedef struct _LockComponent__isset {
-  _LockComponent__isset() : tablename(false), partitionname(false), operationType(true), isAcid(true) {}
+  _LockComponent__isset() : tablename(false), partitionname(false), operationType(true), isAcid(true), isDynamicPartitionWrite(true) {}
   bool tablename :1;
   bool partitionname :1;
   bool operationType :1;
   bool isAcid :1;
+  bool isDynamicPartitionWrite :1;
 } _LockComponent__isset;
 
 class LockComponent {
@@ -5175,7 +5210,7 @@ class LockComponent {
 
   LockComponent(const LockComponent&);
   LockComponent& operator=(const LockComponent&);
-  LockComponent() : type((LockType::type)0), level((LockLevel::type)0), dbname(), tablename(), partitionname(), operationType((DataOperationType::type)5), isAcid(false) {
+  LockComponent() : type((LockType::type)0), level((LockLevel::type)0), dbname(), tablename(), partitionname(), operationType((DataOperationType::type)5), isAcid(false), isDynamicPartitionWrite(false) {
     operationType = (DataOperationType::type)5;
 
   }
@@ -5188,6 +5223,7 @@ class LockComponent {
   std::string partitionname;
   DataOperationType::type operationType;
   bool isAcid;
+  bool isDynamicPartitionWrite;
 
   _LockComponent__isset __isset;
 
@@ -5204,6 +5240,8 @@ class LockComponent {
   void __set_operationType(const DataOperationType::type val);
 
   void __set_isAcid(const bool val);
+
+  void __set_isDynamicPartitionWrite(const bool val);
 
   bool operator == (const LockComponent & rhs) const
   {
@@ -5228,6 +5266,10 @@ class LockComponent {
     if (__isset.isAcid != rhs.__isset.isAcid)
       return false;
     else if (__isset.isAcid && !(isAcid == rhs.isAcid))
+      return false;
+    if (__isset.isDynamicPartitionWrite != rhs.__isset.isDynamicPartitionWrite)
+      return false;
+    else if (__isset.isDynamicPartitionWrite && !(isDynamicPartitionWrite == rhs.isDynamicPartitionWrite))
       return false;
     return true;
   }
@@ -7200,6 +7242,245 @@ class GetAllFunctionsResponse {
 void swap(GetAllFunctionsResponse &a, GetAllFunctionsResponse &b);
 
 inline std::ostream& operator<<(std::ostream& out, const GetAllFunctionsResponse& obj)
+{
+  obj.printTo(out);
+  return out;
+}
+
+
+class ClientCapabilities {
+ public:
+
+  ClientCapabilities(const ClientCapabilities&);
+  ClientCapabilities& operator=(const ClientCapabilities&);
+  ClientCapabilities() {
+  }
+
+  virtual ~ClientCapabilities() throw();
+  std::vector<ClientCapability::type>  values;
+
+  void __set_values(const std::vector<ClientCapability::type> & val);
+
+  bool operator == (const ClientCapabilities & rhs) const
+  {
+    if (!(values == rhs.values))
+      return false;
+    return true;
+  }
+  bool operator != (const ClientCapabilities &rhs) const {
+    return !(*this == rhs);
+  }
+
+  bool operator < (const ClientCapabilities & ) const;
+
+  uint32_t read(::apache::thrift::protocol::TProtocol* iprot);
+  uint32_t write(::apache::thrift::protocol::TProtocol* oprot) const;
+
+  virtual void printTo(std::ostream& out) const;
+};
+
+void swap(ClientCapabilities &a, ClientCapabilities &b);
+
+inline std::ostream& operator<<(std::ostream& out, const ClientCapabilities& obj)
+{
+  obj.printTo(out);
+  return out;
+}
+
+typedef struct _GetTableRequest__isset {
+  _GetTableRequest__isset() : capabilities(false) {}
+  bool capabilities :1;
+} _GetTableRequest__isset;
+
+class GetTableRequest {
+ public:
+
+  GetTableRequest(const GetTableRequest&);
+  GetTableRequest& operator=(const GetTableRequest&);
+  GetTableRequest() : dbName(), tblName() {
+  }
+
+  virtual ~GetTableRequest() throw();
+  std::string dbName;
+  std::string tblName;
+  ClientCapabilities capabilities;
+
+  _GetTableRequest__isset __isset;
+
+  void __set_dbName(const std::string& val);
+
+  void __set_tblName(const std::string& val);
+
+  void __set_capabilities(const ClientCapabilities& val);
+
+  bool operator == (const GetTableRequest & rhs) const
+  {
+    if (!(dbName == rhs.dbName))
+      return false;
+    if (!(tblName == rhs.tblName))
+      return false;
+    if (__isset.capabilities != rhs.__isset.capabilities)
+      return false;
+    else if (__isset.capabilities && !(capabilities == rhs.capabilities))
+      return false;
+    return true;
+  }
+  bool operator != (const GetTableRequest &rhs) const {
+    return !(*this == rhs);
+  }
+
+  bool operator < (const GetTableRequest & ) const;
+
+  uint32_t read(::apache::thrift::protocol::TProtocol* iprot);
+  uint32_t write(::apache::thrift::protocol::TProtocol* oprot) const;
+
+  virtual void printTo(std::ostream& out) const;
+};
+
+void swap(GetTableRequest &a, GetTableRequest &b);
+
+inline std::ostream& operator<<(std::ostream& out, const GetTableRequest& obj)
+{
+  obj.printTo(out);
+  return out;
+}
+
+
+class GetTableResult {
+ public:
+
+  GetTableResult(const GetTableResult&);
+  GetTableResult& operator=(const GetTableResult&);
+  GetTableResult() {
+  }
+
+  virtual ~GetTableResult() throw();
+  Table table;
+
+  void __set_table(const Table& val);
+
+  bool operator == (const GetTableResult & rhs) const
+  {
+    if (!(table == rhs.table))
+      return false;
+    return true;
+  }
+  bool operator != (const GetTableResult &rhs) const {
+    return !(*this == rhs);
+  }
+
+  bool operator < (const GetTableResult & ) const;
+
+  uint32_t read(::apache::thrift::protocol::TProtocol* iprot);
+  uint32_t write(::apache::thrift::protocol::TProtocol* oprot) const;
+
+  virtual void printTo(std::ostream& out) const;
+};
+
+void swap(GetTableResult &a, GetTableResult &b);
+
+inline std::ostream& operator<<(std::ostream& out, const GetTableResult& obj)
+{
+  obj.printTo(out);
+  return out;
+}
+
+typedef struct _GetTablesRequest__isset {
+  _GetTablesRequest__isset() : tblNames(false), capabilities(false) {}
+  bool tblNames :1;
+  bool capabilities :1;
+} _GetTablesRequest__isset;
+
+class GetTablesRequest {
+ public:
+
+  GetTablesRequest(const GetTablesRequest&);
+  GetTablesRequest& operator=(const GetTablesRequest&);
+  GetTablesRequest() : dbName() {
+  }
+
+  virtual ~GetTablesRequest() throw();
+  std::string dbName;
+  std::vector<std::string>  tblNames;
+  ClientCapabilities capabilities;
+
+  _GetTablesRequest__isset __isset;
+
+  void __set_dbName(const std::string& val);
+
+  void __set_tblNames(const std::vector<std::string> & val);
+
+  void __set_capabilities(const ClientCapabilities& val);
+
+  bool operator == (const GetTablesRequest & rhs) const
+  {
+    if (!(dbName == rhs.dbName))
+      return false;
+    if (__isset.tblNames != rhs.__isset.tblNames)
+      return false;
+    else if (__isset.tblNames && !(tblNames == rhs.tblNames))
+      return false;
+    if (__isset.capabilities != rhs.__isset.capabilities)
+      return false;
+    else if (__isset.capabilities && !(capabilities == rhs.capabilities))
+      return false;
+    return true;
+  }
+  bool operator != (const GetTablesRequest &rhs) const {
+    return !(*this == rhs);
+  }
+
+  bool operator < (const GetTablesRequest & ) const;
+
+  uint32_t read(::apache::thrift::protocol::TProtocol* iprot);
+  uint32_t write(::apache::thrift::protocol::TProtocol* oprot) const;
+
+  virtual void printTo(std::ostream& out) const;
+};
+
+void swap(GetTablesRequest &a, GetTablesRequest &b);
+
+inline std::ostream& operator<<(std::ostream& out, const GetTablesRequest& obj)
+{
+  obj.printTo(out);
+  return out;
+}
+
+
+class GetTablesResult {
+ public:
+
+  GetTablesResult(const GetTablesResult&);
+  GetTablesResult& operator=(const GetTablesResult&);
+  GetTablesResult() {
+  }
+
+  virtual ~GetTablesResult() throw();
+  std::vector<Table>  tables;
+
+  void __set_tables(const std::vector<Table> & val);
+
+  bool operator == (const GetTablesResult & rhs) const
+  {
+    if (!(tables == rhs.tables))
+      return false;
+    return true;
+  }
+  bool operator != (const GetTablesResult &rhs) const {
+    return !(*this == rhs);
+  }
+
+  bool operator < (const GetTablesResult & ) const;
+
+  uint32_t read(::apache::thrift::protocol::TProtocol* iprot);
+  uint32_t write(::apache::thrift::protocol::TProtocol* oprot) const;
+
+  virtual void printTo(std::ostream& out) const;
+};
+
+void swap(GetTablesResult &a, GetTablesResult &b);
+
+inline std::ostream& operator<<(std::ostream& out, const GetTablesResult& obj)
 {
   obj.printTo(out);
   return out;

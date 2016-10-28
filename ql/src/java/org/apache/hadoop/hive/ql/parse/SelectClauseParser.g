@@ -19,7 +19,7 @@ parser grammar SelectClauseParser;
 options
 {
 output=AST;
-ASTLabelType=CommonTree;
+ASTLabelType=ASTNode;
 backtrack=false;
 k=3;
 }
@@ -34,9 +34,6 @@ k=3;
   public void displayRecognitionError(String[] tokenNames,
       RecognitionException e) {
     gParent.errors.add(new ParseError(gParent, e, tokenNames));
-  }
-  protected boolean useSQL11ReservedKeywordsForIdentifier() {
-    return gParent.useSQL11ReservedKeywordsForIdentifier();
   }
 }
 

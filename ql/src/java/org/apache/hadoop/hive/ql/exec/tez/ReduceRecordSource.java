@@ -41,7 +41,7 @@ import org.apache.hadoop.hive.ql.metadata.HiveException;
 import org.apache.hadoop.hive.ql.plan.TableDesc;
 import org.apache.hadoop.hive.ql.session.SessionState;
 import org.apache.hadoop.hive.serde2.Deserializer;
-import org.apache.hadoop.hive.serde2.SerDe;
+import org.apache.hadoop.hive.serde2.AbstractSerDe;
 import org.apache.hadoop.hive.serde2.SerDeException;
 import org.apache.hadoop.hive.serde2.SerDeUtils;
 import org.apache.hadoop.hive.serde2.binarysortable.BinarySortableSerDe;
@@ -79,7 +79,7 @@ public class ReduceRecordSource implements RecordSource {
 
   // Input value serde needs to be an array to support different SerDe
   // for different tags
-  private SerDe inputValueDeserializer;
+  private AbstractSerDe inputValueDeserializer;
 
   private TableDesc keyTableDesc;
   private TableDesc valueTableDesc;
@@ -151,7 +151,7 @@ public class ReduceRecordSource implements RecordSource {
 
       // We should initialize the SerDe with the TypeInfo when available.
       this.valueTableDesc = valueTableDesc;
-      inputValueDeserializer = (SerDe) ReflectionUtils.newInstance(
+      inputValueDeserializer = (AbstractSerDe) ReflectionUtils.newInstance(
           valueTableDesc.getDeserializerClass(), null);
       SerDeUtils.initializeSerDe(inputValueDeserializer, null,
           valueTableDesc.getProperties(), null);
@@ -185,6 +185,7 @@ public class ReduceRecordSource implements RecordSource {
                         new BinarySortableDeserializeRead(
                                   VectorizedBatchUtil.typeInfosFromStructObjectInspector(
                                       keyStructInspector),
+                                  /* useExternalBuffer */ true,
                                   binarySortableSerDe.getSortOrders()));
         keyBinarySortableDeserializeToRow.init(0);
 
@@ -194,7 +195,8 @@ public class ReduceRecordSource implements RecordSource {
                   new VectorDeserializeRow<LazyBinaryDeserializeRead>(
                         new LazyBinaryDeserializeRead(
                             VectorizedBatchUtil.typeInfosFromStructObjectInspector(
-                                       valueStructInspectors)));
+                                       valueStructInspectors),
+                            /* useExternalBuffer */ true));
           valueLazyBinaryDeserializeToRow.init(firstValueColumnOffset);
 
           // Create data buffers for value bytes column vectors.

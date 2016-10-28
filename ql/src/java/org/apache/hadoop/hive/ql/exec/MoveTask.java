@@ -206,6 +206,10 @@ public class MoveTask extends Task<MoveWork> implements Serializable {
     }
 
     Context ctx = driverContext.getCtx();
+    if(ctx.getHiveTxnManager().supportsAcid()) {
+      //Acid LM doesn't maintain getOutputLockObjects(); this 'if' just makes it more explicit
+      return;
+    }
     HiveLockManager lockMgr = ctx.getHiveTxnManager().getLockManager();
     WriteEntity output = ctx.getLoadTableOutputMap().get(ltd);
     List<HiveLockObj> lockObjects = ctx.getOutputLockObjects().get(output);
@@ -362,9 +366,8 @@ public class MoveTask extends Task<MoveWork> implements Serializable {
               work.getLoadTableWork().getWriteType() != AcidUtils.Operation.NOT_ACID,
               hasFollowingStatsTask());
           if (work.getOutputs() != null) {
-            work.getOutputs().add(new WriteEntity(table,
-                (tbd.getReplace() ? WriteEntity.WriteType.INSERT_OVERWRITE :
-                WriteEntity.WriteType.INSERT)));
+            DDLTask.addIfAbsentByName(new WriteEntity(table,
+              getWriteType(tbd, work.getLoadTableWork().getWriteType())), work.getOutputs());
           }
         } else {
           LOG.info("Partition is: " + tbd.getPartitionSpec().toString());
@@ -445,8 +448,10 @@ public class MoveTask extends Task<MoveWork> implements Serializable {
                 SessionState.get().getTxnMgr().getCurrentTxnId(), hasFollowingStatsTask(),
                 work.getLoadTableWork().getWriteType());
 
-            console.printInfo("\t Time taken to load dynamic partitions: "  +
-                (System.currentTimeMillis() - startTime)/1000.0 + " seconds");
+            String loadTime = "\t Time taken to load dynamic partitions: "  +
+                (System.currentTimeMillis() - startTime)/1000.0 + " seconds";
+            console.printInfo(loadTime);
+            LOG.info(loadTime);
 
             if (dp.size() == 0 && conf.getBoolVar(HiveConf.ConfVars.HIVE_ERROR_ON_EMPTY_PARTITION)) {
               throw new HiveException("This query creates no partitions." +
@@ -465,10 +470,9 @@ public class MoveTask extends Task<MoveWork> implements Serializable {
               }
 
               WriteEntity enty = new WriteEntity(partn,
-                  (tbd.getReplace() ? WriteEntity.WriteType.INSERT_OVERWRITE :
-                      WriteEntity.WriteType.INSERT));
+                getWriteType(tbd, work.getLoadTableWork().getWriteType()));
               if (work.getOutputs() != null) {
-                work.getOutputs().add(enty);
+                DDLTask.addIfAbsentByName(enty, work.getOutputs());
               }
               // Need to update the queryPlan's output as well so that post-exec hook get executed.
               // This is only needed for dynamic partitioning since for SP the the WriteEntity is
@@ -513,9 +517,8 @@ public class MoveTask extends Task<MoveWork> implements Serializable {
             dc = new DataContainer(table.getTTable(), partn.getTPartition());
             // add this partition to post-execution hook
             if (work.getOutputs() != null) {
-              work.getOutputs().add(new WriteEntity(partn,
-                  (tbd.getReplace() ? WriteEntity.WriteType.INSERT_OVERWRITE
-                      : WriteEntity.WriteType.INSERT)));
+              DDLTask.addIfAbsentByName(new WriteEntity(partn,
+                getWriteType(tbd, work.getLoadTableWork().getWriteType())), work.getOutputs());
             }
          }
         }
@@ -550,7 +553,24 @@ public class MoveTask extends Task<MoveWork> implements Serializable {
       return (1);
     }
   }
-
+  /**
+   * so to make sure we crate WriteEntity with the right WriteType.  This is (at this point) only
+   * for consistency since LockManager (which is the only thing that pays attention to WriteType)
+   * has done it's job before the query ran.
+   */
+  WriteEntity.WriteType getWriteType(LoadTableDesc tbd, AcidUtils.Operation operation) {
+    if(tbd.getReplace()) {
+      return WriteEntity.WriteType.INSERT_OVERWRITE;
+    }
+    switch (operation) {
+      case DELETE:
+        return WriteEntity.WriteType.DELETE;
+      case UPDATE:
+        return WriteEntity.WriteType.UPDATE;
+      default:
+        return WriteEntity.WriteType.INSERT;
+    }
+  }
   private boolean isSkewedStoredAsDirs(LoadTableDesc tbd) {
     return (tbd.getLbCtx() == null) ? false : tbd.getLbCtx()
         .isSkewedStoredAsDir();

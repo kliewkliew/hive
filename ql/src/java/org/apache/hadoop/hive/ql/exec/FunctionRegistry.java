@@ -31,8 +31,6 @@ import java.util.TreeSet;
 import java.util.regex.Pattern;
 import java.util.regex.PatternSyntaxException;
 
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
 import org.apache.hadoop.hive.ql.exec.FunctionInfo.FunctionResource;
 import org.apache.hadoop.hive.ql.metadata.HiveException;
 import org.apache.hadoop.hive.ql.parse.SemanticException;
@@ -51,7 +49,16 @@ import org.apache.hadoop.hive.ql.udf.UDFChr;
 import org.apache.hadoop.hive.ql.udf.UDFConv;
 import org.apache.hadoop.hive.ql.udf.UDFCos;
 import org.apache.hadoop.hive.ql.udf.UDFCrc32;
+import org.apache.hadoop.hive.ql.udf.UDFDateFloorDay;
+import org.apache.hadoop.hive.ql.udf.UDFDateFloorHour;
+import org.apache.hadoop.hive.ql.udf.UDFDateFloorMinute;
+import org.apache.hadoop.hive.ql.udf.UDFDateFloorMonth;
+import org.apache.hadoop.hive.ql.udf.UDFDateFloorQuarter;
+import org.apache.hadoop.hive.ql.udf.UDFDateFloorSecond;
+import org.apache.hadoop.hive.ql.udf.UDFDateFloorWeek;
+import org.apache.hadoop.hive.ql.udf.UDFDateFloorYear;
 import org.apache.hadoop.hive.ql.udf.UDFDayOfMonth;
+import org.apache.hadoop.hive.ql.udf.UDFDayOfWeek;
 import org.apache.hadoop.hive.ql.udf.UDFDegrees;
 import org.apache.hadoop.hive.ql.udf.UDFE;
 import org.apache.hadoop.hive.ql.udf.UDFExp;
@@ -141,6 +148,8 @@ import org.apache.hadoop.hive.serde2.typeinfo.TypeInfoFactory;
 import org.apache.hadoop.hive.serde2.typeinfo.TypeInfoUtils;
 import org.apache.hadoop.util.ReflectionUtils;
 import org.apache.hive.common.util.AnnotationUtils;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 /**
  * FunctionRegistry.
@@ -275,6 +284,7 @@ public final class FunctionRegistry {
 
     system.registerUDF("day", UDFDayOfMonth.class, false);
     system.registerUDF("dayofmonth", UDFDayOfMonth.class, false);
+    system.registerUDF("dayofweek", UDFDayOfWeek.class, false);
     system.registerUDF("month", UDFMonth.class, false);
     system.registerGenericUDF("quarter", GenericUDFQuarter.class);
     system.registerUDF("year", UDFYear.class, false);
@@ -288,6 +298,16 @@ public final class FunctionRegistry {
     system.registerGenericUDF("next_day", GenericUDFNextDay.class);
     system.registerGenericUDF("trunc", GenericUDFTrunc.class);
     system.registerGenericUDF("date_format", GenericUDFDateFormat.class);
+
+    // Special date formatting functions
+    system.registerUDF("floor_year", UDFDateFloorYear.class, false);
+    system.registerUDF("floor_quarter", UDFDateFloorQuarter.class, false);
+    system.registerUDF("floor_month", UDFDateFloorMonth.class, false);
+    system.registerUDF("floor_day", UDFDateFloorDay.class, false);
+    system.registerUDF("floor_week", UDFDateFloorWeek.class, false);
+    system.registerUDF("floor_hour", UDFDateFloorHour.class, false);
+    system.registerUDF("floor_minute", UDFDateFloorMinute.class, false);
+    system.registerUDF("floor_second", UDFDateFloorSecond.class, false);
 
     system.registerGenericUDF("date_add", GenericUDFDateAdd.class);
     system.registerGenericUDF("date_sub", GenericUDFDateSub.class);
@@ -326,6 +346,7 @@ public final class FunctionRegistry {
     system.registerGenericUDF("current_date", GenericUDFCurrentDate.class);
     system.registerGenericUDF("current_timestamp", GenericUDFCurrentTimestamp.class);
     system.registerGenericUDF("current_user", GenericUDFCurrentUser.class);
+    system.registerGenericUDF("logged_in_user", GenericUDFLoggedInUser.class);
 
     system.registerGenericUDF("isnull", GenericUDFOPNull.class);
     system.registerGenericUDF("isnotnull", GenericUDFOPNotNull.class);
@@ -421,6 +442,7 @@ public final class FunctionRegistry {
 
     system.registerGenericUDF("case", GenericUDFCase.class);
     system.registerGenericUDF("when", GenericUDFWhen.class);
+    system.registerGenericUDF("nullif", GenericUDFNullif.class);
     system.registerGenericUDF("hash", GenericUDFHash.class);
     system.registerGenericUDF("coalesce", GenericUDFCoalesce.class);
     system.registerGenericUDF("index", GenericUDFIndex.class);
@@ -430,6 +452,7 @@ public final class FunctionRegistry {
     system.registerGenericUDF("elt", GenericUDFElt.class);
     system.registerGenericUDF("concat_ws", GenericUDFConcatWS.class);
     system.registerGenericUDF("sort_array", GenericUDFSortArray.class);
+    system.registerGenericUDF("sort_array_by", GenericUDFSortArrayByField.class);
     system.registerGenericUDF("array_contains", GenericUDFArrayContains.class);
     system.registerGenericUDF("sentences", GenericUDFSentences.class);
     system.registerGenericUDF("map_keys", GenericUDFMapKeys.class);
@@ -447,6 +470,7 @@ public final class FunctionRegistry {
 
     // Generic UDTF's
     system.registerGenericUDTF("explode", GenericUDTFExplode.class);
+    system.registerGenericUDTF("replicate_rows", GenericUDTFReplicateRows.class);
     system.registerGenericUDTF("inline", GenericUDTFInline.class);
     system.registerGenericUDTF("json_tuple", GenericUDTFJSONTuple.class);
     system.registerGenericUDTF("parse_url_tuple", GenericUDTFParseUrlTuple.class);
@@ -677,7 +701,9 @@ public final class FunctionRegistry {
   }
 
   /**
-   * Find a common class for union-all operator
+   * Find a common type for union-all operator. Only the common types for the same
+   * type group will resolve to a common type. No implicit conversion across different
+   * type groups will be done.
    */
   public static TypeInfo getCommonClassForUnionAll(TypeInfo a, TypeInfo b) {
     if (a.equals(b)) {
@@ -696,26 +722,21 @@ public final class FunctionRegistry {
 
     PrimitiveGrouping pgA = PrimitiveObjectInspectorUtils.getPrimitiveGrouping(pcA);
     PrimitiveGrouping pgB = PrimitiveObjectInspectorUtils.getPrimitiveGrouping(pcB);
-    // handle string types properly
-    if (pgA == PrimitiveGrouping.STRING_GROUP && pgB == PrimitiveGrouping.STRING_GROUP) {
+    if (pgA != pgB) {
+      return null;
+    }
+
+    switch(pgA) {
+    case STRING_GROUP:
       return getTypeInfoForPrimitiveCategory(
           (PrimitiveTypeInfo)a, (PrimitiveTypeInfo)b,PrimitiveCategory.STRING);
+    case NUMERIC_GROUP:
+      return TypeInfoUtils.implicitConvertible(a, b) ? b : a;
+    case DATE_GROUP:
+      return TypeInfoFactory.timestampTypeInfo;
+    default:
+      return null;
     }
-
-    if (TypeInfoUtils.implicitConvertible(a, b)) {
-      return getTypeInfoForPrimitiveCategory((PrimitiveTypeInfo)a, (PrimitiveTypeInfo)b, pcB);
-    }
-    if (TypeInfoUtils.implicitConvertible(b, a)) {
-      return getTypeInfoForPrimitiveCategory((PrimitiveTypeInfo)a, (PrimitiveTypeInfo)b, pcA);
-    }
-    for (PrimitiveCategory t : TypeInfoUtils.numericTypeList) {
-      if (TypeInfoUtils.implicitConvertible(pcA, t)
-          && TypeInfoUtils.implicitConvertible(pcB, t)) {
-        return getTypeInfoForPrimitiveCategory((PrimitiveTypeInfo)a, (PrimitiveTypeInfo)b, t);
-      }
-    }
-
-    return null;
   }
 
   /**
@@ -968,9 +989,6 @@ public final class FunctionRegistry {
     try {
       o = m.invoke(thisObject, arguments);
     } catch (Exception e) {
-      String thisObjectString = "" + thisObject + " of class "
-          + (thisObject == null ? "null" : thisObject.getClass().getName());
-
       StringBuilder argumentString = new StringBuilder();
       if (arguments == null) {
         argumentString.append("null");
@@ -978,21 +996,19 @@ public final class FunctionRegistry {
         argumentString.append("{");
         for (int i = 0; i < arguments.length; i++) {
           if (i > 0) {
-            argumentString.append(", ");
+            argumentString.append(",");
           }
-          if (arguments[i] == null) {
-            argumentString.append("null");
-          } else {
-            argumentString.append("" + arguments[i] + ":"
-                + arguments[i].getClass().getName());
-          }
+
+          argumentString.append(arguments[i]);
         }
-        argumentString.append("} of size " + arguments.length);
+        argumentString.append("}");
       }
 
-      throw new HiveException("Unable to execute method " + m + " "
-          + " on object " + thisObjectString + " with arguments "
-          + argumentString.toString(), e);
+      String detailedMsg = e instanceof java.lang.reflect.InvocationTargetException ?
+        e.getCause().getMessage() : e.getMessage();
+
+      throw new HiveException("Unable to execute method " + m + " with arguments "
+          + argumentString + ":" + detailedMsg, e);
     }
     return o;
   }
@@ -1523,7 +1539,8 @@ public final class FunctionRegistry {
     }
 
     if (clazz != null) {
-      return system.isPermanentFunc(clazz);
+      // Use session registry - see Registry.isPermanentFunc()
+      return SessionState.getRegistryForWrite().isPermanentFunc(clazz);
     }
     return false;
   }

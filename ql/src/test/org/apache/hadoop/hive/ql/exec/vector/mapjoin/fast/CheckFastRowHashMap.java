@@ -69,7 +69,9 @@ public class CheckFastRowHashMap extends CheckFastHashTable {
       int length = ref.getLength();
 
       LazyBinaryDeserializeRead lazyBinaryDeserializeRead =
-          new LazyBinaryDeserializeRead(typeInfos);
+          new LazyBinaryDeserializeRead(
+              typeInfos,
+              /* useExternalBuffer */ false);
 
       lazyBinaryDeserializeRead.set(bytes, offset, length);
 
@@ -77,10 +79,7 @@ public class CheckFastRowHashMap extends CheckFastHashTable {
         Writable writable = (Writable) row[index];
         VerifyFastRow.verifyDeserializeRead(lazyBinaryDeserializeRead, (PrimitiveTypeInfo) typeInfos[index], writable);
       }
-      lazyBinaryDeserializeRead.extraFieldsCheck();
-      TestCase.assertTrue(!lazyBinaryDeserializeRead.readBeyondConfiguredFieldsWarned());
-
-      TestCase.assertTrue(!lazyBinaryDeserializeRead.bufferRangeHasExtraDataWarned());
+      TestCase.assertTrue(lazyBinaryDeserializeRead.isEndOfInputReached());
 
       ref = hashMapResult.next();
       if (a == count - 1) {
@@ -127,7 +126,9 @@ public class CheckFastRowHashMap extends CheckFastHashTable {
       }
 
       LazyBinaryDeserializeRead lazyBinaryDeserializeRead =
-          new LazyBinaryDeserializeRead(typeInfos);
+          new LazyBinaryDeserializeRead(
+              typeInfos,
+              /* useExternalBuffer */ false);
 
       lazyBinaryDeserializeRead.set(bytes, offset, length);
 
@@ -167,10 +168,7 @@ public class CheckFastRowHashMap extends CheckFastHashTable {
         if (thrown) {
           TestCase.fail("Not expecting an exception to be thrown for the non-clipped case...");
         }
-        lazyBinaryDeserializeRead.extraFieldsCheck();
-        TestCase.assertTrue(!lazyBinaryDeserializeRead.readBeyondConfiguredFieldsWarned());
-
-        TestCase.assertTrue(!lazyBinaryDeserializeRead.bufferRangeHasExtraDataWarned());
+        TestCase.assertTrue(lazyBinaryDeserializeRead.isEndOfInputReached());
       }
 
       ref = hashMapResult.next();

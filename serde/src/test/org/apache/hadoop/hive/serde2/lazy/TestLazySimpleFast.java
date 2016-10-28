@@ -96,12 +96,10 @@ public class TestLazySimpleFast extends TestCase {
     for (int i = 0; i < rowCount; i++) {
       Object[] row = rows[i];
       LazySimpleDeserializeRead lazySimpleDeserializeRead =
-              new LazySimpleDeserializeRead(writePrimitiveTypeInfos,
+              new LazySimpleDeserializeRead(
+                  writePrimitiveTypeInfos,
+                  /* useExternalBuffer */ false,
                   separator, serdeParams);
-
-      if (useIncludeColumns) {
-        lazySimpleDeserializeRead.setColumnsToInclude(columnsToInclude);
-      }
 
       BytesWritable bytesWritable = serializeWriteBytes[i];
       byte[] bytes = bytesWritable.getBytes();
@@ -114,8 +112,9 @@ public class TestLazySimpleFast extends TestCase {
       }
 
       for (int index = 0; index < columnCount; index++) {
-        if (index >= writeColumnCount ||
-            (useIncludeColumns && !columnsToInclude[index])) {
+        if (useIncludeColumns && !columnsToInclude[index]) {
+          lazySimpleDeserializeRead.skipNextField();
+        } else if (index >= writeColumnCount) {
           // Should come back a null.
           VerifyFast.verifyDeserializeRead(lazySimpleDeserializeRead, primitiveTypeInfos[index], null);
         } else {
@@ -123,10 +122,9 @@ public class TestLazySimpleFast extends TestCase {
           VerifyFast.verifyDeserializeRead(lazySimpleDeserializeRead, primitiveTypeInfos[index], writable);
         }
       }
-      lazySimpleDeserializeRead.extraFieldsCheck();
-      TestCase.assertTrue(!lazySimpleDeserializeRead.readBeyondConfiguredFieldsWarned());
-      TestCase.assertTrue(!lazySimpleDeserializeRead.bufferRangeHasExtraDataWarned());
-
+      if (writeColumnCount == columnCount) {
+        TestCase.assertTrue(lazySimpleDeserializeRead.isEndOfInputReached());
+      }
     }
 
     // Try to deserialize using SerDe class our Writable row objects created by SerializeWrite.
@@ -186,19 +184,18 @@ public class TestLazySimpleFast extends TestCase {
       Object[] row = rows[i];
 
       LazySimpleDeserializeRead lazySimpleDeserializeRead =
-              new LazySimpleDeserializeRead(writePrimitiveTypeInfos,
+              new LazySimpleDeserializeRead(
+                  writePrimitiveTypeInfos,
+                  /* useExternalBuffer */ false,
                   separator, serdeParams);
-
-      if (useIncludeColumns) {
-        lazySimpleDeserializeRead.setColumnsToInclude(columnsToInclude);
-      }
 
       byte[] bytes = serdeBytes[i];
       lazySimpleDeserializeRead.set(bytes, 0, bytes.length);
 
       for (int index = 0; index < columnCount; index++) {
-        if (index >= writeColumnCount ||
-            (useIncludeColumns && !columnsToInclude[index])) {
+        if (useIncludeColumns && !columnsToInclude[index]) {
+          lazySimpleDeserializeRead.skipNextField();
+        } else if (index >= writeColumnCount) {
           // Should come back a null.
           VerifyFast.verifyDeserializeRead(lazySimpleDeserializeRead, primitiveTypeInfos[index], null);
         } else {
@@ -206,9 +203,9 @@ public class TestLazySimpleFast extends TestCase {
           VerifyFast.verifyDeserializeRead(lazySimpleDeserializeRead, primitiveTypeInfos[index], writable);
         }
       }
-      lazySimpleDeserializeRead.extraFieldsCheck();
-      TestCase.assertTrue(!lazySimpleDeserializeRead.readBeyondConfiguredFieldsWarned());
-      TestCase.assertTrue(!lazySimpleDeserializeRead.bufferRangeHasExtraDataWarned());
+      if (writeColumnCount == columnCount) {
+        TestCase.assertTrue(lazySimpleDeserializeRead.isEndOfInputReached());
+      }
     }
   }
 

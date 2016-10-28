@@ -274,6 +274,9 @@ public class OperationManager extends AbstractService {
     } else {
       LOG.debug(opHandle + ": Attempting to cancel from state - " + opState);
       operation.cancel(OperationState.CANCELED);
+      if (operation instanceof SQLOperation) {
+        removeSaveSqlOperationDisplay(opHandle);
+      }
     }
   }
 
@@ -299,14 +302,8 @@ public class OperationManager extends AbstractService {
     return getOperation(opHandle).getResultSetSchema();
   }
 
-  public RowSet getOperationNextRowSet(OperationHandle opHandle)
-      throws HiveSQLException {
-    return getOperation(opHandle).getNextRowSet();
-  }
-
   public RowSet getOperationNextRowSet(OperationHandle opHandle,
-      FetchOrientation orientation, long maxRows)
-          throws HiveSQLException {
+      FetchOrientation orientation, long maxRows) throws HiveSQLException {
     return getOperation(opHandle).getNextRowSet(orientation, maxRows);
   }
 

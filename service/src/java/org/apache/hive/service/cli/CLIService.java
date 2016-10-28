@@ -68,6 +68,7 @@ public class CLIService extends CompositeService implements ICLIService {
   private UserGroupInformation httpUGI;
   // The HiveServer2 instance running this service
   private final HiveServer2 hiveServer2;
+  private int defaultFetchRows;
 
   public CLIService(HiveServer2 hiveServer2) {
     super(CLIService.class.getSimpleName());
@@ -78,6 +79,7 @@ public class CLIService extends CompositeService implements ICLIService {
   public synchronized void init(HiveConf hiveConf) {
     this.hiveConf = hiveConf;
     sessionManager = new SessionManager(hiveServer2);
+    defaultFetchRows = hiveConf.getIntVar(ConfVars.HIVE_SERVER2_RESULTSET_DEFAULT_FETCH_SIZE);
     addService(sessionManager);
     //  If the hadoop cluster is secure, do a kerberos login for the service from the keytab
     if (UserGroupInformation.isSecurityEnabled()) {
@@ -425,14 +427,19 @@ public class CLIService extends CompositeService implements ICLIService {
     Operation operation = sessionManager.getOperationManager().getOperation(opHandle);
     /**
      * If this is a background operation run asynchronously,
-     * we block for a configured duration, before we return
-     * (duration: HIVE_SERVER2_LONG_POLLING_TIMEOUT).
+     * we block for a duration determined by a step function, before we return
      * However, if the background operation is complete, we return immediately.
      */
     if (operation.shouldRunAsync()) {
       HiveConf conf = operation.getParentSession().getHiveConf();
-      long timeout = HiveConf.getTimeVar(conf,
+      long maxTimeout = HiveConf.getTimeVar(conf,
           HiveConf.ConfVars.HIVE_SERVER2_LONG_POLLING_TIMEOUT, TimeUnit.MILLISECONDS);
+
+      final long elapsed = System.currentTimeMillis() - operation.getBeginTime();
+      // A step function to increase the polling timeout by 500 ms every 10 sec, 
+      // starting from 500 ms up to HIVE_SERVER2_LONG_POLLING_TIMEOUT
+      final long timeout = Math.min(maxTimeout, (elapsed / TimeUnit.SECONDS.toMillis(10) + 1) * 500);
+
       try {
         operation.getBackgroundHandle().get(timeout, TimeUnit.MILLISECONDS);
       } catch (TimeoutException e) {
@@ -495,7 +502,7 @@ public class CLIService extends CompositeService implements ICLIService {
   public RowSet fetchResults(OperationHandle opHandle)
       throws HiveSQLException {
     return fetchResults(opHandle, Operation.DEFAULT_FETCH_ORIENTATION,
-        Operation.DEFAULT_FETCH_MAX_ROWS, FetchType.QUERY_OUTPUT);
+        defaultFetchRows, FetchType.QUERY_OUTPUT);
   }
 
   @Override

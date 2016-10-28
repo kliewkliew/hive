@@ -36,6 +36,7 @@ import org.apache.hadoop.fs.CommonConfigurationKeysPublic;
 import org.apache.hadoop.hive.conf.HiveConf;
 import org.apache.hadoop.hive.conf.HiveConf.ConfVars;
 import org.apache.hadoop.hive.llap.LlapNodeId;
+import org.apache.hadoop.hive.llap.LlapUtil;
 import org.apache.hadoop.hive.llap.daemon.rpc.LlapDaemonProtocolProtos;
 import org.apache.hadoop.hive.llap.daemon.rpc.LlapDaemonProtocolProtos.FragmentRuntimeInfo;
 import org.apache.hadoop.hive.llap.daemon.rpc.LlapDaemonProtocolProtos.QueryCompleteRequestProto;
@@ -108,6 +109,7 @@ public class LlapTaskCommunicator extends TezTaskCommunicatorImpl {
   private final LlapTaskUmbilicalProtocol umbilical;
   private final Token<LlapTokenIdentifier> token;
   private final String user;
+  private String amHost;
 
   // These two structures track the list of known nodes, and the list of nodes which are sending in keep-alive heartbeats.
   // Primarily for debugging purposes a.t.m, since there's some unexplained TASK_TIMEOUTS which are currently being observed.
@@ -218,9 +220,9 @@ public class LlapTaskCommunicator extends TezTaskCommunicatorImpl {
 
       server.start();
       this.address = NetUtils.getConnectAddress(server);
-      LOG.info(
-          "Started LlapUmbilical: " + umbilical.getClass().getName() + " at address: " + address +
-              " with numHandlers=" + numHandlers);
+      this.amHost = LlapUtil.getAmHostNameFromAddress(address, conf);
+      LOG.info("Started LlapUmbilical: " + umbilical.getClass().getName() + " at address: "
+          + address + " with numHandlers=" + numHandlers + " using the host name " + amHost);
     } catch (IOException e) {
       throw new TezUncheckedException(e);
     }
@@ -457,6 +459,8 @@ public class LlapTaskCommunicator extends TezTaskCommunicatorImpl {
         .sourceStateUpdated(vertexStateUpdate.getVertexName(), vertexStateUpdate.getVertexState());
   }
 
+  // TODO HIVE-15163. Handle cases where nodes go down and come back on the same port. Historic information
+  // can prevent updates from being sent out to the new node.
   public void sendStateUpdate(final LlapNodeId nodeId,
                               final SourceStateUpdatedRequestProto request) {
     communicator.sendSourceStateUpdate(request, nodeId,
@@ -610,7 +614,7 @@ public class LlapTaskCommunicator extends TezTaskCommunicatorImpl {
     builder.setFragmentNumber(taskSpec.getTaskAttemptID().getTaskID().getId());
     builder.setAttemptNumber(taskSpec.getTaskAttemptID().getId());
     builder.setContainerIdString(containerId.toString());
-    builder.setAmHost(getAddress().getHostName());
+    builder.setAmHost(getAmHostString());
     builder.setAmPort(getAddress().getPort());
 
     Preconditions.checkState(currentQueryIdentifierProto.getDagIndex() ==
@@ -841,5 +845,9 @@ public class LlapTaskCommunicator extends TezTaskCommunicatorImpl {
         .setApplicationIdString(getContext().getCurrentAppIdentifier()).setDagIndex(dagIdentifier)
         .setAppAttemptNumber(getContext().getApplicationAttemptId().getAttemptId())
         .build();
+  }
+
+  public String getAmHostString() {
+    return amHost;
   }
 }

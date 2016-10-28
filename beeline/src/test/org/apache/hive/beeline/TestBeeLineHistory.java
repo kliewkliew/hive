@@ -33,7 +33,7 @@ import org.junit.Test;
  */
 public class TestBeeLineHistory {
 
-  private static final String fileName = "history";
+  private static final String fileName = System.getProperty("test.tmp.dir") + "/history";
 
   @BeforeClass
   public static void beforeTests() throws Exception {
@@ -58,7 +58,7 @@ public class TestBeeLineHistory {
     BeeLine beeline = new BeeLine();
     beeline.getOpts().setHistoryFile(fileName);
     beeline.setOutputStream(ops);
-    beeline.getConsoleReader(null);
+    beeline.initializeConsoleReader(null);
     beeline.dispatch("!history");
     String output = os.toString("UTF-8");
     int numHistories = output.split("\n").length;
@@ -73,7 +73,7 @@ public class TestBeeLineHistory {
     BeeLine beeline = new BeeLine();
     beeline.getOpts().setHistoryFile(fileName);
     beeline.setOutputStream(ops);
-    beeline.getConsoleReader(null);
+    beeline.initializeConsoleReader(null);
     beeline.dispatch("!history");
     String output = os.toString("UTF-8");
     String[] tmp = output.split("\n");

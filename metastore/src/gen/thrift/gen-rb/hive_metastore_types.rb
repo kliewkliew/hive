@@ -118,6 +118,12 @@ module FileMetadataExprType
   VALID_VALUES = Set.new([ORC_SARG]).freeze
 end
 
+module ClientCapability
+  TEST_CAPABILITY = 1
+  VALUE_MAP = {1 => "TEST_CAPABILITY"}
+  VALID_VALUES = Set.new([TEST_CAPABILITY]).freeze
+end
+
 class Version
   include ::Thrift::Struct, ::Thrift::Struct_Union
   VERSION = 1
@@ -1793,6 +1799,8 @@ class TxnInfo
   AGENTINFO = 5
   HEARTBEATCOUNT = 6
   METAINFO = 7
+  STARTEDTIME = 8
+  LASTHEARTBEATTIME = 9
 
   FIELDS = {
     ID => {:type => ::Thrift::Types::I64, :name => 'id'},
@@ -1801,7 +1809,9 @@ class TxnInfo
     HOSTNAME => {:type => ::Thrift::Types::STRING, :name => 'hostname'},
     AGENTINFO => {:type => ::Thrift::Types::STRING, :name => 'agentInfo', :default => %q"Unknown", :optional => true},
     HEARTBEATCOUNT => {:type => ::Thrift::Types::I32, :name => 'heartbeatCount', :default => 0, :optional => true},
-    METAINFO => {:type => ::Thrift::Types::STRING, :name => 'metaInfo', :optional => true}
+    METAINFO => {:type => ::Thrift::Types::STRING, :name => 'metaInfo', :optional => true},
+    STARTEDTIME => {:type => ::Thrift::Types::I64, :name => 'startedTime', :optional => true},
+    LASTHEARTBEATTIME => {:type => ::Thrift::Types::I64, :name => 'lastHeartbeatTime', :optional => true}
   }
 
   def struct_fields; FIELDS; end
@@ -1963,6 +1973,7 @@ class LockComponent
   PARTITIONNAME = 5
   OPERATIONTYPE = 6
   ISACID = 7
+  ISDYNAMICPARTITIONWRITE = 8
 
   FIELDS = {
     TYPE => {:type => ::Thrift::Types::I32, :name => 'type', :enum_class => ::LockType},
@@ -1971,7 +1982,8 @@ class LockComponent
     TABLENAME => {:type => ::Thrift::Types::STRING, :name => 'tablename', :optional => true},
     PARTITIONNAME => {:type => ::Thrift::Types::STRING, :name => 'partitionname', :optional => true},
     OPERATIONTYPE => {:type => ::Thrift::Types::I32, :name => 'operationType', :default =>     5, :optional => true, :enum_class => ::DataOperationType},
-    ISACID => {:type => ::Thrift::Types::BOOL, :name => 'isAcid', :default => false, :optional => true}
+    ISACID => {:type => ::Thrift::Types::BOOL, :name => 'isAcid', :default => false, :optional => true},
+    ISDYNAMICPARTITIONWRITE => {:type => ::Thrift::Types::BOOL, :name => 'isDynamicPartitionWrite', :default => false, :optional => true}
   }
 
   def struct_fields; FIELDS; end
@@ -2767,6 +2779,100 @@ class GetAllFunctionsResponse
   def struct_fields; FIELDS; end
 
   def validate
+  end
+
+  ::Thrift::Struct.generate_accessors self
+end
+
+class ClientCapabilities
+  include ::Thrift::Struct, ::Thrift::Struct_Union
+  VALUES = 1
+
+  FIELDS = {
+    VALUES => {:type => ::Thrift::Types::LIST, :name => 'values', :element => {:type => ::Thrift::Types::I32, :enum_class => ::ClientCapability}}
+  }
+
+  def struct_fields; FIELDS; end
+
+  def validate
+    raise ::Thrift::ProtocolException.new(::Thrift::ProtocolException::UNKNOWN, 'Required field values is unset!') unless @values
+  end
+
+  ::Thrift::Struct.generate_accessors self
+end
+
+class GetTableRequest
+  include ::Thrift::Struct, ::Thrift::Struct_Union
+  DBNAME = 1
+  TBLNAME = 2
+  CAPABILITIES = 3
+
+  FIELDS = {
+    DBNAME => {:type => ::Thrift::Types::STRING, :name => 'dbName'},
+    TBLNAME => {:type => ::Thrift::Types::STRING, :name => 'tblName'},
+    CAPABILITIES => {:type => ::Thrift::Types::STRUCT, :name => 'capabilities', :class => ::ClientCapabilities, :optional => true}
+  }
+
+  def struct_fields; FIELDS; end
+
+  def validate
+    raise ::Thrift::ProtocolException.new(::Thrift::ProtocolException::UNKNOWN, 'Required field dbName is unset!') unless @dbName
+    raise ::Thrift::ProtocolException.new(::Thrift::ProtocolException::UNKNOWN, 'Required field tblName is unset!') unless @tblName
+  end
+
+  ::Thrift::Struct.generate_accessors self
+end
+
+class GetTableResult
+  include ::Thrift::Struct, ::Thrift::Struct_Union
+  TABLE = 1
+
+  FIELDS = {
+    TABLE => {:type => ::Thrift::Types::STRUCT, :name => 'table', :class => ::Table}
+  }
+
+  def struct_fields; FIELDS; end
+
+  def validate
+    raise ::Thrift::ProtocolException.new(::Thrift::ProtocolException::UNKNOWN, 'Required field table is unset!') unless @table
+  end
+
+  ::Thrift::Struct.generate_accessors self
+end
+
+class GetTablesRequest
+  include ::Thrift::Struct, ::Thrift::Struct_Union
+  DBNAME = 1
+  TBLNAMES = 2
+  CAPABILITIES = 3
+
+  FIELDS = {
+    DBNAME => {:type => ::Thrift::Types::STRING, :name => 'dbName'},
+    TBLNAMES => {:type => ::Thrift::Types::LIST, :name => 'tblNames', :element => {:type => ::Thrift::Types::STRING}, :optional => true},
+    CAPABILITIES => {:type => ::Thrift::Types::STRUCT, :name => 'capabilities', :class => ::ClientCapabilities, :optional => true}
+  }
+
+  def struct_fields; FIELDS; end
+
+  def validate
+    raise ::Thrift::ProtocolException.new(::Thrift::ProtocolException::UNKNOWN, 'Required field dbName is unset!') unless @dbName
+  end
+
+  ::Thrift::Struct.generate_accessors self
+end
+
+class GetTablesResult
+  include ::Thrift::Struct, ::Thrift::Struct_Union
+  TABLES = 1
+
+  FIELDS = {
+    TABLES => {:type => ::Thrift::Types::LIST, :name => 'tables', :element => {:type => ::Thrift::Types::STRUCT, :class => ::Table}}
+  }
+
+  def struct_fields; FIELDS; end
+
+  def validate
+    raise ::Thrift::ProtocolException.new(::Thrift::ProtocolException::UNKNOWN, 'Required field tables is unset!') unless @tables
   end
 
   ::Thrift::Struct.generate_accessors self

@@ -23,6 +23,8 @@ import java.util.LinkedList;
 import java.util.List;
 import java.util.Map;
 
+import org.apache.calcite.adapter.druid.DruidQuery;
+import org.apache.calcite.avatica.util.TimeUnitRange;
 import org.apache.calcite.rel.RelFieldCollation;
 import org.apache.calcite.rel.RelNode;
 import org.apache.calcite.rel.RelVisitor;
@@ -35,6 +37,7 @@ import org.apache.calcite.rel.core.JoinRelType;
 import org.apache.calcite.rel.core.Project;
 import org.apache.calcite.rel.core.SemiJoin;
 import org.apache.calcite.rel.core.Sort;
+import org.apache.calcite.rel.core.TableFunctionScan;
 import org.apache.calcite.rel.core.TableScan;
 import org.apache.calcite.rel.core.Union;
 import org.apache.calcite.rel.type.RelDataTypeField;
@@ -57,8 +60,11 @@ import org.apache.hadoop.hive.metastore.api.FieldSchema;
 import org.apache.hadoop.hive.ql.metadata.VirtualColumn;
 import org.apache.hadoop.hive.ql.optimizer.calcite.CalciteSemanticException;
 import org.apache.hadoop.hive.ql.optimizer.calcite.reloperators.HiveAggregate;
+import org.apache.hadoop.hive.ql.optimizer.calcite.reloperators.HiveExtractDate;
+import org.apache.hadoop.hive.ql.optimizer.calcite.reloperators.HiveFloorDate;
 import org.apache.hadoop.hive.ql.optimizer.calcite.reloperators.HiveGroupingID;
 import org.apache.hadoop.hive.ql.optimizer.calcite.reloperators.HiveSortLimit;
+import org.apache.hadoop.hive.ql.optimizer.calcite.reloperators.HiveTableFunctionScan;
 import org.apache.hadoop.hive.ql.optimizer.calcite.reloperators.HiveTableScan;
 import org.apache.hadoop.hive.ql.optimizer.calcite.translator.SqlFunctionConverter.HiveToken;
 import org.apache.hadoop.hive.ql.parse.ASTNode;
@@ -78,7 +84,7 @@ public class ASTConverter {
   private Filter           where;
   private Aggregate        groupBy;
   private Filter           having;
-  private Project          select;
+  private RelNode          select;
   private Sort             orderLimit;
 
   private Schema           schema;
@@ -191,25 +197,50 @@ public class ASTConverter {
      */
     ASTBuilder b = ASTBuilder.construct(HiveParser.TOK_SELECT, "TOK_SELECT");
 
-    if (select.getChildExps().isEmpty()) {
-      RexLiteral r = select.getCluster().getRexBuilder().makeExactLiteral(new BigDecimal(1));
-      ASTNode selectExpr = ASTBuilder.selectExpr(ASTBuilder.literal(r), "1");
-      b.add(selectExpr);
-    } else {
-      int i = 0;
+    if (select instanceof Project) {
+      if (select.getChildExps().isEmpty()) {
+        RexLiteral r = select.getCluster().getRexBuilder().makeExactLiteral(new BigDecimal(1));
+        ASTNode selectExpr = ASTBuilder.selectExpr(ASTBuilder.literal(r), "1");
+        b.add(selectExpr);
+      } else {
+        int i = 0;
 
-      for (RexNode r : select.getChildExps()) {
+        for (RexNode r : select.getChildExps()) {
+          if (RexUtil.isNull(r) && r.getType().getSqlTypeName() != SqlTypeName.NULL) {
+            // It is NULL value with different type, we need to introduce a CAST
+            // to keep it
+            r = select.getCluster().getRexBuilder().makeAbstractCast(r.getType(), r);
+          }
+          ASTNode expr = r.accept(new RexVisitor(schema, r instanceof RexLiteral));
+          String alias = select.getRowType().getFieldNames().get(i++);
+          ASTNode selectExpr = ASTBuilder.selectExpr(expr, alias);
+          b.add(selectExpr);
+        }
+      }
+      hiveAST.select = b.node();
+    } else {
+      // select is UDTF
+      HiveTableFunctionScan udtf = (HiveTableFunctionScan) select;
+      List<ASTNode> children = new ArrayList<>();
+      RexCall call = (RexCall) udtf.getCall();
+      for (RexNode r : call.getOperands()) {
         if (RexUtil.isNull(r) && r.getType().getSqlTypeName() != SqlTypeName.NULL) {
-          // It is NULL value with different type, we need to introduce a CAST to keep it
+          // It is NULL value with different type, we need to introduce a CAST
+          // to keep it
           r = select.getCluster().getRexBuilder().makeAbstractCast(r.getType(), r);
         }
         ASTNode expr = r.accept(new RexVisitor(schema, r instanceof RexLiteral));
-        String alias = select.getRowType().getFieldNames().get(i++);
-        ASTNode selectExpr = ASTBuilder.selectExpr(expr, alias);
-        b.add(selectExpr);
+        children.add(expr);
       }
+      ASTBuilder sel = ASTBuilder.construct(HiveParser.TOK_SELEXPR, "TOK_SELEXPR");
+      ASTNode function = buildUDTFAST(call.getOperator().getName(), children);
+      sel.add(function);
+      for (String alias : udtf.getRowType().getFieldNames()) {
+        sel.add(HiveParser.Identifier, alias);
+      }
+      b.add(sel);
+      hiveAST.select = b.node();
     }
-    hiveAST.select = b.node();
 
     /*
      * 7. Order Use in Order By from the block above. RelNode has no pointer to
@@ -223,6 +254,14 @@ public class ASTConverter {
     return hiveAST.getAST();
   }
 
+  private ASTNode buildUDTFAST(String functionName, List<ASTNode> children) {
+    ASTNode node = (ASTNode) ParseDriver.adaptor.create(HiveParser.TOK_FUNCTION, "TOK_FUNCTION");
+    node.addChild((ASTNode) ParseDriver.adaptor.create(HiveParser.Identifier, functionName));
+    for (ASTNode c : children) {
+      ParseDriver.adaptor.addChild(node, c);
+    }
+    return node;
+  }
   private void convertOrderLimitToASTNode(HiveSortLimit order) {
     if (order != null) {
       HiveSortLimit hiveSortLimit = order;
@@ -295,15 +334,23 @@ public class ASTConverter {
   }
 
   private Schema getRowSchema(String tblAlias) {
-    return new Schema(select, tblAlias);
+    if (select instanceof Project) {
+      return new Schema((Project) select, tblAlias);
+    } else {
+      return new Schema((TableFunctionScan) select, tblAlias);
+    }
   }
 
   private QueryBlockInfo convertSource(RelNode r) throws CalciteSemanticException {
-    Schema s;
-    ASTNode ast;
+    Schema s = null;
+    ASTNode ast = null;
 
     if (r instanceof TableScan) {
       TableScan f = (TableScan) r;
+      s = new Schema(f);
+      ast = ASTBuilder.table(f);
+    } else if (r instanceof DruidQuery) {
+      DruidQuery f = (DruidQuery) r;
       s = new Schema(f);
       ast = ASTBuilder.table(f);
     } else if (r instanceof Join) {
@@ -332,19 +379,15 @@ public class ASTConverter {
         s = left.schema;
       }
     } else if (r instanceof Union) {
-      RelNode leftInput = ((Union) r).getInput(0);
-      RelNode rightInput = ((Union) r).getInput(1);
-
-      ASTConverter leftConv = new ASTConverter(leftInput, this.derivedTableCount);
-      ASTConverter rightConv = new ASTConverter(rightInput, this.derivedTableCount);
-      ASTNode leftAST = leftConv.convert();
-      ASTNode rightAST = rightConv.convert();
-
-      ASTNode unionAST = getUnionAllAST(leftAST, rightAST);
-
-      String sqAlias = nextAlias();
-      ast = ASTBuilder.subQuery(unionAST, sqAlias);
-      s = new Schema((Union) r, sqAlias);
+      Union u = ((Union) r);
+      ASTNode left = new ASTConverter(((Union) r).getInput(0), this.derivedTableCount).convert();
+      for (int ind = 1; ind < u.getInputs().size(); ind++) {
+        left = getUnionAllAST(left, new ASTConverter(((Union) r).getInput(ind),
+            this.derivedTableCount).convert());
+        String sqAlias = nextAlias();
+        ast = ASTBuilder.subQuery(left, sqAlias);
+        s = new Schema((Union) r, sqAlias);
+      }
     } else {
       ASTConverter src = new ASTConverter(r, this.derivedTableCount);
       ASTNode srcAST = src.convert();
@@ -374,15 +417,26 @@ public class ASTConverter {
       }
     }
 
+    public void handle(TableFunctionScan tableFunctionScan) {
+      if (ASTConverter.this.select == null) {
+        ASTConverter.this.select = tableFunctionScan;
+      } else {
+        ASTConverter.this.from = tableFunctionScan;
+      }
+    }
+
     @Override
     public void visit(RelNode node, int ordinal, RelNode parent) {
 
-      if (node instanceof TableScan) {
+      if (node instanceof TableScan ||
+          node instanceof DruidQuery) {
         ASTConverter.this.from = node;
       } else if (node instanceof Filter) {
         handle((Filter) node);
       } else if (node instanceof Project) {
         handle((Project) node);
+      } else if (node instanceof TableFunctionScan) {
+        handle((TableFunctionScan) node);
       } else if (node instanceof Join) {
         ASTConverter.this.from = node;
       } else if (node instanceof Union) {
@@ -595,14 +649,30 @@ public class ASTConverter {
         astNodeLst.add(astBldr.node());
       }
 
-      for (RexNode operand : call.operands) {
-        astNodeLst.add(operand.accept(this));
+      if (op.kind == SqlKind.EXTRACT) {
+        // Extract on date: special handling since function in Hive does
+        // include <time_unit>. Observe that <time_unit> information
+        // is implicit in the function name, thus translation will
+        // proceed correctly if we just ignore the <time_unit>
+        astNodeLst.add(call.operands.get(1).accept(this));
+      } else if (op.kind == SqlKind.FLOOR &&
+              call.operands.size() == 2) {
+        // Floor on date: special handling since function in Hive does
+        // include <time_unit>. Observe that <time_unit> information
+        // is implicit in the function name, thus translation will
+        // proceed correctly if we just ignore the <time_unit>
+        astNodeLst.add(call.operands.get(0).accept(this));
+      } else {
+        for (RexNode operand : call.operands) {
+          astNodeLst.add(operand.accept(this));
+        }
       }
 
-      if (isFlat(call))
+      if (isFlat(call)) {
         return SqlFunctionConverter.buildAST(op, astNodeLst, 0);
-      else
+      } else {
         return SqlFunctionConverter.buildAST(op, astNodeLst);
+      }
     }
   }
 
@@ -625,13 +695,28 @@ public class ASTConverter {
     private static final long serialVersionUID = 1L;
 
     Schema(TableScan scan) {
-      String tabName = ((HiveTableScan) scan).getTableAlias();
+      HiveTableScan hts = (HiveTableScan) scan;
+      String tabName = hts.getTableAlias();
       for (RelDataTypeField field : scan.getRowType().getFieldList()) {
         add(new ColumnInfo(tabName, field.getName()));
       }
     }
 
+    Schema(DruidQuery dq) {
+      HiveTableScan hts = (HiveTableScan) ((DruidQuery)dq).getTableScan();
+      String tabName = hts.getTableAlias();
+      for (RelDataTypeField field : dq.getRowType().getFieldList()) {
+        add(new ColumnInfo(tabName, field.getName()));
+      }
+    }
+
     Schema(Project select, String alias) {
+      for (RelDataTypeField field : select.getRowType().getFieldList()) {
+        add(new ColumnInfo(alias, field.getName()));
+      }
+    }
+
+    Schema(TableFunctionScan select, String alias) {
       for (RelDataTypeField field : select.getRowType().getFieldList()) {
         add(new ColumnInfo(alias, field.getName()));
       }

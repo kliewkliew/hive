@@ -903,4 +903,27 @@ public class TestBeeLineWithArgs {
 
     testScriptFile( SCRIPT_TEXT, EXPECTED_PATTERN, true, argList);
   }
+
+  @Test
+  public void testBeelineShellCommandWithoutConn() throws Throwable {
+    List<String> argList = new ArrayList<String>();
+    final String SCRIPT_TEXT = "!sh echo hello world";
+    final String EXPECTED_PATTERN = "hello world";
+    testScriptFile(SCRIPT_TEXT, EXPECTED_PATTERN, true, argList,true,false);
+  }
+
+  /**
+   * Attempt to execute Beeline with force option to continue running script even after errors.
+   * Test for presence of an expected pattern to match the output of a valid command at the end.
+   */
+  @Test
+  public void testBeelineWithForce() throws Throwable {
+    final String SCRIPT_TEXT = "drop table does_not_exist;\ncreate table incomplete_syntax(a, string, );\n "
+            + "drop table if exists new_table;\n create table new_table(foo int, bar string);\n "
+            + "desc new_table;\n";
+    final String EXPECTED_PATTERN = "2 rows selected";
+    List<String> argList = getBaseArgs(miniHS2.getBaseJdbcURL());
+    argList.add("--force");
+    testScriptFile(SCRIPT_TEXT, EXPECTED_PATTERN, true, argList);
+  }
 }

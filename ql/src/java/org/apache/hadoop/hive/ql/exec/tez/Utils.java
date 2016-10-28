@@ -18,7 +18,8 @@
 package org.apache.hadoop.hive.ql.exec.tez;
 
 import java.io.IOException;
-import java.util.List;
+import java.util.ArrayList;
+import java.util.Collection;
 
 import org.apache.commons.lang.ArrayUtils;
 import org.apache.hadoop.conf.Configuration;
@@ -40,16 +41,15 @@ public class Utils {
       LlapRegistryService serviceRegistry;
       serviceRegistry = LlapRegistryService.getClient(conf);
 
-      List<ServiceInstance> serviceInstances =
-          serviceRegistry.getInstances().getAllInstancesOrdered();
-      String[] locations = new String[serviceInstances.size()];
-      int i = 0;
+      Collection<ServiceInstance> serviceInstances =
+          serviceRegistry.getInstances().getAllInstancesOrdered(true);
+      ArrayList<String> locations = new ArrayList<>(serviceInstances.size());
       for (ServiceInstance serviceInstance : serviceInstances) {
         if (LOG.isDebugEnabled()) {
           LOG.debug("Adding " + serviceInstance.getWorkerIdentity() + " with hostname=" +
               serviceInstance.getHost() + " to list for split locations");
         }
-        locations[i++] = serviceInstance.getHost();
+        locations.add(serviceInstance.getHost());
       }
       splitLocationProvider = new HostAffinitySplitLocationProvider(locations);
     } else {

@@ -29,6 +29,7 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Map.Entry;
+import java.util.Properties;
 import java.util.Set;
 import java.util.Stack;
 import java.util.regex.Pattern;
@@ -128,6 +129,7 @@ import org.apache.hadoop.hive.ql.udf.UDFBin;
 import org.apache.hadoop.hive.ql.udf.UDFConv;
 import org.apache.hadoop.hive.ql.udf.UDFCos;
 import org.apache.hadoop.hive.ql.udf.UDFDayOfMonth;
+import org.apache.hadoop.hive.ql.udf.UDFDayOfWeek;
 import org.apache.hadoop.hive.ql.udf.UDFDegrees;
 import org.apache.hadoop.hive.ql.udf.UDFExp;
 import org.apache.hadoop.hive.ql.udf.UDFFromUnixTime;
@@ -264,6 +266,7 @@ public class Vectorizer implements PhysicalPlanResolver {
     supportedGenericUDFs.add(UDFYear.class);
     supportedGenericUDFs.add(UDFMonth.class);
     supportedGenericUDFs.add(UDFDayOfMonth.class);
+    supportedGenericUDFs.add(UDFDayOfWeek.class);
     supportedGenericUDFs.add(UDFHour.class);
     supportedGenericUDFs.add(UDFMinute.class);
     supportedGenericUDFs.add(UDFSecond.class);
@@ -648,11 +651,27 @@ public class Vectorizer implements PhysicalPlanResolver {
         if (inputFileFormatClassName.equals(TextInputFormat.class.getName()) &&
             deserializerClassName.equals(LazySimpleSerDe.class.getName())) {
 
-          pd.setVectorPartitionDesc(
-              VectorPartitionDesc.createVectorDeserialize(
-                  inputFileFormatClassName, VectorDeserializeType.LAZY_SIMPLE));
+          Properties properties = pd.getTableDesc().getProperties();
+          String lastColumnTakesRestString =
+              properties.getProperty(serdeConstants.SERIALIZATION_LAST_COLUMN_TAKES_REST);
+          boolean lastColumnTakesRest =
+              (lastColumnTakesRestString != null &&
+              lastColumnTakesRestString.equalsIgnoreCase("true"));
+          if (lastColumnTakesRest) {
 
-          return true;
+            // If row mode will not catch this, then inform.
+            if (useRowDeserialize) {
+              LOG.info("Input format: " + inputFileFormatClassName + " cannot be vectorized" +
+                  " when " + serdeConstants.SERIALIZATION_LAST_COLUMN_TAKES_REST + "is true");
+              return false;
+            }
+          } else {
+            pd.setVectorPartitionDesc(
+                VectorPartitionDesc.createVectorDeserialize(
+                    inputFileFormatClassName, VectorDeserializeType.LAZY_SIMPLE));
+
+            return true;
+          }
         } else if (inputFileFormatClassName.equals(SequenceFileInputFormat.class.getName()) &&
             deserializerClassName.equals(LazyBinarySerDe.class.getName())) {
 
@@ -730,8 +749,8 @@ public class Vectorizer implements PhysicalPlanResolver {
           return false;
         }
         VectorPartitionDesc vectorPartDesc = partDesc.getVectorPartitionDesc();
-        if (LOG.isInfoEnabled()) {
-          LOG.info("Vectorizer path: " + path + ", " + vectorPartDesc.toString() +
+          if (LOG.isDebugEnabled()) {
+          LOG.debug("Vectorizer path: " + path + ", " + vectorPartDesc.toString() +
               ", aliases " + aliases);
         }
 

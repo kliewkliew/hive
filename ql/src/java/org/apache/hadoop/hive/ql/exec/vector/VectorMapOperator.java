@@ -253,6 +253,20 @@ public class VectorMapOperator extends AbstractMapOperator {
       // This type information specifies the data types the partition needs to read.
       TypeInfo[] dataTypeInfos = vectorPartDesc.getDataTypeInfos();
 
+      // We need to provide the minimum number of columns to be read so
+      // LazySimpleDeserializeRead's separator parser does not waste time.
+      //
+      Preconditions.checkState(dataColumnsToIncludeTruncated != null);
+      TypeInfo[] minimalDataTypeInfos;
+      if (dataColumnsToIncludeTruncated.length < dataTypeInfos.length) {
+        minimalDataTypeInfos =
+            Arrays.copyOf(dataTypeInfos, dataColumnsToIncludeTruncated.length);
+      } else {
+        minimalDataTypeInfos = dataTypeInfos;
+      }
+
+      readerColumnCount = minimalDataTypeInfos.length;
+
       switch (vectorPartDesc.getVectorDeserializeType()) {
       case LAZY_SIMPLE:
         {
@@ -261,14 +275,16 @@ public class VectorMapOperator extends AbstractMapOperator {
                   LazySimpleSerDe.class.getName());
 
           LazySimpleDeserializeRead lazySimpleDeserializeRead =
-              new LazySimpleDeserializeRead(dataTypeInfos, simpleSerdeParams);
+              new LazySimpleDeserializeRead(
+                  minimalDataTypeInfos,
+                  /* useExternalBuffer */ true,
+                  simpleSerdeParams);
 
           vectorDeserializeRow =
               new VectorDeserializeRow<LazySimpleDeserializeRead>(lazySimpleDeserializeRead);
 
           // Initialize with data row type conversion parameters.
-          readerColumnCount =
-              vectorDeserializeRow.initConversion(tableRowTypeInfos, dataColumnsToIncludeTruncated);
+          vectorDeserializeRow.initConversion(tableRowTypeInfos, dataColumnsToIncludeTruncated);
 
           deserializeRead = lazySimpleDeserializeRead;
         }
@@ -277,14 +293,15 @@ public class VectorMapOperator extends AbstractMapOperator {
       case LAZY_BINARY:
         {
           LazyBinaryDeserializeRead lazyBinaryDeserializeRead =
-              new LazyBinaryDeserializeRead(dataTypeInfos);
+              new LazyBinaryDeserializeRead(
+                  dataTypeInfos,
+                  /* useExternalBuffer */ true);
 
           vectorDeserializeRow =
               new VectorDeserializeRow<LazyBinaryDeserializeRead>(lazyBinaryDeserializeRead);
 
           // Initialize with data row type conversion parameters.
-          readerColumnCount =
-              vectorDeserializeRow.initConversion(tableRowTypeInfos, dataColumnsToIncludeTruncated);
+          vectorDeserializeRow.initConversion(tableRowTypeInfos, dataColumnsToIncludeTruncated);
 
           deserializeRead = lazyBinaryDeserializeRead;
         }

@@ -79,7 +79,7 @@ public abstract class VectorMapJoinFastLongHashTable
     int keyLength = currentKey.getLength();
     keyBinarySortableDeserializeRead.set(keyBytes, 0, keyLength);
     try {
-      if (keyBinarySortableDeserializeRead.readCheckNull()) {
+      if (!keyBinarySortableDeserializeRead.readNextField()) {
         return;
       }
     } catch (Exception e) {
@@ -267,7 +267,10 @@ public abstract class VectorMapJoinFastLongHashTable
     this.isOuterJoin = isOuterJoin;
     this.hashTableKeyType = hashTableKeyType;
     PrimitiveTypeInfo[] primitiveTypeInfos = { hashTableKeyType.getPrimitiveTypeInfo() };
-    keyBinarySortableDeserializeRead = new BinarySortableDeserializeRead(primitiveTypeInfos);
+    keyBinarySortableDeserializeRead =
+        new BinarySortableDeserializeRead(
+            primitiveTypeInfos,
+            /* useExternalBuffer */ false);
     allocateBucketArray();
     useMinMax = minMaxEnabled;
     min = Long.MAX_VALUE;

@@ -84,8 +84,8 @@ public class RetryingMetaStoreClient implements InvocationHandler {
 
   public static IMetaStoreClient getProxy(
       HiveConf hiveConf, boolean allowEmbedded) throws MetaException {
-    return getProxy(hiveConf, new Class[]{HiveConf.class, Boolean.class},
-        new Object[]{hiveConf, allowEmbedded}, null, HiveMetaStoreClient.class.getName()
+    return getProxy(hiveConf, new Class[]{HiveConf.class, HiveMetaHookLoader.class, Boolean.class},
+        new Object[]{hiveConf, null, allowEmbedded}, null, HiveMetaStoreClient.class.getName()
     );
   }
 
@@ -200,7 +200,7 @@ public class RetryingMetaStoreClient implements InvocationHandler {
       }
 
 
-      if (retriesMade >= retryLimit) {
+      if (retriesMade >= retryLimit || base.isLocalMetaStore()) {
         throw caughtException;
       }
       retriesMade++;

@@ -20,6 +20,7 @@ package org.apache.hadoop.hive.ql.exec.vector;
 
 import java.io.EOFException;
 import java.io.IOException;
+import java.util.Arrays;
 import java.util.List;
 
 import org.slf4j.Logger;
@@ -74,6 +75,12 @@ public final class VectorDeserializeRow<T extends DeserializeRead> {
 
   private TypeInfo[] sourceTypeInfos;
 
+  private byte[] inputBytes;
+
+  /**
+   * @param deserializeRead   Set useExternalBuffer to true to avoid buffer copying and to get
+   *     more efficient reading.
+   */
   public VectorDeserializeRow(T deserializeRead) {
     this();
     this.deserializeRead = deserializeRead;
@@ -91,20 +98,27 @@ public final class VectorDeserializeRow<T extends DeserializeRead> {
    * We say "source" because when there is conversion we are converting th deserialized source into
    * a target data type.
    */
-  boolean[] isConvert;
+
+  private boolean useReadField;
+                // True when the (random access) readField method of DeserializeRead are being used.
+
+  private int[] readFieldLogicalIndices;
+                // The logical indices for reading with readField.
+
+  private boolean[] isConvert;
                 // For each column, are we converting the row column?
 
-  int[] projectionColumnNums;
+  private int[] projectionColumnNums;
                 // Assigning can be a subset of columns, so this is the projection --
                 // the batch column numbers.
 
-  Category[] sourceCategories;
+  private Category[] sourceCategories;
                 // The data type category of each column being deserialized.
 
-  PrimitiveCategory[] sourcePrimitiveCategories;
+  private PrimitiveCategory[] sourcePrimitiveCategories;
                 //The data type primitive category of each column being deserialized.
 
-  int[] maxLengths;
+  private int[] maxLengths;
                 // For the CHAR and VARCHAR data types, the maximum character length of
                 // the columns.  Otherwise, 0.
 
@@ -125,6 +139,7 @@ public final class VectorDeserializeRow<T extends DeserializeRead> {
   private void allocateArrays(int count) {
     isConvert = new boolean[count];
     projectionColumnNums = new int[count];
+    Arrays.fill(projectionColumnNums, -1);
     sourceCategories = new Category[count];
     sourcePrimitiveCategories = new PrimitiveCategory[count];
     maxLengths = new int[count];
@@ -225,13 +240,17 @@ public final class VectorDeserializeRow<T extends DeserializeRead> {
 
   public void init(boolean[] columnsToIncludeTruncated) throws HiveException {
 
-    if (columnsToIncludeTruncated != null) {
-      deserializeRead.setColumnsToInclude(columnsToIncludeTruncated);
-    }
+    // When truncated included is used, its length must be at least the number of source type infos.
+    // When longer, we assume the caller will default with nulls, etc.
+    Preconditions.checkState(
+        columnsToIncludeTruncated == null ||
+        columnsToIncludeTruncated.length == sourceTypeInfos.length);
 
-    final int columnCount = (columnsToIncludeTruncated == null ?
-        sourceTypeInfos.length : columnsToIncludeTruncated.length);
+    final int columnCount = sourceTypeInfos.length;
     allocateArrays(columnCount);
+
+    int includedCount = 0;
+    int[] includedIndices = new int[columnCount];
 
     for (int i = 0; i < columnCount; i++) {
 
@@ -242,9 +261,16 @@ public final class VectorDeserializeRow<T extends DeserializeRead> {
       } else {
 
         initSourceEntry(i, i, sourceTypeInfos[i]);
-
+        includedIndices[includedCount++] = i;
       }
     }
+
+    // Optimizing for readField?
+    if (includedCount < columnCount && deserializeRead.isReadFieldSupported()) {
+      useReadField = true;
+      readFieldLogicalIndices = Arrays.copyOf(includedIndices, includedCount);
+    }
+
   }
 
   /**
@@ -252,37 +278,33 @@ public final class VectorDeserializeRow<T extends DeserializeRead> {
    * DeserializedRead interface passed to the constructor to the target data types desired in
    * the VectorizedRowBatch.
    *
-   * No projection -- the column range 0 .. count-1
-   *
-   *    where count is the minimum of the target data type array size, included array size,
-   *       and source data type array size.
+   * No projection -- using the column range 0 .. columnCount-1
    *
    * @param targetTypeInfos
    * @param columnsToIncludeTruncated
-   * @return the minimum count described above is returned.  That is, the number of columns
-   *         that will be processed by deserialize.
    * @throws HiveException
    */
-  public int initConversion(TypeInfo[] targetTypeInfos,
+  public void initConversion(TypeInfo[] targetTypeInfos,
       boolean[] columnsToIncludeTruncated) throws HiveException {
 
-    if (columnsToIncludeTruncated != null) {
-      deserializeRead.setColumnsToInclude(columnsToIncludeTruncated);
-    }
+    // We assume the caller will handle extra columns default with nulls, etc.
+    Preconditions.checkState(targetTypeInfos.length >= sourceTypeInfos.length);
 
-    int targetColumnCount;
-    if (columnsToIncludeTruncated == null) {
-      targetColumnCount = targetTypeInfos.length;
-    } else {
-      targetColumnCount = Math.min(targetTypeInfos.length, columnsToIncludeTruncated.length);
-    }
+    // When truncated included is used, its length must be at least the number of source type infos.
+    // When longer, we assume the caller will default with nulls, etc.
+    Preconditions.checkState(
+        columnsToIncludeTruncated == null ||
+        columnsToIncludeTruncated.length >= sourceTypeInfos.length);
 
-    int sourceColumnCount = Math.min(sourceTypeInfos.length, targetColumnCount);
-    allocateArrays(sourceColumnCount);
-    allocateConvertArrays(sourceColumnCount);
+    final int columnCount = sourceTypeInfos.length;
+    allocateArrays(columnCount);
+    allocateConvertArrays(columnCount);
+
+    int includedCount = 0;
+    int[] includedIndices = new int[columnCount];
 
     boolean atLeastOneConvert = false;
-    for (int i = 0; i < sourceColumnCount; i++) {
+    for (int i = 0; i < columnCount; i++) {
 
       if (columnsToIncludeTruncated != null && !columnsToIncludeTruncated[i]) {
 
@@ -314,7 +336,15 @@ public final class VectorDeserializeRow<T extends DeserializeRead> {
           initSourceEntry(i, i, sourceTypeInfo);
 
         }
+
+        includedIndices[includedCount++] = i;
       }
+    }
+
+    // Optimizing for readField?
+    if (includedCount < columnCount && deserializeRead.isReadFieldSupported()) {
+      useReadField = true;
+      readFieldLogicalIndices = Arrays.copyOf(includedIndices, includedCount);
     }
 
     if (atLeastOneConvert) {
@@ -324,8 +354,6 @@ public final class VectorDeserializeRow<T extends DeserializeRead> {
       convertVectorAssignRow.initConversion(sourceTypeInfos, targetTypeInfos,
           columnsToIncludeTruncated);
     }
-
-    return sourceColumnCount;
   }
 
   public void init() throws HiveException {
@@ -333,34 +361,23 @@ public final class VectorDeserializeRow<T extends DeserializeRead> {
   }
 
   /**
-   * Deserialize one row column value.
+   * Store one row column value that is the current value in deserializeRead.
    *
    * @param batch
    * @param batchIndex
    * @param logicalColumnIndex
+   * @param canRetainByteRef    Specify true when it is safe to retain references to the bytes
+   *                            source for DeserializeRead.  I.e. the STRING, CHAR/VARCHAR data
+   *                            can be set in BytesColumnVector with setRef instead of with setVal
+   *                            which copies data.  An example of a safe usage is referring to bytes
+   *                            in a hash table entry that is immutable.
    * @throws IOException
    */
-  private void deserializeRowColumn(VectorizedRowBatch batch, int batchIndex,
-      int logicalColumnIndex) throws IOException {
-    Category sourceCategory = sourceCategories[logicalColumnIndex];
-    if (sourceCategory == null) {
-      /*
-       * This is a column that we don't want (i.e. not included).
-       * The deserializeRead.readCheckNull() will read the field.
-       */
-      boolean isNull = deserializeRead.readCheckNull();
-      Preconditions.checkState(isNull);
-      return;
-    }
+  private void storeRowColumn(VectorizedRowBatch batch, int batchIndex,
+      int logicalColumnIndex, boolean canRetainByteRef) throws IOException {
 
     final int projectionColumnNum = projectionColumnNums[logicalColumnIndex];
-    if (deserializeRead.readCheckNull()) {
-      VectorizedBatchUtil.setNullColIsNullValue(batch.cols[projectionColumnNum], batchIndex);
-      return;
-    }
-
-    // We have a value for the row column.
-    switch (sourceCategory) {
+    switch (sourceCategories[logicalColumnIndex]) {
     case PRIMITIVE:
       {
         PrimitiveCategory sourcePrimitiveCategory = sourcePrimitiveCategories[logicalColumnIndex];
@@ -406,42 +423,114 @@ public final class VectorDeserializeRow<T extends DeserializeRead> {
           break;
         case BINARY:
         case STRING:
-          ((BytesColumnVector) batch.cols[projectionColumnNum]).setVal(
-              batchIndex,
-              deserializeRead.currentBytes,
-              deserializeRead.currentBytesStart,
-              deserializeRead.currentBytesLength);
+          {
+            BytesColumnVector bytesColVec = ((BytesColumnVector) batch.cols[projectionColumnNum]);
+            if (deserializeRead.currentExternalBufferNeeded) {
+              bytesColVec.ensureValPreallocated(deserializeRead.currentExternalBufferNeededLen);
+              deserializeRead.copyToExternalBuffer(
+                  bytesColVec.getValPreallocatedBytes(), bytesColVec.getValPreallocatedStart());
+              bytesColVec.setValPreallocated(
+                  batchIndex,
+                  deserializeRead.currentExternalBufferNeededLen);
+            } else if (canRetainByteRef && inputBytes == deserializeRead.currentBytes) {
+              bytesColVec.setRef(
+                  batchIndex,
+                  deserializeRead.currentBytes,
+                  deserializeRead.currentBytesStart,
+                  deserializeRead.currentBytesLength);
+            } else {
+              bytesColVec.setVal(
+                  batchIndex,
+                  deserializeRead.currentBytes,
+                  deserializeRead.currentBytesStart,
+                  deserializeRead.currentBytesLength);
+            }
+          }
           break;
         case VARCHAR:
           {
             // Use the basic STRING bytes read to get access, then use our optimal truncate/trim method
             // that does not use Java String objects.
-            int adjustedLength = StringExpr.truncate(
-                deserializeRead.currentBytes,
-                deserializeRead.currentBytesStart,
-                deserializeRead.currentBytesLength,
-                maxLengths[logicalColumnIndex]);
-            ((BytesColumnVector) batch.cols[projectionColumnNum]).setVal(
-                batchIndex,
-                deserializeRead.currentBytes,
-                deserializeRead.currentBytesStart,
-                adjustedLength);
+            BytesColumnVector bytesColVec = ((BytesColumnVector) batch.cols[projectionColumnNum]);
+            if (deserializeRead.currentExternalBufferNeeded) {
+              // Write directly into our BytesColumnVector value buffer.
+              bytesColVec.ensureValPreallocated(deserializeRead.currentExternalBufferNeededLen);
+              byte[] convertBuffer = bytesColVec.getValPreallocatedBytes();
+              int convertBufferStart = bytesColVec.getValPreallocatedStart();
+              deserializeRead.copyToExternalBuffer(
+                  convertBuffer,
+                  convertBufferStart);
+              bytesColVec.setValPreallocated(
+                  batchIndex,
+                  StringExpr.truncate(
+                      convertBuffer,
+                      convertBufferStart,
+                      deserializeRead.currentExternalBufferNeededLen,
+                      maxLengths[logicalColumnIndex]));
+            } else if (canRetainByteRef && inputBytes == deserializeRead.currentBytes) {
+              bytesColVec.setRef(
+                  batchIndex,
+                  deserializeRead.currentBytes,
+                  deserializeRead.currentBytesStart,
+                  StringExpr.truncate(
+                      deserializeRead.currentBytes,
+                      deserializeRead.currentBytesStart,
+                      deserializeRead.currentBytesLength,
+                      maxLengths[logicalColumnIndex]));
+            } else {
+              bytesColVec.setVal(
+                  batchIndex,
+                  deserializeRead.currentBytes,
+                  deserializeRead.currentBytesStart,
+                  StringExpr.truncate(
+                      deserializeRead.currentBytes,
+                      deserializeRead.currentBytesStart,
+                      deserializeRead.currentBytesLength,
+                      maxLengths[logicalColumnIndex]));
+            }
           }
           break;
         case CHAR:
           {
             // Use the basic STRING bytes read to get access, then use our optimal truncate/trim method
             // that does not use Java String objects.
-            int adjustedLength = StringExpr.rightTrimAndTruncate(
-                deserializeRead.currentBytes,
-                deserializeRead.currentBytesStart,
-                deserializeRead.currentBytesLength,
-                maxLengths[logicalColumnIndex]);
-            ((BytesColumnVector) batch.cols[projectionColumnNum]).setVal(
-                batchIndex,
-                deserializeRead.currentBytes,
-                deserializeRead.currentBytesStart,
-                adjustedLength);
+            BytesColumnVector bytesColVec = ((BytesColumnVector) batch.cols[projectionColumnNum]);
+            if (deserializeRead.currentExternalBufferNeeded) {
+              // Write directly into our BytesColumnVector value buffer.
+              bytesColVec.ensureValPreallocated(deserializeRead.currentExternalBufferNeededLen);
+              byte[] convertBuffer = bytesColVec.getValPreallocatedBytes();
+              int convertBufferStart = bytesColVec.getValPreallocatedStart();
+              deserializeRead.copyToExternalBuffer(
+                  convertBuffer,
+                  convertBufferStart);
+              bytesColVec.setValPreallocated(
+                  batchIndex,
+                  StringExpr.rightTrimAndTruncate(
+                      convertBuffer,
+                      convertBufferStart,
+                      deserializeRead.currentExternalBufferNeededLen,
+                      maxLengths[logicalColumnIndex]));
+            } else if (canRetainByteRef && inputBytes == deserializeRead.currentBytes) {
+              bytesColVec.setRef(
+                  batchIndex,
+                  deserializeRead.currentBytes,
+                  deserializeRead.currentBytesStart,
+                  StringExpr.rightTrimAndTruncate(
+                      deserializeRead.currentBytes,
+                      deserializeRead.currentBytesStart,
+                      deserializeRead.currentBytesLength,
+                      maxLengths[logicalColumnIndex]));
+            } else {
+              bytesColVec.setVal(
+                  batchIndex,
+                  deserializeRead.currentBytes,
+                  deserializeRead.currentBytesStart,
+                  StringExpr.rightTrimAndTruncate(
+                      deserializeRead.currentBytes,
+                      deserializeRead.currentBytesStart,
+                      deserializeRead.currentBytesLength,
+                      maxLengths[logicalColumnIndex]));
+            }
           }
           break;
         case DECIMAL:
@@ -463,7 +552,7 @@ public final class VectorDeserializeRow<T extends DeserializeRead> {
       }
       break;
     default:
-      throw new RuntimeException("Category " + sourceCategory.name() + " not supported");
+      throw new RuntimeException("Category " + sourceCategories[logicalColumnIndex] + " not supported");
     }
 
     // We always set the null flag to false when there is a value.
@@ -471,7 +560,7 @@ public final class VectorDeserializeRow<T extends DeserializeRead> {
   }
 
   /**
-   * Deserialize and convert one row column value.
+   * Convert one row column value that is the current value in deserializeRead.
    *
    * We deserialize into a writable and then pass that writable to an instance of VectorAssignRow
    * to convert the writable to the target data type and assign it into the VectorizedRowBatch.
@@ -481,32 +570,14 @@ public final class VectorDeserializeRow<T extends DeserializeRead> {
    * @param logicalColumnIndex
    * @throws IOException
    */
-  private void deserializeConvertRowColumn(VectorizedRowBatch batch, int batchIndex,
+  private void convertRowColumn(VectorizedRowBatch batch, int batchIndex,
       int logicalColumnIndex) throws IOException {
-    Category sourceCategory = sourceCategories[logicalColumnIndex];
-    if (sourceCategory == null) {
-      /*
-       * This is a column that we don't want (i.e. not included).
-       * The deserializeRead.readCheckNull() will read the field.
-       */
-      boolean isNull = deserializeRead.readCheckNull();
-      Preconditions.checkState(isNull);
-      return;
-    }
-
     final int projectionColumnNum = projectionColumnNums[logicalColumnIndex];
-    if (deserializeRead.readCheckNull()) {
-      VectorizedBatchUtil.setNullColIsNullValue(batch.cols[projectionColumnNum], batchIndex);
-      return;
-    }
-
-    // We have a value for the row column.
     Writable convertSourceWritable = convertSourceWritables[logicalColumnIndex];
-    switch (sourceCategory) {
+    switch (sourceCategories[logicalColumnIndex]) {
     case PRIMITIVE:
       {
-        PrimitiveCategory sourcePrimitiveCategory = sourcePrimitiveCategories[logicalColumnIndex];
-        switch (sourcePrimitiveCategory) {
+        switch (sourcePrimitiveCategories[logicalColumnIndex]) {
         case VOID:
           convertSourceWritable = null;
           break;
@@ -619,13 +690,13 @@ public final class VectorDeserializeRow<T extends DeserializeRead> {
               deserializeRead.currentHiveIntervalDayTimeWritable);
           break;
         default:
-          throw new RuntimeException("Primitive category " + sourcePrimitiveCategory.name() +
+          throw new RuntimeException("Primitive category " + sourcePrimitiveCategories[logicalColumnIndex] +
               " not supported");
         }
       }
       break;
     default:
-      throw new RuntimeException("Category " + sourceCategory.name() + " not supported");
+      throw new RuntimeException("Category " + sourceCategories[logicalColumnIndex] + " not supported");
     }
 
     /*
@@ -644,6 +715,7 @@ public final class VectorDeserializeRow<T extends DeserializeRead> {
    * @param length
    */
   public void setBytes(byte[] bytes, int offset, int length) {
+    inputBytes = bytes;
     deserializeRead.set(bytes, offset, length);
   }
 
@@ -653,21 +725,126 @@ public final class VectorDeserializeRow<T extends DeserializeRead> {
    * Use getDetailedReadPositionString to get detailed read position information to help
    * diagnose exceptions that are thrown...
    *
+   * This version of deserialize does not keep byte references to string/char/varchar/binary data
+   * type field.  The bytes are copied into the BytesColumnVector buffer with setVal.
+   * (See deserializeByRef below if keep references is safe).
+   *
    * @param batch
    * @param batchIndex
    * @throws IOException
    */
   public void deserialize(VectorizedRowBatch batch, int batchIndex) throws IOException {
+
+    // Pass false for canRetainByteRef since we will NOT be keeping byte references to the input
+    // bytes with the BytesColumnVector.setRef method.
+
     final int count = isConvert.length;
-    for (int i = 0; i < count; i++) {
-      if (isConvert[i]) {
-        deserializeConvertRowColumn(batch, batchIndex, i);
-      } else {
-        deserializeRowColumn(batch, batchIndex, i);
+    if (!useReadField) {
+      for (int i = 0; i < count; i++) {
+        final int projectionColumnNum = projectionColumnNums[i];
+        if (projectionColumnNum == -1) {
+          // We must read through fields we do not want.
+          deserializeRead.skipNextField();
+          continue;
+        }
+        if (!deserializeRead.readNextField()) {
+          ColumnVector colVector = batch.cols[projectionColumnNum];
+          colVector.isNull[batchIndex] = true;
+          colVector.noNulls = false;
+          continue;
+        }
+        // The current* members of deserializeRead have the field value.
+        if (isConvert[i]) {
+          convertRowColumn(batch, batchIndex, i);
+        } else {
+          storeRowColumn(batch, batchIndex, i, /* canRetainByteRef */ false);
+        }
+      }
+    } else {
+      final int readFieldCount = readFieldLogicalIndices.length;
+      for (int i = 0; i < readFieldCount; i++) {
+        final int logicalIndex = readFieldLogicalIndices[i];
+        // Jump to the field we want and read it.
+        if (!deserializeRead.readField(logicalIndex)) {
+          ColumnVector colVector = batch.cols[projectionColumnNums[logicalIndex]];
+          colVector.isNull[batchIndex] = true;
+          colVector.noNulls = false;
+          continue;
+        }
+        // The current* members of deserializeRead have the field value.
+        if (isConvert[logicalIndex]) {
+          convertRowColumn(batch, batchIndex, logicalIndex);
+        } else {
+          storeRowColumn(batch, batchIndex, logicalIndex, /* canRetainByteRef */ false);
+        }
       }
     }
-    deserializeRead.extraFieldsCheck();
   }
+
+  /**
+   * Deserialize a row from the range of bytes specified by setBytes.
+   *
+   * Use this method instead of deserialize when it is safe to retain references to the bytes source
+   * for DeserializeRead.  I.e. the STRING, CHAR/VARCHAR data can be set in BytesColumnVector with
+   * setRef instead of with setVal which copies data.
+   *
+   * An example of a safe usage:
+   *   Referring to bytes in a hash table entry that is immutable.
+   *
+   * An example of a unsafe usage:
+   *   Referring to bytes in a reduce receive buffer that will be overwritten with new data.
+   *
+   * Use getDetailedReadPositionString to get detailed read position information to help
+   * diagnose exceptions that are thrown...
+   *
+   * @param batch
+   * @param batchIndex
+   * @throws IOException
+   */
+  public void deserializeByRef(VectorizedRowBatch batch, int batchIndex) throws IOException {
+    final int count = isConvert.length;
+    if (!useReadField) {
+      for (int i = 0; i < count; i++) {
+        final int projectionColumnNum = projectionColumnNums[i];
+        if (projectionColumnNum == -1) {
+          // We must read through fields we do not want.
+          deserializeRead.skipNextField();
+          continue;
+        }
+        if (!deserializeRead.readNextField()) {
+          ColumnVector colVector = batch.cols[projectionColumnNum];
+          colVector.isNull[batchIndex] = true;
+          colVector.noNulls = false;
+          continue;
+        }
+        // The current* members of deserializeRead have the field value.
+        if (isConvert[i]) {
+          convertRowColumn(batch, batchIndex, i);
+        } else {
+          storeRowColumn(batch, batchIndex, i, /* canRetainByteRef */ true);
+        }
+      }
+    } else {
+      final int readFieldCount = readFieldLogicalIndices.length;
+      for (int i = 0; i < readFieldCount; i++) {
+        final int logicalIndex = readFieldLogicalIndices[i];
+        // Jump to the field we want and read it.
+        if (!deserializeRead.readField(logicalIndex)) {
+          ColumnVector colVector = batch.cols[projectionColumnNums[logicalIndex]];
+          colVector.isNull[batchIndex] = true;
+          colVector.noNulls = false;
+          continue;
+        }
+        // The current* members of deserializeRead have the field value.
+        if (isConvert[logicalIndex]) {
+          convertRowColumn(batch, batchIndex, logicalIndex);
+        } else {
+          storeRowColumn(batch, batchIndex, logicalIndex, /* canRetainByteRef */ true);
+        }
+      }
+    }
+  }
+
 
   public String getDetailedReadPositionString() {
     return deserializeRead.getDetailedReadPositionString();

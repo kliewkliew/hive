@@ -139,6 +139,15 @@ public class SessionState {
    */
   private boolean isHiveServerQuery = false;
 
+  /**
+   * The flag to indicate if the session using thrift jdbc binary serde or not.
+   */
+  private boolean isUsingThriftJDBCBinarySerDe = false;
+
+  /**
+   * The flag to indicate if the session already started so we can skip the init
+   */
+  private boolean isStarted = false;
   /*
    * HiveHistory Object
    */
@@ -340,6 +349,14 @@ public class SessionState {
     this.isVerbose = isVerbose;
   }
 
+  public void setIsUsingThriftJDBCBinarySerDe(boolean isUsingThriftJDBCBinarySerDe) {
+	this.isUsingThriftJDBCBinarySerDe = isUsingThriftJDBCBinarySerDe;
+  }
+
+  public boolean getIsUsingThriftJDBCBinarySerDe() {
+	return isUsingThriftJDBCBinarySerDe;
+  }
+
   public void setIsHiveServerQuery(boolean isHiveServerQuery) {
     this.isHiveServerQuery = isHiveServerQuery;
   }
@@ -533,8 +550,13 @@ public class SessionState {
     startSs.tezSessionState.endOpen();
   }
 
-  private static void start(SessionState startSs, boolean isAsync, LogHelper console) {
+  synchronized private static void start(SessionState startSs, boolean isAsync, LogHelper console) {
     setCurrentSessionState(startSs);
+
+    if (startSs.isStarted) {
+      return;
+    }
+    startSs.isStarted = true;
 
     if (startSs.hiveHist == null){
       if (startSs.getConf().getBoolVar(HiveConf.ConfVars.HIVE_SESSION_HISTORY_ENABLED)) {

@@ -25,7 +25,10 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Properties;
+import java.util.Random;
 import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.Executors;
+import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
 
 import org.apache.commons.cli.GnuParser;
@@ -34,6 +37,7 @@ import org.apache.commons.cli.Option;
 import org.apache.commons.cli.OptionBuilder;
 import org.apache.commons.cli.Options;
 import org.apache.commons.cli.ParseException;
+import org.apache.commons.lang3.concurrent.BasicThreadFactory;
 import org.apache.curator.framework.CuratorFramework;
 import org.apache.curator.framework.CuratorFrameworkFactory;
 import org.apache.curator.framework.api.ACLProvider;
@@ -51,15 +55,16 @@ import org.apache.hadoop.hive.common.metrics.common.MetricsFactory;
 import org.apache.hadoop.hive.conf.HiveConf;
 import org.apache.hadoop.hive.conf.HiveConf.ConfVars;
 import org.apache.hadoop.hive.llap.coordinator.LlapCoordinator;
-import org.apache.hadoop.hive.llap.io.api.LlapProxy;
 import org.apache.hadoop.hive.ql.exec.spark.session.SparkSessionManagerImpl;
 import org.apache.hadoop.hive.ql.exec.tez.TezSessionPoolManager;
+import org.apache.hadoop.hive.ql.session.ClearDanglingScratchDir;
 import org.apache.hadoop.hive.ql.util.ZooKeeperHiveHelper;
 import org.apache.hadoop.hive.shims.ShimLoader;
 import org.apache.hadoop.hive.shims.Utils;
 import org.apache.hadoop.security.UserGroupInformation;
 import org.apache.hive.common.util.HiveStringUtils;
 import org.apache.hive.common.util.HiveVersionInfo;
+import org.apache.hive.common.util.ShutdownHookManager;
 import org.apache.hive.http.HttpServer;
 import org.apache.hive.http.LlapServlet;
 import org.apache.hive.service.CompositeService;
@@ -80,6 +85,7 @@ import org.apache.zookeeper.data.ACL;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import com.google.common.annotations.VisibleForTesting;
 import com.google.common.base.Joiner;
 
 /**
@@ -94,7 +100,7 @@ public class HiveServer2 extends CompositeService {
   private PersistentEphemeralNode znode;
   private String znodePath;
   private CuratorFramework zooKeeperClient;
-  private boolean registeredWithZooKeeper = false;
+  private boolean deregisteredWithZooKeeper = false; // Set to true only when deregistration happens
   private HttpServer webServer; // Web UI
 
   public HiveServer2() {
@@ -206,7 +212,7 @@ public class HiveServer2 extends CompositeService {
       throw new ServiceException(ie);
     }
     // Add a shutdown hook for catching SIGTERM & SIGINT
-    Runtime.getRuntime().addShutdownHook(new Thread() {
+    ShutdownHookManager.addShutdownHook(new Runnable() {
       @Override
       public void run() {
         hiveServer2.stop();
@@ -324,7 +330,7 @@ public class HiveServer2 extends CompositeService {
       if (!znode.waitForInitialCreate(znodeCreationTimeout, TimeUnit.SECONDS)) {
         throw new Exception("Max znode creation wait time: " + znodeCreationTimeout + "s exhausted");
       }
-      setRegisteredWithZooKeeper(true);
+      setDeregisteredWithZooKeeper(false);
       znodePath = znode.getActualPath();
       // Set a watch on the znode
       if (zooKeeperClient.checkExists().usingWatcher(new DeRegisterWatcher()).forPath(znodePath) == null) {
@@ -415,7 +421,7 @@ public class HiveServer2 extends CompositeService {
           } catch (IOException e) {
             LOG.error("Failed to close the persistent ephemeral znode", e);
           } finally {
-            HiveServer2.this.setRegisteredWithZooKeeper(false);
+            HiveServer2.this.setDeregisteredWithZooKeeper(true);
             // If there are no more active client sessions, stop the server
             if (cliService.getSessionManager().getOpenSessionCount() == 0) {
               LOG.warn("This instance of HiveServer2 has been removed from the list of server "
@@ -430,7 +436,8 @@ public class HiveServer2 extends CompositeService {
   }
 
   private void removeServerInstanceFromZooKeeper() throws Exception {
-    setRegisteredWithZooKeeper(false);
+    setDeregisteredWithZooKeeper(true);
+    
     if (znode != null) {
       znode.close();
     }
@@ -438,12 +445,12 @@ public class HiveServer2 extends CompositeService {
     LOG.info("Server instance removed from ZooKeeper.");
   }
 
-  public boolean isRegisteredWithZooKeeper() {
-    return registeredWithZooKeeper;
+  public boolean isDeregisteredWithZooKeeper() {
+    return deregisteredWithZooKeeper;
   }
 
-  private void setRegisteredWithZooKeeper(boolean registeredWithZooKeeper) {
-    this.registeredWithZooKeeper = registeredWithZooKeeper;
+  private void setDeregisteredWithZooKeeper(boolean deregisteredWithZooKeeper) {
+    this.deregisteredWithZooKeeper = deregisteredWithZooKeeper;
   }
 
   private String getServerInstanceURI() throws Exception {
@@ -536,12 +543,30 @@ public class HiveServer2 extends CompositeService {
     }
   }
 
+  @VisibleForTesting
+  public static void scheduleClearDanglingScratchDir(HiveConf hiveConf, int initialWaitInSec) {
+    if (hiveConf.getBoolVar(ConfVars.HIVE_SERVER2_CLEAR_DANGLING_SCRATCH_DIR)) {
+      ScheduledExecutorService executor = Executors.newSingleThreadScheduledExecutor(
+          new BasicThreadFactory.Builder()
+          .namingPattern("cleardanglingscratchdir-%d")
+          .daemon(true)
+          .build());
+      executor.scheduleAtFixedRate(new ClearDanglingScratchDir(false, false, false,
+          HiveConf.getVar(hiveConf, HiveConf.ConfVars.SCRATCHDIR), hiveConf), initialWaitInSec,
+          HiveConf.getTimeVar(hiveConf, ConfVars.HIVE_SERVER2_CLEAR_DANGLING_SCRATCH_DIR_INTERVAL,
+          TimeUnit.SECONDS), TimeUnit.SECONDS);
+    }
+  }
+
   private static void startHiveServer2() throws Throwable {
     long attempts = 0, maxAttempts = 1;
     while (true) {
       LOG.info("Starting HiveServer2");
       HiveConf hiveConf = new HiveConf();
       maxAttempts = hiveConf.getLongVar(HiveConf.ConfVars.HIVE_SERVER2_MAX_START_ATTEMPTS);
+      long retrySleepIntervalMs = hiveConf
+          .getTimeVar(ConfVars.HIVE_SERVER2_SLEEP_INTERVAL_BETWEEN_START_ATTEMPTS,
+              TimeUnit.MILLISECONDS);
       HiveServer2 server = null;
       try {
         // Initialize the pool before we start the server; don't start yet.
@@ -553,6 +578,11 @@ public class HiveServer2 extends CompositeService {
 
         // Cleanup the scratch dir before starting
         ServerUtils.cleanUpScratchDir(hiveConf);
+        // Schedule task to cleanup dangling scratch dir periodically,
+        // initial wait for a random time between 0-10 min to
+        // avoid intial spike when using multiple HS2
+        scheduleClearDanglingScratchDir(hiveConf, new Random().nextInt(600));
+
         server = new HiveServer2();
         server.init(hiveConf);
         server.start();
@@ -587,9 +617,9 @@ public class HiveServer2 extends CompositeService {
           throw new Error("Max start attempts " + maxAttempts + " exhausted", throwable);
         } else {
           LOG.warn("Error starting HiveServer2 on attempt " + attempts
-              + ", will retry in 60 seconds", throwable);
+              + ", will retry in " + retrySleepIntervalMs + "ms", throwable);
           try {
-            Thread.sleep(60L * 1000L);
+            Thread.sleep(retrySleepIntervalMs);
           } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
           }
