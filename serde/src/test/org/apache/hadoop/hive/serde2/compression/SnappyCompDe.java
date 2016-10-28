@@ -493,7 +493,7 @@ public class SnappyCompDe implements CompDe {
    */
   @Override
   public String getName(){
-    return "hive";
+    return "snappy";
   }
 
   /**
@@ -503,7 +503,7 @@ public class SnappyCompDe implements CompDe {
    */
   @Override
   public String getVendor() {
-    return "snappy";
+    return "hive";
   }
 
 }
