@@ -41,9 +41,9 @@ public class SnappyCompDe implements CompDe {
    * Initialize the plug-in by overlaying the input configuration map
    * onto the plug-in's default configuration.
    *
-   * @param config Overlay configuration map
+   * @param config Overlay configuration map.
    *
-   * @return True is initialization was successful
+   * @return True is initialization was successful.
    */
   @Override
   public boolean init(Map<String, String> config) {
@@ -51,9 +51,9 @@ public class SnappyCompDe implements CompDe {
   }
 
   /**
-   * Return the configuration settings of the CompDe
+   * Get the configuration settings of the CompDe after it has been initialized.
    *
-   * @return
+   * @return The CompDe configuration.
    */
   @Override
   public Map<String, String> getConfig() {
@@ -65,19 +65,22 @@ public class SnappyCompDe implements CompDe {
    *
    * The header contains a compressed array of data types.
    * The body contains compressed columns and their metadata.
-   * The footer contains a compressed array of chunk sizes. The final four bytes of the footer encode the byte size of that compressed array.
+   * The footer contains a compressed array of chunk sizes. 
+   * The final four bytes of the footer encode the byte size of that 
+   *   compressed array.
    *
-   * @param colSet
+   * @param colSet The set of columns to be compressed.
    *
    * @return ByteBuffer representing the compressed set.
    * @throws IOException 
    * @throws SerDeException 
    */
   @Override
-  public ByteBuffer compress(ColumnBuffer[] colSet) throws IOException, SerDeException {
+  public ByteBuffer compress(ColumnBuffer[] colSet)
+      throws IOException, SerDeException {
 
-    // Many compression libraries allow you to avoid allocation of intermediate arrays.
-    // To use these API, we need to preallocate the output container.
+    // Many compression libraries let you avoid allocation of intermediate arrays.
+    // To use these API, we preallocate the output container.
 
     // Reserve space for the header.
     int[] dataType = new int[colSet.length];
@@ -264,7 +267,8 @@ public class SnappyCompDe implements CompDe {
         compressedSize.add(writePrimitives(rowSizes, output));
 
         // Write the flattened data.
-        compressedSize.add(writePrimitives(flattenedData.toString().getBytes(StandardCharsets.UTF_8), output));
+        compressedSize.add(writePrimitives(
+            flattenedData.toString().getBytes(StandardCharsets.UTF_8), output));
 
         break;
       }
@@ -281,9 +285,12 @@ public class SnappyCompDe implements CompDe {
   }
 
   /**
-   * Write compressed data to the output ByteBuffer and update the position of the buffer.
+   * Write compressed data to the output ByteBuffer and update the position of
+   * the buffer.
+   *
    * @param boxedVals A list of boxed Java primitives.
-   * @param output
+   * @param output The buffer to append with the compressed bytes.
+   *
    * @return The number of bytes written.
    * @throws IOException
    */
@@ -304,9 +311,12 @@ public class SnappyCompDe implements CompDe {
   }
 
   /**
-   * Write compressed data to the output ByteBuffer and update the position of the buffer.
+   * Write compressed data to the output ByteBuffer and update the position of
+   * the buffer.
+   *
    * @param primitives An array of primitive data types.
-   * @param output The buffer to write into.
+   * @param output The buffer to append with the compressed bytes.
+   *
    * @return The number of bytes written.
    * @throws IOException
    */
@@ -337,10 +347,13 @@ public class SnappyCompDe implements CompDe {
   }
 
   /**
-   * Decompress a set of columns from a ByteBuffer and update the position of the buffer.
+   * Decompress a set of columns from a ByteBuffer and update the position of
+   * the buffer.
    *
-   * @param input A ByteBuffer with `position` indicating the starting point of the compressed chunk.
-   * @param chunkSize The length of the compressed chunk to be decompressed from the input buffer.
+   * @param input     A ByteBuffer with `position` indicating the starting point
+   *                  of the compressed chunk.
+   * @param chunkSize The length of the compressed chunk to be decompressed from
+   *                  the input buffer.
    *
    * @return The set of columns.
    * @throws IOException 
@@ -455,8 +468,11 @@ public class SnappyCompDe implements CompDe {
 
   /**
    * Read a chunk from a ByteBuffer and advance the buffer position.
-   * @param chunkSize The number of bytes to decompress starting at the current position.
-   * @param input The buffer to read from.
+   *
+   * @param chunkSize The number of bytes to decompress starting at the current
+   *                  position.
+   * @param input     The buffer to read from.
+   *
    * @return An array of primitives.
    * @throws IOException
    */

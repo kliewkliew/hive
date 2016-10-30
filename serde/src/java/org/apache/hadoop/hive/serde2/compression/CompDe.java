@@ -41,16 +41,16 @@ public interface CompDe {
   public boolean init(Map<String, String> config);
 
   /**
-   * Return the configuration settings of the CompDe after initialization.
+   * Get the configuration settings of the CompDe after it has been initialized.
    *
-   * @return
+   * @return The CompDe configuration.
    */
   public Map<String, String> getConfig();
 
   /**
    * Compress a set of columns.
    *
-   * @param colSet
+   * @param colSet The set of columns to be compressed.
    *
    * @return ByteBuffer representing the compressed set.
    * @throws Exception 
