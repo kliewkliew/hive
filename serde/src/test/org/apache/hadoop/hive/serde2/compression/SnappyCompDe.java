@@ -115,9 +115,11 @@ public class SnappyCompDe implements CompDe {
         maxCompressedSize += Snappy.maxCompressedLength(colSet.length * Integer.SIZE / Byte.SIZE);
 
         // Reserve space for the size of the compressed flattened bytes.
+        int rawBinaryLength = 0;
         for (ByteBuffer nextBuffer : colSet[colNum].toTColumn().getBinaryVal().getValues()) {
-          maxCompressedSize += Snappy.maxCompressedLength(nextBuffer.limit());
+          rawBinaryLength += nextBuffer.limit();
         }
+        maxCompressedSize += Snappy.maxCompressedLength(rawBinaryLength);
 
         // Add an additional value to the list of compressed chunk sizes (length of `rowSize` array).
         uncompressedFooterLength++;
@@ -128,9 +130,11 @@ public class SnappyCompDe implements CompDe {
         maxCompressedSize += Snappy.maxCompressedLength(colSet.length * Integer.SIZE / Byte.SIZE);
 
         // Reserve space for the size of the compressed flattened bytes.
+        int rawStringLength = 0;
         for (String nextString: colSet[colNum].toTColumn().getStringVal().getValues()) {
-          maxCompressedSize += Snappy.maxCompressedLength(nextString.getBytes(StandardCharsets.UTF_8).length);
+          rawStringLength += nextString.getBytes(StandardCharsets.UTF_8).length;
         }
+        maxCompressedSize += Snappy.maxCompressedLength(rawStringLength);
 
         // Add an additional value to the list of compressed chunk sizes (length of `rowSize` array).
         uncompressedFooterLength++;
