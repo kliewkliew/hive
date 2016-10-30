@@ -69,9 +69,10 @@ public class SnappyCompDe implements CompDe {
    * @param colSet
    *
    * @return ByteBuffer representing the compressed set.
+   * @throws IOException 
    */
   @Override
-  public ByteBuffer compress(ColumnBuffer[] colSet) {
+  public ByteBuffer compress(ColumnBuffer[] colSet) throws IOException {
 
     // Many compression libraries allow you to avoid allocation of intermediate arrays.
     // To use these API, we need to preallocate the output container.
@@ -150,128 +151,125 @@ public class SnappyCompDe implements CompDe {
     ArrayList<Integer> compressedSize = new ArrayList<Integer>(uncompressedFooterLength);
 
     // Write to the output buffer.
-    try {
-      // Write the header.
-      compressedSize.add(writePrimitives(dataType, output));
 
-      // Write the compressed columns and metadata.
-      for (int colNum = 0; colNum < colSet.length; colNum++) {
-        switch (TTypeId.findByValue(dataType[colNum])) {
-        case BOOLEAN_TYPE: {
-          TBoolColumn column = colSet[colNum].toTColumn().getBoolVal();
+    // Write the header.
+    compressedSize.add(writePrimitives(dataType, output));
 
-          List<Boolean> bools = column.getValues();
-          BitSet bsBools = new BitSet(bools.size());
-          for (int rowNum = 0; rowNum < bools.size(); rowNum++) {
-            bsBools.set(rowNum, bools.get(rowNum));
-          }
+    // Write the compressed columns and metadata.
+    for (int colNum = 0; colNum < colSet.length; colNum++) {
+      switch (TTypeId.findByValue(dataType[colNum])) {
+      case BOOLEAN_TYPE: {
+        TBoolColumn column = colSet[colNum].toTColumn().getBoolVal();
 
-          compressedSize.add(writePrimitives(column.getNulls(), output));
-
-          // BitSet won't write trailing zeroes so we encode the length
-          output.putInt(column.getValuesSize());
-
-          compressedSize.add(writePrimitives(bsBools.toByteArray(), output));
-
-          break;
+        List<Boolean> bools = column.getValues();
+        BitSet bsBools = new BitSet(bools.size());
+        for (int rowNum = 0; rowNum < bools.size(); rowNum++) {
+          bsBools.set(rowNum, bools.get(rowNum));
         }
-        case TINYINT_TYPE: {
-          TByteColumn column = colSet[colNum].toTColumn().getByteVal();
-          compressedSize.add(writePrimitives(column.getNulls(), output));
-          compressedSize.add(writeBoxedBytes(column.getValues(), output));
-          break;
-        }
-        case SMALLINT_TYPE: {
-          TI16Column column = colSet[colNum].toTColumn().getI16Val();
-          compressedSize.add(writePrimitives(column.getNulls(), output));
-          compressedSize.add(writeBoxedShorts(column.getValues(), output));
-          break;
-        }
-        case INT_TYPE: {
-          TI32Column column = colSet[colNum].toTColumn().getI32Val();
-          compressedSize.add(writePrimitives(column.getNulls(), output));
-          compressedSize.add(writeBoxedIntegers(column.getValues(), output));
-          break;
-        }
-        case BIGINT_TYPE: {
-          TI64Column column = colSet[colNum].toTColumn().getI64Val();
-          compressedSize.add(writePrimitives(column.getNulls(), output));
-          compressedSize.add(writeBoxedLongs(column.getValues(), output));
-          break;
-        }
-        case DOUBLE_TYPE: {
-          TDoubleColumn column = colSet[colNum].toTColumn().getDoubleVal();
-          compressedSize.add(writePrimitives(column.getNulls(), output));
-          compressedSize.add(writeBoxedDoubles(column.getValues(), output));
-          break;
-        }
-        case BINARY_TYPE: {
-          TBinaryColumn column = colSet[colNum].toTColumn().getBinaryVal();
 
-          // Initialize the array of row sizes.
-          int[] rowSizes = new int[column.getValuesSize()];
-          int totalSize = 0;
-          for (int rowNum = 0; rowNum < column.getValuesSize(); rowNum++) {
-            rowSizes[rowNum] = column.getValues().get(rowNum).limit();
-            totalSize += column.getValues().get(rowNum).limit();
-          }
+        compressedSize.add(writePrimitives(column.getNulls(), output));
 
-          // Flatten the data for Snappy for a better compression ratio.
-          ByteBuffer flattenedData = ByteBuffer.allocate(totalSize);
-          for (int rowNum = 0; rowNum < column.getValuesSize(); rowNum++) {
-            flattenedData.put(column.getValues().get(rowNum));
-          }
+        // BitSet won't write trailing zeroes so we encode the length
+        output.putInt(column.getValuesSize());
 
-          // Write nulls bitmap.
-          compressedSize.add(writePrimitives(column.getNulls(), output));
+        compressedSize.add(writePrimitives(bsBools.toByteArray(), output));
 
-          // Write the list of row sizes.
-          compressedSize.add(writePrimitives(rowSizes, output));
-
-          // Write the compressed, flattened data.
-          compressedSize.add(writePrimitives(flattenedData.array(), output));
-
-          break;
-        }
-        case STRING_TYPE: {
-          TStringColumn column = colSet[colNum].toTColumn().getStringVal();
-
-          // Initialize the array of row sizes.
-          int[] rowSizes = new int[column.getValuesSize()];
-          int totalSize = 0;
-          for (int rowNum = 0; rowNum < column.getValuesSize(); rowNum++) {
-            rowSizes[rowNum] = column.getValues().get(rowNum).length();
-            totalSize += column.getValues().get(rowNum).length();
-          }
-
-          // Flatten the data for Snappy for a better compression ratio.
-          StringBuilder flattenedData = new StringBuilder(totalSize);
-          for (int rowNum = 0; rowNum < column.getValuesSize(); rowNum++) {
-            flattenedData.append(column.getValues().get(rowNum));
-          }
-
-          // Write nulls bitmap.
-          compressedSize.add(writePrimitives(column.getNulls(), output));
-
-          // Write the list of row sizes.
-          compressedSize.add(writePrimitives(rowSizes, output));
-
-          // Write the flattened data.
-          compressedSize.add(writePrimitives(flattenedData.toString().getBytes(StandardCharsets.UTF_8), output));
-
-          break;
-        }
-        default:
-          throw new IllegalStateException("Unrecognized column type");
-        }
+        break;
       }
+      case TINYINT_TYPE: {
+        TByteColumn column = colSet[colNum].toTColumn().getByteVal();
+        compressedSize.add(writePrimitives(column.getNulls(), output));
+        compressedSize.add(writeBoxedBytes(column.getValues(), output));
+        break;
+      }
+      case SMALLINT_TYPE: {
+        TI16Column column = colSet[colNum].toTColumn().getI16Val();
+        compressedSize.add(writePrimitives(column.getNulls(), output));
+        compressedSize.add(writeBoxedShorts(column.getValues(), output));
+        break;
+      }
+      case INT_TYPE: {
+        TI32Column column = colSet[colNum].toTColumn().getI32Val();
+        compressedSize.add(writePrimitives(column.getNulls(), output));
+        compressedSize.add(writeBoxedIntegers(column.getValues(), output));
+        break;
+      }
+      case BIGINT_TYPE: {
+        TI64Column column = colSet[colNum].toTColumn().getI64Val();
+        compressedSize.add(writePrimitives(column.getNulls(), output));
+        compressedSize.add(writeBoxedLongs(column.getValues(), output));
+        break;
+      }
+      case DOUBLE_TYPE: {
+        TDoubleColumn column = colSet[colNum].toTColumn().getDoubleVal();
+        compressedSize.add(writePrimitives(column.getNulls(), output));
+        compressedSize.add(writeBoxedDoubles(column.getValues(), output));
+        break;
+      }
+      case BINARY_TYPE: {
+        TBinaryColumn column = colSet[colNum].toTColumn().getBinaryVal();
 
-      // Write the footer.
-      output.putInt(writeBoxedIntegers(compressedSize, output));
+        // Initialize the array of row sizes.
+        int[] rowSizes = new int[column.getValuesSize()];
+        int totalSize = 0;
+        for (int rowNum = 0; rowNum < column.getValuesSize(); rowNum++) {
+          rowSizes[rowNum] = column.getValues().get(rowNum).limit();
+          totalSize += column.getValues().get(rowNum).limit();
+        }
 
-    } catch (IOException e) {
-      e.printStackTrace();
+        // Flatten the data for Snappy for a better compression ratio.
+        ByteBuffer flattenedData = ByteBuffer.allocate(totalSize);
+        for (int rowNum = 0; rowNum < column.getValuesSize(); rowNum++) {
+          flattenedData.put(column.getValues().get(rowNum));
+        }
+
+        // Write nulls bitmap.
+        compressedSize.add(writePrimitives(column.getNulls(), output));
+
+        // Write the list of row sizes.
+        compressedSize.add(writePrimitives(rowSizes, output));
+
+        // Write the compressed, flattened data.
+        compressedSize.add(writePrimitives(flattenedData.array(), output));
+
+        break;
+      }
+      case STRING_TYPE: {
+        TStringColumn column = colSet[colNum].toTColumn().getStringVal();
+
+        // Initialize the array of row sizes.
+        int[] rowSizes = new int[column.getValuesSize()];
+        int totalSize = 0;
+        for (int rowNum = 0; rowNum < column.getValuesSize(); rowNum++) {
+          rowSizes[rowNum] = column.getValues().get(rowNum).length();
+          totalSize += column.getValues().get(rowNum).length();
+        }
+
+        // Flatten the data for Snappy for a better compression ratio.
+        StringBuilder flattenedData = new StringBuilder(totalSize);
+        for (int rowNum = 0; rowNum < column.getValuesSize(); rowNum++) {
+          flattenedData.append(column.getValues().get(rowNum));
+        }
+
+        // Write nulls bitmap.
+        compressedSize.add(writePrimitives(column.getNulls(), output));
+
+        // Write the list of row sizes.
+        compressedSize.add(writePrimitives(rowSizes, output));
+
+        // Write the flattened data.
+        compressedSize.add(writePrimitives(flattenedData.toString().getBytes(StandardCharsets.UTF_8), output));
+
+        break;
+      }
+      default:
+        throw new IllegalStateException("Unrecognized column type");
+      }
     }
+
+    // Write the footer.
+    output.putInt(writeBoxedIntegers(compressedSize, output));
+
     output.flip();
     return output;
   }
@@ -339,116 +337,113 @@ public class SnappyCompDe implements CompDe {
    * @param chunkSize The length of the compressed chunk to be decompressed from the input buffer.
    *
    * @return The set of columns.
+   * @throws IOException 
    */
   @Override
-  public ColumnBuffer[] decompress(ByteBuffer input, int chunkSize) {
+  public ColumnBuffer[] decompress(ByteBuffer input, int chunkSize) throws IOException {
     int startPos = input.position();
-    try {
-      // Read the footer.
-      int footerSize = input.getInt(startPos + chunkSize - 4);
-      Iterator<Integer> compressedSize =
-          Arrays.asList(ArrayUtils.toObject(
-              Snappy.uncompressIntArray(
-                  input.array(),
-                  input.arrayOffset() + startPos + chunkSize - Integer.SIZE / Byte.SIZE - footerSize,
-                  footerSize)))
-          .iterator();
 
-      // Read the header.
-      int[] dataType = readIntegers(compressedSize.next(), input);
-      int numOfCols = dataType.length;
+    // Read the footer.
+    int footerSize = input.getInt(startPos + chunkSize - 4);
+    Iterator<Integer> compressedSize =
+        Arrays.asList(ArrayUtils.toObject(
+            Snappy.uncompressIntArray(
+                input.array(),
+                input.arrayOffset() + startPos + chunkSize - Integer.SIZE / Byte.SIZE - footerSize,
+                footerSize)))
+        .iterator();
 
-      // Read the columns.
-      ColumnBuffer[] outputCols = new ColumnBuffer[numOfCols];
-      for (int colNum = 0; colNum < numOfCols; colNum++) {
-        byte[] nulls = readBytes(compressedSize.next(), input);
+    // Read the header.
+    int[] dataType = readIntegers(compressedSize.next(), input);
+    int numOfCols = dataType.length;
 
-        switch (TTypeId.findByValue(dataType[colNum])) {
-        case BOOLEAN_TYPE: {
-          int numRows = input.getInt();
-          byte[] vals = readBytes(compressedSize.next(), input);
-          BitSet bsBools = BitSet.valueOf(vals);
+    // Read the columns.
+    ColumnBuffer[] outputCols = new ColumnBuffer[numOfCols];
+    for (int colNum = 0; colNum < numOfCols; colNum++) {
+      byte[] nulls = readBytes(compressedSize.next(), input);
 
-          boolean[] bools = new boolean[numRows];
-          for (int rowNum = 0; rowNum < numRows; rowNum++) {
-            bools[rowNum] = bsBools.get(rowNum);
-          }
+      switch (TTypeId.findByValue(dataType[colNum])) {
+      case BOOLEAN_TYPE: {
+        int numRows = input.getInt();
+        byte[] vals = readBytes(compressedSize.next(), input);
+        BitSet bsBools = BitSet.valueOf(vals);
 
-          TBoolColumn column = new TBoolColumn(Arrays.asList(ArrayUtils.toObject(bools)), ByteBuffer.wrap(nulls));
-          outputCols[colNum] = new ColumnBuffer(TColumn.boolVal(column));
-          break;
+        boolean[] bools = new boolean[numRows];
+        for (int rowNum = 0; rowNum < numRows; rowNum++) {
+          bools[rowNum] = bsBools.get(rowNum);
         }
-        case TINYINT_TYPE: {
-          byte[] vals = readBytes(compressedSize.next(), input);
-          TByteColumn column = new TByteColumn(Arrays.asList(ArrayUtils.toObject(vals)), ByteBuffer.wrap(nulls));
-          outputCols[colNum] = new ColumnBuffer(TColumn.byteVal(column));
-          break;
-        }
-        case SMALLINT_TYPE: {
-          short[] vals = readShorts(compressedSize.next(), input);
-          TI16Column column = new TI16Column(Arrays.asList(ArrayUtils.toObject(vals)), ByteBuffer.wrap(nulls));
-          outputCols[colNum] = new ColumnBuffer(TColumn.i16Val(column));
-          break;
-        }
-        case INT_TYPE: {
-          int[] vals = readIntegers(compressedSize.next(), input);
-          TI32Column column = new TI32Column(Arrays.asList(ArrayUtils.toObject(vals)), ByteBuffer.wrap(nulls));
-          outputCols[colNum] = new ColumnBuffer(TColumn.i32Val(column));
-          break;
-        }
-        case BIGINT_TYPE: {
-          long[] vals = readLongs(compressedSize.next(), input);
-          TI64Column column = new TI64Column(Arrays.asList(ArrayUtils.toObject(vals)), ByteBuffer.wrap(nulls));
-          outputCols[colNum] = new ColumnBuffer(TColumn.i64Val(column));
-          break;
-        }
-        case DOUBLE_TYPE: {
-          double[] vals = readDoubles(compressedSize.next(), input);
-          TDoubleColumn column = new TDoubleColumn(Arrays.asList(ArrayUtils.toObject(vals)), ByteBuffer.wrap(nulls));
-          outputCols[colNum] = new ColumnBuffer(TColumn.doubleVal(column));
-          break;
-        }
-        case BINARY_TYPE: {
-          int[] rowSize = readIntegers(compressedSize.next(), input);
 
-          ByteBuffer flattenedData = ByteBuffer.wrap(readBytes(compressedSize.next(), input));
-          ByteBuffer[] vals = new ByteBuffer[rowSize.length];
-
-          for (int rowNum = 0; rowNum < rowSize.length; rowNum++) {
-            vals[rowNum] = ByteBuffer.wrap(flattenedData.array(), flattenedData.position(), rowSize[rowNum]);
-            flattenedData.position(flattenedData.position() + rowSize[rowNum]);
-          }
-
-          TBinaryColumn column = new TBinaryColumn(Arrays.asList(vals), ByteBuffer.wrap(nulls));
-          outputCols[colNum] = new ColumnBuffer(TColumn.binaryVal(column));
-          break;
-        }
-        case STRING_TYPE: {
-          int[] rowSize = readIntegers(compressedSize.next(), input);
-
-          ByteBuffer flattenedData = ByteBuffer.wrap(readBytes(compressedSize.next(), input));
-
-          String[] vals = new String[rowSize.length];
-
-          for (int rowNum = 0; rowNum < rowSize.length; rowNum++) {
-            vals[rowNum] = new String(flattenedData.array(), flattenedData.position(), rowSize[rowNum], StandardCharsets.UTF_8);
-            flattenedData.position(flattenedData.position() + rowSize[rowNum]);
-          }
-
-          TStringColumn column = new TStringColumn(Arrays.asList(vals), ByteBuffer.wrap(nulls));
-          outputCols[colNum] = new ColumnBuffer(TColumn.stringVal(column));
-          break;
-        }
-        default:
-          throw new IllegalStateException("Unrecognized column type: " + TTypeId.findByValue(dataType[colNum]));
-        }
+        TBoolColumn column = new TBoolColumn(Arrays.asList(ArrayUtils.toObject(bools)), ByteBuffer.wrap(nulls));
+        outputCols[colNum] = new ColumnBuffer(TColumn.boolVal(column));
+        break;
       }
-      input.position(startPos + chunkSize);
-      return outputCols;
-    } catch (IOException e) {
-      e.printStackTrace();
-      return (ColumnBuffer[]) null;
+      case TINYINT_TYPE: {
+        byte[] vals = readBytes(compressedSize.next(), input);
+        TByteColumn column = new TByteColumn(Arrays.asList(ArrayUtils.toObject(vals)), ByteBuffer.wrap(nulls));
+        outputCols[colNum] = new ColumnBuffer(TColumn.byteVal(column));
+        break;
+      }
+      case SMALLINT_TYPE: {
+        short[] vals = readShorts(compressedSize.next(), input);
+        TI16Column column = new TI16Column(Arrays.asList(ArrayUtils.toObject(vals)), ByteBuffer.wrap(nulls));
+        outputCols[colNum] = new ColumnBuffer(TColumn.i16Val(column));
+        break;
+      }
+      case INT_TYPE: {
+        int[] vals = readIntegers(compressedSize.next(), input);
+        TI32Column column = new TI32Column(Arrays.asList(ArrayUtils.toObject(vals)), ByteBuffer.wrap(nulls));
+        outputCols[colNum] = new ColumnBuffer(TColumn.i32Val(column));
+        break;
+      }
+      case BIGINT_TYPE: {
+        long[] vals = readLongs(compressedSize.next(), input);
+        TI64Column column = new TI64Column(Arrays.asList(ArrayUtils.toObject(vals)), ByteBuffer.wrap(nulls));
+        outputCols[colNum] = new ColumnBuffer(TColumn.i64Val(column));
+        break;
+      }
+      case DOUBLE_TYPE: {
+        double[] vals = readDoubles(compressedSize.next(), input);
+        TDoubleColumn column = new TDoubleColumn(Arrays.asList(ArrayUtils.toObject(vals)), ByteBuffer.wrap(nulls));
+        outputCols[colNum] = new ColumnBuffer(TColumn.doubleVal(column));
+        break;
+      }
+      case BINARY_TYPE: {
+        int[] rowSize = readIntegers(compressedSize.next(), input);
+
+        ByteBuffer flattenedData = ByteBuffer.wrap(readBytes(compressedSize.next(), input));
+        ByteBuffer[] vals = new ByteBuffer[rowSize.length];
+
+        for (int rowNum = 0; rowNum < rowSize.length; rowNum++) {
+          vals[rowNum] = ByteBuffer.wrap(flattenedData.array(), flattenedData.position(), rowSize[rowNum]);
+          flattenedData.position(flattenedData.position() + rowSize[rowNum]);
+        }
+
+        TBinaryColumn column = new TBinaryColumn(Arrays.asList(vals), ByteBuffer.wrap(nulls));
+        outputCols[colNum] = new ColumnBuffer(TColumn.binaryVal(column));
+        break;
+      }
+      case STRING_TYPE: {
+        int[] rowSize = readIntegers(compressedSize.next(), input);
+
+        ByteBuffer flattenedData = ByteBuffer.wrap(readBytes(compressedSize.next(), input));
+
+        String[] vals = new String[rowSize.length];
+
+        for (int rowNum = 0; rowNum < rowSize.length; rowNum++) {
+          vals[rowNum] = new String(flattenedData.array(), flattenedData.position(), rowSize[rowNum], StandardCharsets.UTF_8);
+          flattenedData.position(flattenedData.position() + rowSize[rowNum]);
+        }
+
+        TStringColumn column = new TStringColumn(Arrays.asList(vals), ByteBuffer.wrap(nulls));
+        outputCols[colNum] = new ColumnBuffer(TColumn.stringVal(column));
+        break;
+      }
+      default:
+        throw new IllegalStateException("Unrecognized column type: " + TTypeId.findByValue(dataType[colNum]));
+      }
     }
+    input.position(startPos + chunkSize);
+    return outputCols;
   }
 
   /**

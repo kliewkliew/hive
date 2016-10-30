@@ -19,11 +19,13 @@
 
 package org.apache.hadoop.hive.serde2.compression;
 
+import java.io.IOException;
 import java.nio.ByteBuffer;
 import java.util.Map;
 
 import org.apache.hadoop.classification.InterfaceAudience;
 import org.apache.hadoop.classification.InterfaceStability;
+import org.apache.hadoop.hive.serde2.SerDeException;
 import org.apache.hadoop.hive.serde2.thrift.ColumnBuffer;
 
 @InterfaceAudience.Private
@@ -53,18 +55,25 @@ public interface CompDe {
    * @param colSet
    *
    * @return ByteBuffer representing the compressed set.
+   * @throws Exception 
    */
-  public ByteBuffer compress(ColumnBuffer[] colSet);
+  public ByteBuffer compress(ColumnBuffer[] colSet) 
+      throws Exception;
 
   /**
-   * Decompress a set of columns from a ByteBuffer and update the position of the buffer.
+   * Decompress a set of columns from a ByteBuffer and update the position of 
+   * the buffer.
    *
-   * @param input A ByteBuffer with `position` indicating the starting point of the compressed chunk.
-   * @param chunkSize The length of the compressed chunk to be decompressed from the input buffer.
+   * @param input     A ByteBuffer with `position` indicating the starting point
+   *                  of the compressed chunk.
+   * @param chunkSize The length of the compressed chunk to be decompressed from
+   *                  the input buffer.
    *
    * @return The set of columns.
+   * @throws Exception 
    */
-  public ColumnBuffer[] decompress(ByteBuffer input, int chunkSize);
+  public ColumnBuffer[] decompress(ByteBuffer input, int chunkSize) 
+      throws Exception;
 
   /**
    *

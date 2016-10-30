@@ -25,6 +25,7 @@ import org.apache.hive.service.rpc.thrift.*;
 
 import static org.junit.Assert.assertArrayEquals;
 
+import java.io.IOException;
 import java.nio.ByteBuffer;
 import java.util.ArrayList;
 import java.util.HashMap;
@@ -125,7 +126,7 @@ public class TestSnappyCompDe {
   }
 
   @Test
-  public void testBinaryCol() {
+  public void testBinaryCol() throws IOException {
     ColumnBuffer[] inputCols = new ColumnBuffer[]{columnBinary};
 
     ByteBuffer compressed = compDe.compress(inputCols);
@@ -137,7 +138,7 @@ public class TestSnappyCompDe {
   }
 
   @Test
-  public void testBoolCol() {
+  public void testBoolCol() throws IOException {
     ColumnBuffer[] inputCols = new ColumnBuffer[]{columnBool};
 
     ByteBuffer compressed = compDe.compress(inputCols);
@@ -149,7 +150,7 @@ public class TestSnappyCompDe {
   }
 
   @Test
-  public void testByteCol() {
+  public void testByteCol() throws IOException {
     ColumnBuffer[] inputCols = new ColumnBuffer[]{columnByte};
 
     ByteBuffer compressed = compDe.compress(inputCols);
@@ -161,7 +162,7 @@ public class TestSnappyCompDe {
   }
 
   @Test
-  public void testIntCol() {
+  public void testIntCol() throws IOException {
     ColumnBuffer[] inputCols = new ColumnBuffer[]{columnInt};
 
     ByteBuffer compressed = compDe.compress(inputCols);
@@ -173,7 +174,7 @@ public class TestSnappyCompDe {
   }
 
   @Test
-  public void testLongCol() {
+  public void testLongCol() throws IOException {
     ColumnBuffer[] inputCols = new ColumnBuffer[]{columnLong};
 
     ByteBuffer compressed = compDe.compress(inputCols);
@@ -185,7 +186,7 @@ public class TestSnappyCompDe {
   }
 
   @Test
-  public void testDoubleCol() {
+  public void testDoubleCol() throws IOException {
     ColumnBuffer[] inputCols = new ColumnBuffer[]{columnDouble};
 
     ByteBuffer compressed = compDe.compress(inputCols);
@@ -197,7 +198,7 @@ public class TestSnappyCompDe {
   }
 
   @Test
-  public void testStringCol() {
+  public void testStringCol() throws IOException {
     ColumnBuffer[] inputCols = new ColumnBuffer[]{columnStr};
 
     ByteBuffer compressed = compDe.compress(inputCols);
@@ -209,7 +210,7 @@ public class TestSnappyCompDe {
   }
 
   @Test
-  public void testNulls() {
+  public void testNulls() throws IOException {
     ColumnBuffer[] inputCols;
     ArrayList<String> someStrings = new ArrayList<String>();
     someStrings.add("test1");
@@ -233,7 +234,7 @@ public class TestSnappyCompDe {
   }
 
   @Test
-  public void testMulti() {
+  public void testMulti() throws IOException {
     ColumnBuffer[] inputCols = new ColumnBuffer[]{columnInt, columnStr};
 
     ByteBuffer compressed = compDe.compress(inputCols);
