@@ -61,7 +61,7 @@ public class ColumnBasedSet implements RowSet {
     }
   }
 
-  public ColumnBasedSet(TRowSet tRowSet, CompDe compDe) throws TException {
+  public ColumnBasedSet(TRowSet tRowSet, CompDe compDe) throws Exception {
     descriptors = null;
     if (tRowSet.isSetBinaryColumns()) {
       // Use TCompactProtocol to read serialized TColumns

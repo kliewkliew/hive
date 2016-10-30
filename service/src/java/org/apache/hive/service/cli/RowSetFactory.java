@@ -37,7 +37,7 @@ public class RowSetFactory {
   }
 
   // This call is accessed from client (jdbc) side
-  public static RowSet create(TRowSet results, TProtocolVersion version, CompDe compDe) throws TException {
+  public static RowSet create(TRowSet results, TProtocolVersion version, CompDe compDe) throws Exception {
     if (version.getValue() >= HIVE_CLI_SERVICE_PROTOCOL_V6.getValue()) {
           return new ColumnBasedSet(results, compDe);
      }
