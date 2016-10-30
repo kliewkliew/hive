@@ -54,6 +54,8 @@ public class TestCompDeNegotiation {
         "org.apache.hadoop.hive.ql.security.authorization.DefaultHiveAuthorizationProvider");
     baseConf.setBoolean("datanucleus.schema.autoCreateTables", true);
 
+    // Set the compresspr lists and compressor configs used for negotiation
+
     noCompDes = new HiveConf(baseConf);
 
     clientSingleCompDe = new HiveConf(baseConf);

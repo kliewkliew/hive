@@ -30,6 +30,7 @@ import java.util.List;
 import java.util.Map;
 
 import org.apache.commons.lang3.ArrayUtils;
+import org.apache.hadoop.hive.serde2.SerDeException;
 import org.apache.hadoop.hive.serde2.thrift.ColumnBuffer;
 import org.apache.hive.service.rpc.thrift.*;
 import org.xerial.snappy.Snappy;
@@ -70,9 +71,10 @@ public class SnappyCompDe implements CompDe {
    *
    * @return ByteBuffer representing the compressed set.
    * @throws IOException 
+   * @throws SerDeException 
    */
   @Override
-  public ByteBuffer compress(ColumnBuffer[] colSet) throws IOException {
+  public ByteBuffer compress(ColumnBuffer[] colSet) throws IOException, SerDeException {
 
     // Many compression libraries allow you to avoid allocation of intermediate arrays.
     // To use these API, we need to preallocate the output container.
@@ -141,7 +143,7 @@ public class SnappyCompDe implements CompDe {
 
         break;
       default:
-        throw new IllegalStateException("Unrecognized column type");
+        throw new SerDeException("Unrecognized column type: " + TTypeId.findByValue(dataType[colNum]));
       }
     }
     // Reserve space for the footer.
@@ -267,7 +269,7 @@ public class SnappyCompDe implements CompDe {
         break;
       }
       default:
-        throw new IllegalStateException("Unrecognized column type");
+        throw new SerDeException("Unrecognized column type: " + TTypeId.findByValue(dataType[colNum]));
       }
     }
 
@@ -342,9 +344,10 @@ public class SnappyCompDe implements CompDe {
    *
    * @return The set of columns.
    * @throws IOException 
+   * @throws SerDeException 
    */
   @Override
-  public ColumnBuffer[] decompress(ByteBuffer input, int chunkSize) throws IOException {
+  public ColumnBuffer[] decompress(ByteBuffer input, int chunkSize) throws IOException, SerDeException {
     int startPos = input.position();
 
     // Read the footer.
@@ -443,7 +446,7 @@ public class SnappyCompDe implements CompDe {
         break;
       }
       default:
-        throw new IllegalStateException("Unrecognized column type: " + TTypeId.findByValue(dataType[colNum]));
+        throw new SerDeException("Unrecognized column type: " + TTypeId.findByValue(dataType[colNum]));
       }
     }
     input.position(startPos + chunkSize);
