@@ -920,7 +920,7 @@ public class HiveStatement implements java.sql.Statement {
       for (Object[] row : rowSet) {
         logs.add(String.valueOf(row[0]));
       }
-    } catch (TException e) {
+    } catch (Exception e) {
       throw new SQLException("Error building result set for query log: " + e, e);
     }
 
