@@ -53,13 +53,13 @@ public interface CompDe {
    * @param colSet The set of columns to be compressed.
    *
    * @return ByteBuffer representing the compressed set.
-   * @throws Exception 
+   * @throws Exception
    */
-  public ByteBuffer compress(ColumnBuffer[] colSet) 
+  public ByteBuffer compress(ColumnBuffer[] colSet)
       throws Exception;
 
   /**
-   * Decompress a set of columns from a ByteBuffer and update the position of 
+   * Decompress a set of columns from a ByteBuffer and update the position of
    * the buffer.
    *
    * @param input     A ByteBuffer with `position` indicating the starting point
@@ -68,9 +68,9 @@ public interface CompDe {
    *                  the input buffer.
    *
    * @return The set of columns.
-   * @throws Exception 
+   * @throws Exception
    */
-  public ColumnBuffer[] decompress(ByteBuffer input, int chunkSize) 
+  public ColumnBuffer[] decompress(ByteBuffer input, int chunkSize)
       throws Exception;
 
   /**
