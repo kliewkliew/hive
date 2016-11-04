@@ -7153,6 +7153,14 @@ public class SemanticAnalyzer extends BaseSemanticAnalyzer {
     try {
       Deserializer deserializer = table_desc.getDeserializerClass()
           .newInstance();
+
+      String compDeName = SessionState.get().getConf().getVar(ConfVars.HIVE_SERVER2_THRIFT_RESULTSET_COMPRESSOR);
+      if (!compDeName.isEmpty()) {
+        table_desc.getProperties().put(serdeConstants.COMPDE_NAME, compDeName);
+        table_desc.getProperties().put(serdeConstants.COMPDE_CONFIG,
+            SessionState.get().getConf().getValByRegex(ConfVars.HIVE_SERVER2_THRIFT_RESULTSET_COMPRESSOR + "\\." + compDeName + "\\.[\\w|\\d]+"));
+      }
+
       SerDeUtils.initializeSerDe(deserializer, conf, table_desc.getProperties(), null);
       oi = (StructObjectInspector) deserializer.getObjectInspector();
     } catch (Exception e) {
