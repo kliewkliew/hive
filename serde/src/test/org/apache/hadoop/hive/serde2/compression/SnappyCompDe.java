@@ -330,34 +330,34 @@ public class SnappyCompDe implements CompDe {
     return bytesWritten;
   }
   private int writePrimitives(short[] primitives, ByteBuffer output) throws IOException {
-    ByteBuffer bBuffer = ByteBuffer.allocate(primitives.length * Short.SIZE / Byte.SIZE);
-    ShortBuffer pBuffer = bBuffer.asShortBuffer();
-    pBuffer.put(primitives);
-    int bytesWritten = Snappy.compress(bBuffer.array(), 0, bBuffer.capacity(), output.array(), output.arrayOffset() + output.position());
+    ByteBuffer buffer = ByteBuffer.allocate(primitives.length * Short.SIZE / Byte.SIZE);
+    ShortBuffer view = buffer.asShortBuffer();
+    view.put(primitives);
+    int bytesWritten = Snappy.compress(buffer.array(), 0, buffer.capacity(), output.array(), output.arrayOffset() + output.position());
     output.position(output.position() + bytesWritten);
     return bytesWritten;
   }
   private int writePrimitives(int[] primitives, ByteBuffer output) throws IOException {
-    ByteBuffer bBuffer = ByteBuffer.allocate(primitives.length * Integer.SIZE / Byte.SIZE);
-    IntBuffer pBuffer = bBuffer.asIntBuffer();
-    pBuffer.put(primitives);
-    int bytesWritten = Snappy.compress(bBuffer.array(), 0, bBuffer.capacity(), output.array(), output.arrayOffset() + output.position());
+    ByteBuffer buffer = ByteBuffer.allocate(primitives.length * Integer.SIZE / Byte.SIZE);
+    IntBuffer view = buffer.asIntBuffer();
+    view.put(primitives);
+    int bytesWritten = Snappy.compress(buffer.array(), 0, buffer.capacity(), output.array(), output.arrayOffset() + output.position());
     output.position(output.position() + bytesWritten);
     return bytesWritten;
   }
   private int writePrimitives(long[] primitives, ByteBuffer output) throws IOException {
-    ByteBuffer bBuffer = ByteBuffer.allocate(primitives.length * Long.SIZE / Byte.SIZE);
-    LongBuffer pBuffer = bBuffer.asLongBuffer();
-    pBuffer.put(primitives);
-    int bytesWritten = Snappy.compress(bBuffer.array(), 0, bBuffer.capacity(), output.array(), output.arrayOffset() + output.position());
+    ByteBuffer buffer = ByteBuffer.allocate(primitives.length * Long.SIZE / Byte.SIZE);
+    LongBuffer view = buffer.asLongBuffer();
+    view.put(primitives);
+    int bytesWritten = Snappy.compress(buffer.array(), 0, buffer.capacity(), output.array(), output.arrayOffset() + output.position());
     output.position(output.position() + bytesWritten);
     return bytesWritten;
   }
   private int writePrimitives(double[] primitives, ByteBuffer output) throws IOException {
-    ByteBuffer bBuffer = ByteBuffer.allocate(primitives.length * Double.SIZE / Byte.SIZE);
-    DoubleBuffer pBuffer = bBuffer.asDoubleBuffer();
-    pBuffer.put(primitives);
-    int bytesWritten = Snappy.compress(bBuffer.array(), 0, bBuffer.capacity(), output.array(), output.arrayOffset() + output.position());
+    ByteBuffer buffer = ByteBuffer.allocate(primitives.length * Double.SIZE / Byte.SIZE);
+    DoubleBuffer view = buffer.asDoubleBuffer();
+    view.put(primitives);
+    int bytesWritten = Snappy.compress(buffer.array(), 0, buffer.capacity(), output.array(), output.arrayOffset() + output.position());
     output.position(output.position() + bytesWritten);
     return bytesWritten;
   }
