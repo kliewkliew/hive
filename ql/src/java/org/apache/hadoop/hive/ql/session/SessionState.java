@@ -294,7 +294,6 @@ public class SessionState {
     return sessionConf;
   }
 
-
   public File getTmpOutputFile() {
     return tmpOutputFile;
   }
