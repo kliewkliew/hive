@@ -296,7 +296,7 @@ public class SnappyCompDe implements CompDe {
    * @param output The buffer to append with the compressed bytes.
    *
    * @return The number of bytes written.
-   * @throws IOException
+   * @throws IOException on failure to write compressed data.
    */
   private int writeBoxedBytes(List<Byte> boxedVals, ByteBuffer output) throws IOException {
     return writePrimitives(ArrayUtils.toPrimitive(boxedVals.toArray(new Byte[0])), output);
@@ -322,7 +322,7 @@ public class SnappyCompDe implements CompDe {
    * @param output The buffer to append with the compressed bytes.
    *
    * @return The number of bytes written.
-   * @throws IOException on failure to compress.
+   * @throws IOException on failure to write compressed data.
    */
   private int writePrimitives(byte[] primitives, ByteBuffer output) throws IOException {
     int bytesWritten = Snappy.compress(primitives, 0, primitives.length, output.array(), output.arrayOffset() + output.position());
@@ -488,7 +488,7 @@ public class SnappyCompDe implements CompDe {
    * @param input     The buffer to read from.
    *
    * @return An array of primitives.
-   * @throws IOException
+   * @throws IOException on failure to decompress.
    */
   private byte[] readBytes(int chunkSize, ByteBuffer input) throws IOException {
     byte[] uncompressedBytes = new byte[Snappy.getUncompressedLength(input.array(), input.arrayOffset() + input.position())];
@@ -534,8 +534,9 @@ public class SnappyCompDe implements CompDe {
   }
 
   /**
+   * Plugin name.
    *
-   * @return The plug-in name
+   * @return The plug-in name.
    */
   @Override
   public String getName(){
@@ -543,9 +544,9 @@ public class SnappyCompDe implements CompDe {
   }
 
   /**
-   * Provide a namespace for the plug-in
+   * Provide a namespace for the plug-in.
    *
-   * @return The vendor name
+   * @return The vendor name.
    */
   @Override
   public String getVendor() {

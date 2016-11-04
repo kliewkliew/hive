@@ -74,6 +74,7 @@ public interface CompDe {
       throws Exception;
 
   /**
+   * Plugin name.
    *
    * @return The plug-in name.
    */
