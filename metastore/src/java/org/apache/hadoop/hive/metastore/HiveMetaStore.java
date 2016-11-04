@@ -20,6 +20,7 @@ package org.apache.hadoop.hive.metastore;
 
 import org.apache.hadoop.hive.metastore.api.ClientCapabilities;
 import org.apache.hadoop.hive.metastore.api.ClientCapability;
+import org.apache.hadoop.hive.metastore.api.CompactionResponse;
 import org.apache.hadoop.hive.metastore.api.GetTableRequest;
 import org.apache.hadoop.hive.metastore.api.GetTableResult;
 import org.apache.hadoop.hive.metastore.api.GetTablesRequest;
@@ -6399,10 +6400,14 @@ public class HiveMetaStore extends ThriftHiveMetastore {
       throws TException {
       return getTxnHandler().heartbeatTxnRange(rqst);
     }
-
+    @Deprecated
     @Override
     public void compact(CompactionRequest rqst) throws TException {
-      getTxnHandler().compact(rqst);
+      compact2(rqst);
+    }
+    @Override
+    public CompactionResponse compact2(CompactionRequest rqst) throws TException {
+      return getTxnHandler().compact(rqst);
     }
 
     @Override
@@ -7116,7 +7121,7 @@ public class HiveMetaStore extends ThriftHiveMetastore {
       // Server will create new threads up to max as necessary. After an idle
       // period, it will destroy threads to keep the number of threads in the
       // pool to min.
-      long maxMessageSize = conf.getIntVar(HiveConf.ConfVars.METASTORESERVERMAXMESSAGESIZE);
+      long maxMessageSize = conf.getLongVar(HiveConf.ConfVars.METASTORESERVERMAXMESSAGESIZE);
       int minWorkerThreads = conf.getIntVar(HiveConf.ConfVars.METASTORESERVERMINTHREADS);
       int maxWorkerThreads = conf.getIntVar(HiveConf.ConfVars.METASTORESERVERMAXTHREADS);
       boolean tcpKeepAlive = conf.getBoolVar(HiveConf.ConfVars.METASTORE_TCP_KEEP_ALIVE);

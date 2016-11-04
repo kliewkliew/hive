@@ -666,7 +666,7 @@ public class HiveConf extends Configuration {
         "the connection URL, before the next metastore query that accesses the\n" +
         "datastore. Once reloaded, this value is reset to false. Used for\n" +
         "testing only."),
-    METASTORESERVERMAXMESSAGESIZE("hive.metastore.server.max.message.size", 100*1024*1024,
+    METASTORESERVERMAXMESSAGESIZE("hive.metastore.server.max.message.size", 100*1024*1024L,
         "Maximum message size in bytes a HMS will accept."),
     METASTORESERVERMINTHREADS("hive.metastore.server.min.threads", 200,
         "Minimum number of worker threads in the Thrift server's pool."),
@@ -1065,6 +1065,7 @@ public class HiveConf extends Configuration {
     HIVE_CBO_COST_MODEL_HDFS_READ("hive.cbo.costmodel.hdfs.read", "1.5", "Default cost of reading a byte from HDFS;"
                                                                  + " expressed as multiple of Local FS read cost"),
     AGGR_JOIN_TRANSPOSE("hive.transpose.aggr.join", false, "push aggregates through join"),
+    SEMIJOIN_CONVERSION("hive.enable.semijoin.conversion", true, "convert group by followed by inner equi join into semijoin"),
     HIVE_COLUMN_ALIGNMENT("hive.order.columnalignment", true, "Flag to control whether we want to try to align" +
         "columns in operators such as Aggregate or Join so that we try to reduce the number of shuffling stages"),
 
@@ -1938,6 +1939,10 @@ public class HiveConf extends Configuration {
         "number of records of the query results is larger than this threshold, we split the query in\n" +
         "total number of rows/threshold parts across the time dimension. Note that we assume the\n" +
         "records to be split uniformly across the time dimension"),
+    HIVE_DRUID_NUM_HTTP_CONNECTION("hive.druid.http.numConnection", 20, "Number of connections used by\n" +
+        "the HTTP client."),
+    HIVE_DRUID_HTTP_READ_TIMEOUT("hive.druid.http.read.timeout", "PT1M", "Read timeout period for the HTTP\n" +
+        "client in ISO8601 format (for example P2W, P3M, PT1H30M, PT0.750S), default is period of 1 minute."),
 
     // For HBase storage handler
     HIVE_HBASE_WAL_ENABLED("hive.hbase.wal.enabled", true,
