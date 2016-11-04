@@ -69,15 +69,15 @@ public class SnappyCompDe implements CompDe {
    *
    * The header contains a compressed array of data types.
    * The body contains compressed columns and their metadata.
-   * The footer contains a compressed array of chunk sizes. 
-   * The final four bytes of the footer encode the byte size of that 
+   * The footer contains a compressed array of chunk sizes.
+   * The final four bytes of the footer encode the byte size of that
    *   compressed array.
    *
    * @param colSet The set of columns to be compressed.
    *
    * @return ByteBuffer representing the compressed set.
-   * @throws IOException 
-   * @throws SerDeException 
+   * @throws IOException on failure to compress.
+   * @throws SerDeException on invalid ColumnBuffer metadata.
    */
   @Override
   public ByteBuffer compress(ColumnBuffer[] colSet)
@@ -322,7 +322,7 @@ public class SnappyCompDe implements CompDe {
    * @param output The buffer to append with the compressed bytes.
    *
    * @return The number of bytes written.
-   * @throws IOException
+   * @throws IOException on failure to compress.
    */
   private int writePrimitives(byte[] primitives, ByteBuffer output) throws IOException {
     int bytesWritten = Snappy.compress(primitives, 0, primitives.length, output.array(), output.arrayOffset() + output.position());
@@ -372,8 +372,8 @@ public class SnappyCompDe implements CompDe {
    *                  the input buffer.
    *
    * @return The set of columns.
-   * @throws IOException 
-   * @throws SerDeException 
+   * @throws IOException on failure to decompress.
+   * @throws SerDeException on invalid ColumnBuffer metadata.
    */
   @Override
   public ColumnBuffer[] decompress(ByteBuffer input, int chunkSize) throws IOException, SerDeException {
