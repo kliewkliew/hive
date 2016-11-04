@@ -4700,7 +4700,11 @@ class TOpenSessionResp {
   /**
    * @var array
    */
-  public $configuration = null;
+  public $compressorConfiguration = null;
+  /**
+   * @var string
+   */
+  public $compressorName = null;
 
   public function __construct($vals=null) {
     if (!isset(self::$_TSPEC)) {
@@ -4720,7 +4724,7 @@ class TOpenSessionResp {
           'class' => '\TSessionHandle',
           ),
         4 => array(
-          'var' => 'configuration',
+          'var' => 'compressorConfiguration',
           'type' => TType::MAP,
           'ktype' => TType::STRING,
           'vtype' => TType::STRING,
@@ -4730,6 +4734,10 @@ class TOpenSessionResp {
           'val' => array(
             'type' => TType::STRING,
             ),
+          ),
+        5 => array(
+          'var' => 'compressorName',
+          'type' => TType::STRING,
           ),
         );
     }
@@ -4743,8 +4751,11 @@ class TOpenSessionResp {
       if (isset($vals['sessionHandle'])) {
         $this->sessionHandle = $vals['sessionHandle'];
       }
-      if (isset($vals['configuration'])) {
-        $this->configuration = $vals['configuration'];
+      if (isset($vals['compressorConfiguration'])) {
+        $this->compressorConfiguration = $vals['compressorConfiguration'];
+      }
+      if (isset($vals['compressorName'])) {
+        $this->compressorName = $vals['compressorName'];
       }
     }
   }
@@ -4793,7 +4804,7 @@ class TOpenSessionResp {
           break;
         case 4:
           if ($ftype == TType::MAP) {
-            $this->configuration = array();
+            $this->compressorConfiguration = array();
             $_size134 = 0;
             $_ktype135 = 0;
             $_vtype136 = 0;
@@ -4804,9 +4815,16 @@ class TOpenSessionResp {
               $val140 = '';
               $xfer += $input->readString($key139);
               $xfer += $input->readString($val140);
-              $this->configuration[$key139] = $val140;
+              $this->compressorConfiguration[$key139] = $val140;
             }
             $xfer += $input->readMapEnd();
+          } else {
+            $xfer += $input->skip($ftype);
+          }
+          break;
+        case 5:
+          if ($ftype == TType::STRING) {
+            $xfer += $input->readString($this->compressorName);
           } else {
             $xfer += $input->skip($ftype);
           }
@@ -4845,15 +4863,15 @@ class TOpenSessionResp {
       $xfer += $this->sessionHandle->write($output);
       $xfer += $output->writeFieldEnd();
     }
-    if ($this->configuration !== null) {
-      if (!is_array($this->configuration)) {
+    if ($this->compressorConfiguration !== null) {
+      if (!is_array($this->compressorConfiguration)) {
         throw new TProtocolException('Bad type in structure.', TProtocolException::INVALID_DATA);
       }
-      $xfer += $output->writeFieldBegin('configuration', TType::MAP, 4);
+      $xfer += $output->writeFieldBegin('compressorConfiguration', TType::MAP, 4);
       {
-        $output->writeMapBegin(TType::STRING, TType::STRING, count($this->configuration));
+        $output->writeMapBegin(TType::STRING, TType::STRING, count($this->compressorConfiguration));
         {
-          foreach ($this->configuration as $kiter141 => $viter142)
+          foreach ($this->compressorConfiguration as $kiter141 => $viter142)
           {
             $xfer += $output->writeString($kiter141);
             $xfer += $output->writeString($viter142);
@@ -4861,6 +4879,11 @@ class TOpenSessionResp {
         }
         $output->writeMapEnd();
       }
+      $xfer += $output->writeFieldEnd();
+    }
+    if ($this->compressorName !== null) {
+      $xfer += $output->writeFieldBegin('compressorName', TType::STRING, 5);
+      $xfer += $output->writeString($this->compressorName);
       $xfer += $output->writeFieldEnd();
     }
     $xfer += $output->writeFieldStop();

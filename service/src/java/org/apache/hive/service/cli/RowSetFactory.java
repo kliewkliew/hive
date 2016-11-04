@@ -24,6 +24,8 @@ import org.apache.thrift.TException;
 
 import static org.apache.hive.service.rpc.thrift.TProtocolVersion.HIVE_CLI_SERVICE_PROTOCOL_V6;
 
+import org.apache.hadoop.hive.serde2.compression.CompDe;
+
 public class RowSetFactory {
 
   // This call is accessed from server side
@@ -35,10 +37,10 @@ public class RowSetFactory {
   }
 
   // This call is accessed from client (jdbc) side
-  public static RowSet create(TRowSet results, TProtocolVersion version) throws TException {
-	  if (version.getValue() >= HIVE_CLI_SERVICE_PROTOCOL_V6.getValue()) {
-          return new ColumnBasedSet(results);
-       }
-      return new RowBasedSet(results);
+  public static RowSet create(TRowSet results, TProtocolVersion version, CompDe compDe) throws Exception {
+    if (version.getValue() >= HIVE_CLI_SERVICE_PROTOCOL_V6.getValue()) {
+          return new ColumnBasedSet(results, compDe);
+     }
+    return new RowBasedSet(results);
   }
 }
