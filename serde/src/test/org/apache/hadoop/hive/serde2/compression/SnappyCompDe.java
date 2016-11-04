@@ -526,8 +526,6 @@ public class SnappyCompDe implements CompDe {
   private double[] readDoubles(int chunkSize, ByteBuffer input) throws IOException {
     byte[] uncompressedBytes = new byte[Snappy.getUncompressedLength(input.array(), input.arrayOffset() + input.position())];
     Snappy.uncompress(input.array(), input.arrayOffset() + input.position(), chunkSize, uncompressedBytes, 0);
-    byte[] doubleBytes = new byte[chunkSize];
-    System.arraycopy(input.array(), input.arrayOffset() + input.position(), doubleBytes, 0, chunkSize);
     DoubleBuffer view = ByteBuffer.wrap(uncompressedBytes).asDoubleBuffer();
     double[] vals = new double[view.capacity()];
     view.get(vals);
