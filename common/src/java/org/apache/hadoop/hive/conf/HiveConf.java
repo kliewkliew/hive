@@ -250,6 +250,7 @@ public class HiveConf extends Configuration {
       HiveConf.ConfVars.METASTORE_TRANSACTIONAL_EVENT_LISTENERS,
       HiveConf.ConfVars.METASTORE_EVENT_CLEAN_FREQ,
       HiveConf.ConfVars.METASTORE_EVENT_EXPIRY_DURATION,
+      HiveConf.ConfVars.METASTORE_EVENT_MESSAGE_FACTORY,
       HiveConf.ConfVars.METASTORE_FILTER_HOOK,
       HiveConf.ConfVars.METASTORE_RAW_STORE_IMPL,
       HiveConf.ConfVars.METASTORE_END_FUNCTION_LISTENERS,
@@ -794,6 +795,9 @@ public class HiveConf extends Configuration {
     METASTORE_EVENT_EXPIRY_DURATION("hive.metastore.event.expiry.duration", "0s",
         new TimeValidator(TimeUnit.SECONDS),
         "Duration after which events expire from events table"),
+    METASTORE_EVENT_MESSAGE_FACTORY("hive.metastore.event.message.factory",
+        "org.apache.hadoop.hive.metastore.messaging.json.JSONMessageFactory",
+        "Factory class for making encoding and decoding messages in the events generated."),
     METASTORE_EXECUTE_SET_UGI("hive.metastore.execute.setugi", true,
         "In unsecure mode, setting this property to true will cause the metastore to execute DFS operations using \n" +
         "the client's reported user and group permissions. Note that this property must be set on \n" +
@@ -1024,8 +1028,12 @@ public class HiveConf extends Configuration {
         "  Comparing bigints and strings.\n" +
         "  Comparing bigints and doubles."),
     HIVE_STRICT_CHECKS_CARTESIAN("hive.strict.checks.cartesian.product", true,
-        "Enabling strict large query checks disallows the following:\n" +
+        "Enabling strict Cartesian join checks disallows the following:\n" +
         "  Cartesian product (cross join)."),
+    HIVE_STRICT_CHECKS_BUCKETING("hive.strict.checks.bucketing", true,
+        "Enabling strict bucketing checks disallows the following:\n" +
+        "  Load into bucketed tables."),
+
     @Deprecated
     HIVEMAPREDMODE("hive.mapred.mode", null,
         "Deprecated; use hive.strict.checks.* settings instead."),
@@ -3195,8 +3203,13 @@ public class HiveConf extends Configuration {
             "Comma-separated list of supported blobstore schemes."),
 
     HIVE_BLOBSTORE_USE_BLOBSTORE_AS_SCRATCHDIR("hive.blobstore.use.blobstore.as.scratchdir", false,
-            "Enable the use of scratch directories directly on blob storage systems (it may cause performance penalties).");
+            "Enable the use of scratch directories directly on blob storage systems (it may cause performance penalties)."),
 
+    HIVE_BLOBSTORE_OPTIMIZATIONS_ENABLED("hive.blobstore.optimizations.enabled", true,
+            "This parameter enables a number of optimizations when running on blobstores:\n" +
+            "(1) If hive.blobstore.use.blobstore.as.scratchdir is false, force the last Hive job to write to the blobstore.\n" +
+            "This is a performance optimization that forces the final FileSinkOperator to write to the blobstore.\n" +
+            "See HIVE-15121 for details.");
 
     public final String varname;
     private final String altName;
@@ -4345,11 +4358,14 @@ public class HiveConf extends Configuration {
         "Unsafe compares between different types", ConfVars.HIVE_STRICT_CHECKS_TYPE_SAFETY);
     private static final String NO_CARTESIAN_MSG = makeMessage(
         "Cartesian products", ConfVars.HIVE_STRICT_CHECKS_CARTESIAN);
+    private static final String NO_BUCKETING_MSG = makeMessage(
+        "Load into bucketed tables", ConfVars.HIVE_STRICT_CHECKS_BUCKETING);
 
     private static String makeMessage(String what, ConfVars setting) {
-      return what + " are disabled for safety reasons. If you know what you are doing, please make"
-          + " sure that " + setting.varname + " is set to false and that "
-          + ConfVars.HIVEMAPREDMODE.varname + " is not set to 'strict' to enable them.";
+      return what + " are disabled for safety reasons. If you know what you are doing, please set"
+          + setting.varname + " to false and that " + ConfVars.HIVEMAPREDMODE.varname + " is not"
+          + " set to 'strict' to proceed. Note that if you may get errors or incorrect results if"
+          + " you make a mistake while using some of the unsafe features.";
     }
 
     public static String checkNoLimit(Configuration conf) {
@@ -4367,6 +4383,10 @@ public class HiveConf extends Configuration {
 
     public static String checkCartesian(Configuration conf) {
       return isAllowed(conf, ConfVars.HIVE_STRICT_CHECKS_CARTESIAN) ? null : NO_CARTESIAN_MSG;
+    }
+
+    public static String checkBucketing(Configuration conf) {
+      return isAllowed(conf, ConfVars.HIVE_STRICT_CHECKS_BUCKETING) ? null : NO_BUCKETING_MSG;
     }
 
     private static boolean isAllowed(Configuration conf, ConfVars setting) {

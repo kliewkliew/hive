@@ -65,7 +65,6 @@ import org.apache.hadoop.hive.conf.HiveConf.StrictChecks;
 import org.apache.hadoop.hive.metastore.MetaStoreUtils;
 import org.apache.hadoop.hive.metastore.TableType;
 import org.apache.hadoop.hive.metastore.Warehouse;
-import org.apache.hadoop.hive.metastore.api.AddDynamicPartitions;
 import org.apache.hadoop.hive.metastore.api.Database;
 import org.apache.hadoop.hive.metastore.api.FieldSchema;
 import org.apache.hadoop.hive.metastore.api.MetaException;
@@ -825,9 +824,9 @@ public class SemanticAnalyzer extends BaseSemanticAnalyzer {
 
     qb.getParseInfo().setSrcForAlias(alias, tableTree);
 
-    // if alias to CTE contains the alias, we do not do the translation because
+    // if alias to CTE contains the table name, we do not do the translation because
     // cte is actually a subquery.
-    if (!this.aliasToCTEs.containsKey(alias)) {
+    if (!this.aliasToCTEs.containsKey(tabIdName)) {
       unparseTranslator.addTableNameTranslation(tableTree, SessionState.get().getCurrentDatabase());
       if (aliasIndex != 0) {
         unparseTranslator.addIdentifierTranslation((ASTNode) tabref.getChild(aliasIndex));
@@ -2581,8 +2580,8 @@ public class SemanticAnalyzer extends BaseSemanticAnalyzer {
       List<String> rightAliases, ASTNode condn, QBJoinTree joinTree,
       List<String> leftSrc) throws SemanticException {
     if ((leftAliases.size() != 0) && (rightAliases.size() != 0)) {
-      throw new SemanticException(ErrorMsg.INVALID_JOIN_CONDITION_1
-          .getMsg(condn));
+      joinTree.addPostJoinFilter(condn);
+      return;
     }
 
     if (rightAliases.size() != 0) {
@@ -2596,8 +2595,7 @@ public class SemanticAnalyzer extends BaseSemanticAnalyzer {
         }
       }
     } else {
-      throw new SemanticException(ErrorMsg.INVALID_JOIN_CONDITION_2
-          .getMsg(condn));
+      joinTree.addPostJoinFilter(condn);
     }
   }
 
@@ -2791,8 +2789,8 @@ public class SemanticAnalyzer extends BaseSemanticAnalyzer {
 
     switch (joinCond.getToken().getType()) {
     case HiveParser.KW_OR:
-      throw new SemanticException(ErrorMsg.INVALID_JOIN_CONDITION_3
-          .getMsg(joinCond));
+      joinTree.addPostJoinFilter(joinCond);
+      break;
 
     case HiveParser.KW_AND:
       parseJoinCondition(joinTree, (ASTNode) joinCond.getChild(0), leftSrc, type, aliasToOpInfo);
@@ -2821,15 +2819,13 @@ public class SemanticAnalyzer extends BaseSemanticAnalyzer {
       // * join is right outer and filter is on right alias
       if (((leftCondAl1.size() != 0) && (leftCondAl2.size() != 0))
           || ((rightCondAl1.size() != 0) && (rightCondAl2.size() != 0))) {
-        throw new SemanticException(ErrorMsg.INVALID_JOIN_CONDITION_1
-            .getMsg(joinCond));
+        joinTree.addPostJoinFilter(joinCond);
+      } else {
+        applyEqualityPredicateToQBJoinTree(joinTree, type, leftSrc,
+            joinCond, leftCondn, rightCondn,
+            leftCondAl1, leftCondAl2,
+            rightCondAl1, rightCondAl2);
       }
-
-      applyEqualityPredicateToQBJoinTree(joinTree, type, leftSrc,
-          joinCond, leftCondn, rightCondn,
-          leftCondAl1, leftCondAl2,
-          rightCondAl1, rightCondAl2);
-
       break;
 
     default:
@@ -2871,23 +2867,22 @@ public class SemanticAnalyzer extends BaseSemanticAnalyzer {
       }
 
       if (!leftAliasNull && !rightAliasNull) {
-        throw new SemanticException(ErrorMsg.INVALID_JOIN_CONDITION_1
-            .getMsg(joinCond));
-      }
-
-      if (!leftAliasNull) {
-        if (type.equals(JoinType.LEFTOUTER)
-            || type.equals(JoinType.FULLOUTER)) {
-            joinTree.getFilters().get(0).add(joinCond);
-        } else {
-          joinTree.getFiltersForPushing().get(0).add(joinCond);
-        }
+        joinTree.addPostJoinFilter(joinCond);
       } else {
-        if (type.equals(JoinType.RIGHTOUTER)
-            || type.equals(JoinType.FULLOUTER)) {
-            joinTree.getFilters().get(1).add(joinCond);
+        if (!leftAliasNull) {
+          if (type.equals(JoinType.LEFTOUTER)
+              || type.equals(JoinType.FULLOUTER)) {
+              joinTree.getFilters().get(0).add(joinCond);
+          } else {
+            joinTree.getFiltersForPushing().get(0).add(joinCond);
+          }
         } else {
-          joinTree.getFiltersForPushing().get(1).add(joinCond);
+          if (type.equals(JoinType.RIGHTOUTER)
+              || type.equals(JoinType.FULLOUTER)) {
+              joinTree.getFilters().get(1).add(joinCond);
+          } else {
+            joinTree.getFiltersForPushing().get(1).add(joinCond);
+          }
         }
       }
 
@@ -6635,7 +6630,7 @@ public class SemanticAnalyzer extends BaseSemanticAnalyzer {
       if (isNonNativeTable) {
         queryTmpdir = dest_path;
       } else {
-        queryTmpdir = ctx.getTempDirForPath(dest_path);
+        queryTmpdir = ctx.getTempDirForPath(dest_path, true);
       }
       if (dpCtx != null) {
         // set the root of the temporary path where dynamic partition columns will populate
@@ -6754,7 +6749,7 @@ public class SemanticAnalyzer extends BaseSemanticAnalyzer {
       dest_path = new Path(tabPath.toUri().getScheme(), tabPath.toUri()
           .getAuthority(), partPath.toUri().getPath());
 
-      queryTmpdir = ctx.getTempDirForPath(dest_path);
+      queryTmpdir = ctx.getTempDirForPath(dest_path, true);
       table_desc = Utilities.getTableDesc(dest_tab);
 
       // Add sorting/bucketing if needed
@@ -6802,7 +6797,7 @@ public class SemanticAnalyzer extends BaseSemanticAnalyzer {
 
         try {
           Path qPath = FileUtils.makeQualified(dest_path, conf);
-          queryTmpdir = ctx.getTempDirForPath(qPath);
+          queryTmpdir = ctx.getTempDirForPath(qPath, true);
         } catch (Exception e) {
           throw new SemanticException("Error creating temporary folder on: "
               + dest_path, e);
@@ -6990,7 +6985,8 @@ public class SemanticAnalyzer extends BaseSemanticAnalyzer {
       dpCtx,
       dest_path);
 
-    fileSinkDesc.setHiveServerQuery(SessionState.get().isHiveServerQuery());
+    boolean isHiveServerQuery = SessionState.get().isHiveServerQuery();
+    fileSinkDesc.setHiveServerQuery(isHiveServerQuery);
     // If this is an insert, update, or delete on an ACID table then mark that so the
     // FileSinkOperator knows how to properly write to it.
     if (destTableIsAcid) {
@@ -7031,6 +7027,15 @@ public class SemanticAnalyzer extends BaseSemanticAnalyzer {
       }
     } else if (dpCtx != null) {
       fileSinkDesc.setStaticSpec(dpCtx.getSPPath());
+    }
+
+    if (isHiveServerQuery &&
+      null != table_desc &&
+      table_desc.getSerdeClassName().equalsIgnoreCase(ThriftJDBCBinarySerDe.class.getName()) &&
+      HiveConf.getBoolVar(conf,HiveConf.ConfVars.HIVE_SERVER2_THRIFT_RESULTSET_SERIALIZE_IN_TASKS)) {
+        fileSinkDesc.setIsUsingThriftJDBCBinarySerDe(true);
+    } else {
+        fileSinkDesc.setIsUsingThriftJDBCBinarySerDe(false);
     }
 
     Operator output = putOpInsertMap(OperatorFactory.getAndMakeChild(
@@ -8105,9 +8110,16 @@ public class SemanticAnalyzer extends BaseSemanticAnalyzer {
     joinOp.getConf().setQBJoinTreeProps(joinTree);
     joinContext.put(joinOp, joinTree);
 
+    // Safety check for postconditions; currently we do not support them for outer join
+    if (joinTree.getPostJoinFilters().size() != 0 && !joinTree.getNoOuterJoin()) {
+      throw new SemanticException(ErrorMsg.INVALID_JOIN_CONDITION.getMsg());
+    }
     Operator op = joinOp;
-    for(ASTNode condn : joinTree.getPostJoinFilters() ) {
+    for(ASTNode condn : joinTree.getPostJoinFilters()) {
       op = genFilterPlan(qb, condn, op, false);
+      if (LOG.isDebugEnabled()) {
+        LOG.debug("Generated " + op + " with post-filtering conditions after JOIN operator");
+      }
     }
     return op;
   }
@@ -8926,6 +8938,15 @@ public class SemanticAnalyzer extends BaseSemanticAnalyzer {
       }
       target.setMapAliases(mapAliases);
     }
+
+    if (node.getPostJoinFilters().size() != 0) {
+      // Safety check: if we are merging join operators and there are post-filtering
+      // conditions, they cannot be outer joins
+      assert node.getNoOuterJoin() && target.getNoOuterJoin();
+      for (ASTNode exprPostFilter : node.getPostJoinFilters()) {
+        target.addPostJoinFilter(exprPostFilter);
+      }
+    }
   }
 
   private ObjectPair<Integer, int[]> findMergePos(QBJoinTree node, QBJoinTree target) {
@@ -9031,6 +9052,11 @@ public class SemanticAnalyzer extends BaseSemanticAnalyzer {
         }
         JoinType currType = getType(node.getJoinCond());
         if (prevType != null && prevType != currType) {
+          break;
+        }
+        if ((!node.getNoOuterJoin() && node.getPostJoinFilters().size() != 0) ||
+                (!target.getNoOuterJoin() && target.getPostJoinFilters().size() != 0)) {
+          // Outer joins with post-filtering conditions cannot be merged
           break;
         }
         ObjectPair<Integer, int[]> mergeDetails = findMergePos(node, target);

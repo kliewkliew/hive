@@ -18,13 +18,19 @@
 */
 package org.apache.hive.hcatalog.listener;
 
-import static junit.framework.Assert.assertEquals;
-import static junit.framework.Assert.assertNull;
-import static junit.framework.Assert.assertTrue;
-import static junit.framework.Assert.fail;
+import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertNull;
+import static org.junit.Assert.assertTrue;
+import static org.junit.Assert.fail;
 
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
+import java.lang.reflect.Field;
+import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.HashMap;
+import java.util.Iterator;
+import java.util.List;
+import java.util.Map;
+
 import org.apache.hadoop.hive.cli.CliSessionState;
 import org.apache.hadoop.hive.conf.HiveConf;
 import org.apache.hadoop.hive.metastore.HiveMetaStoreClient;
@@ -33,29 +39,38 @@ import org.apache.hadoop.hive.metastore.api.Database;
 import org.apache.hadoop.hive.metastore.api.FieldSchema;
 import org.apache.hadoop.hive.metastore.api.FireEventRequest;
 import org.apache.hadoop.hive.metastore.api.FireEventRequestData;
+import org.apache.hadoop.hive.metastore.api.Function;
+import org.apache.hadoop.hive.metastore.api.FunctionType;
+import org.apache.hadoop.hive.metastore.api.Index;
 import org.apache.hadoop.hive.metastore.api.InsertEventRequestData;
 import org.apache.hadoop.hive.metastore.api.NotificationEvent;
 import org.apache.hadoop.hive.metastore.api.NotificationEventResponse;
+import org.apache.hadoop.hive.metastore.api.Order;
 import org.apache.hadoop.hive.metastore.api.Partition;
+import org.apache.hadoop.hive.metastore.api.PrincipalType;
+import org.apache.hadoop.hive.metastore.api.ResourceType;
+import org.apache.hadoop.hive.metastore.api.ResourceUri;
 import org.apache.hadoop.hive.metastore.api.SerDeInfo;
 import org.apache.hadoop.hive.metastore.api.StorageDescriptor;
 import org.apache.hadoop.hive.metastore.api.Table;
+import org.apache.hadoop.hive.metastore.messaging.json.JSONMessageFactory;
 import org.apache.hadoop.hive.ql.Driver;
 import org.apache.hadoop.hive.ql.session.SessionState;
 import org.apache.hive.hcatalog.common.HCatConstants;
+import org.apache.thrift.TDeserializer;
+import org.apache.thrift.protocol.TJSONProtocol;
+import org.codehaus.jackson.JsonFactory;
+import org.codehaus.jackson.JsonNode;
+import org.codehaus.jackson.JsonParser;
+import org.codehaus.jackson.map.ObjectMapper;
+import org.codehaus.jackson.node.ObjectNode;
 import org.junit.Before;
 import org.junit.BeforeClass;
 import org.junit.Test;
-
-import java.lang.reflect.Field;
-import java.util.ArrayList;
-import java.util.Arrays;
-import java.util.HashMap;
-import java.util.List;
-import java.util.Map;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 public class TestDbNotificationListener {
-
   private static final Logger LOG = LoggerFactory.getLogger(TestDbNotificationListener.class.getName());
   private static final int EVENTS_TTL = 30;
   private static final int CLEANUP_SLEEP_TIME = 10;
@@ -170,26 +185,34 @@ public class TestDbNotificationListener {
     List<FieldSchema> cols = new ArrayList<FieldSchema>();
     cols.add(new FieldSchema("col1", "int", "nocomment"));
     SerDeInfo serde = new SerDeInfo("serde", "seriallib", null);
-    StorageDescriptor sd = new StorageDescriptor(cols, "file:/tmp", "input", "output", false, 0,
-        serde, null, null, emptyParameters);
-    Table table = new Table("mytable", "default", "me", startTime, startTime, 0, sd, null,
-        emptyParameters, null, null, null);
+    StorageDescriptor sd =
+        new StorageDescriptor(cols, "file:/tmp", "input", "output", false, 0, serde, null, null,
+            emptyParameters);
+    Table table =
+        new Table("mytable", "default", "me", startTime, startTime, 0, sd, null, emptyParameters,
+            null, null, null);
     msClient.createTable(table);
-
+    // Get the event
     NotificationEventResponse rsp = msClient.getNextNotification(firstEventId, 0, null);
     assertEquals(1, rsp.getEventsSize());
-
     NotificationEvent event = rsp.getEvents().get(0);
     assertEquals(firstEventId + 1, event.getEventId());
     assertTrue(event.getEventTime() >= startTime);
     assertEquals(HCatConstants.HCAT_CREATE_TABLE_EVENT, event.getEventType());
     assertEquals("default", event.getDbName());
     assertEquals("mytable", event.getTableName());
-    assertTrue(event.getMessage().matches("\\{\"eventType\":\"CREATE_TABLE\",\"server\":\"\"," +
-        "\"servicePrincipal\":\"\",\"db\":\"default\",\"table\":\"mytable\",\"timestamp\":[0-9]+}"));
 
-    table = new Table("mytable2", "default", "me", startTime, startTime, 0, sd, null,
-        emptyParameters, null, null, null);
+    // Parse the message field
+    ObjectNode jsonTree = JSONMessageFactory.getJsonTree(event);
+    assertEquals(HCatConstants.HCAT_CREATE_TABLE_EVENT, jsonTree.get("eventType").asText());
+    assertEquals("default", jsonTree.get("db").asText());
+    assertEquals("mytable", jsonTree.get("table").asText());
+    Table tableObj = JSONMessageFactory.getTableObj(jsonTree);
+    assertEquals(table, tableObj);
+
+    table =
+        new Table("mytable2", "default", "me", startTime, startTime, 0, sd, null, emptyParameters,
+            null, null, null);
     DummyRawStoreFailEvent.setEventSucceed(false);
     try {
       msClient.createTable(table);
@@ -210,11 +233,12 @@ public class TestDbNotificationListener {
         serde, null, null, emptyParameters);
     Table table = new Table("alttable", "default", "me", startTime, startTime, 0, sd,
         new ArrayList<FieldSchema>(), emptyParameters, null, null, null);
+    // Event 1
     msClient.createTable(table);
-
     cols.add(new FieldSchema("col2", "int", ""));
     table = new Table("alttable", "default", "me", startTime, startTime, 0, sd,
         new ArrayList<FieldSchema>(), emptyParameters, null, null, null);
+    // Event 2
     msClient.alter_table("default", "alttable", table);
 
     NotificationEventResponse rsp = msClient.getNextNotification(firstEventId, 0, null);
@@ -226,9 +250,14 @@ public class TestDbNotificationListener {
     assertEquals(HCatConstants.HCAT_ALTER_TABLE_EVENT, event.getEventType());
     assertEquals("default", event.getDbName());
     assertEquals("alttable", event.getTableName());
-    assertTrue(event.getMessage().matches("\\{\"eventType\":\"ALTER_TABLE\",\"server\":\"\"," +
-        "\"servicePrincipal\":\"\",\"db\":\"default\",\"table\":\"alttable\"," +
-        "\"timestamp\":[0-9]+}"));
+
+    // Parse the message field
+    ObjectNode jsonTree = JSONMessageFactory.getJsonTree(event);
+    assertEquals(HCatConstants.HCAT_ALTER_TABLE_EVENT, jsonTree.get("eventType").asText());
+    assertEquals("default", jsonTree.get("db").asText());
+    assertEquals("alttable", jsonTree.get("table").asText());
+    Table tableObj = JSONMessageFactory.getTableObj(jsonTree);
+    assertEquals(table, tableObj);
 
     DummyRawStoreFailEvent.setEventSucceed(false);
     try {
@@ -306,9 +335,14 @@ public class TestDbNotificationListener {
     assertEquals(HCatConstants.HCAT_ADD_PARTITION_EVENT, event.getEventType());
     assertEquals("default", event.getDbName());
     assertEquals("addparttable", event.getTableName());
-    assertTrue(event.getMessage().matches("\\{\"eventType\":\"ADD_PARTITION\",\"server\":\"\"," +
-        "\"servicePrincipal\":\"\",\"db\":\"default\",\"table\":" +
-        "\"addparttable\",\"timestamp\":[0-9]+,\"partitions\":\\[\\{\"ds\":\"today\"}]}"));
+
+    // Parse the message field
+    ObjectNode jsonTree = JSONMessageFactory.getJsonTree(event);
+    assertEquals(HCatConstants.HCAT_ADD_PARTITION_EVENT, jsonTree.get("eventType").asText());
+    assertEquals("default", jsonTree.get("db").asText());
+    assertEquals("addparttable", jsonTree.get("table").asText());
+    List<Partition> partitionObjList = JSONMessageFactory.getPartitionObjList(jsonTree);
+    assertEquals(partition, partitionObjList.get(0));
 
     partition = new Partition(Arrays.asList("tomorrow"), "default", "tableDoesNotExist",
         startTime, startTime, sd, emptyParameters);
@@ -352,10 +386,14 @@ public class TestDbNotificationListener {
     assertEquals(HCatConstants.HCAT_ALTER_PARTITION_EVENT, event.getEventType());
     assertEquals("default", event.getDbName());
     assertEquals("alterparttable", event.getTableName());
-    assertTrue(event.getMessage(),
-        event.getMessage().matches("\\{\"eventType\":\"ALTER_PARTITION\",\"server\":\"\"," +
-        "\"servicePrincipal\":\"\",\"db\":\"default\",\"table\":\"alterparttable\"," +
-        "\"timestamp\":[0-9]+,\"keyValues\":\\{\"ds\":\"today\"}}"));
+
+    // Parse the message field
+    ObjectNode jsonTree = JSONMessageFactory.getJsonTree(event);
+    assertEquals(HCatConstants.HCAT_ALTER_PARTITION_EVENT, jsonTree.get("eventType").asText());
+    assertEquals("default", jsonTree.get("db").asText());
+    assertEquals("alterparttable", jsonTree.get("table").asText());
+    List<Partition> partitionObjList = JSONMessageFactory.getPartitionObjList(jsonTree);
+    assertEquals(newPart, partitionObjList.get(0));
 
     DummyRawStoreFailEvent.setEventSucceed(false);
     try {
@@ -402,10 +440,248 @@ public class TestDbNotificationListener {
 
     partition = new Partition(Arrays.asList("tomorrow"), "default", "dropPartTable",
         startTime, startTime, sd, emptyParameters);
-    msClient.add_partition(partition);
+      msClient.add_partition(partition);
     DummyRawStoreFailEvent.setEventSucceed(false);
     try {
       msClient.dropPartition("default", "dropparttable", Arrays.asList("tomorrow"), false);
+    } catch (Exception ex) {
+      // expected
+    }
+
+    rsp = msClient.getNextNotification(firstEventId, 0, null);
+    assertEquals(4, rsp.getEventsSize());
+  }
+
+  @Test
+  public void createFunction() throws Exception {
+    String funcName = "createFunction";
+    String dbName = "default";
+    String ownerName = "me";
+    String funcClass = "o.a.h.h.myfunc";
+    String funcResource = "file:/tmp/somewhere";
+    Function func = new Function(funcName, dbName, funcClass, ownerName, PrincipalType.USER,
+        startTime, FunctionType.JAVA, Arrays.asList(new ResourceUri(ResourceType.JAR,
+        funcResource)));
+    msClient.createFunction(func);
+    NotificationEventResponse rsp = msClient.getNextNotification(firstEventId, 0, null);
+    assertEquals(1, rsp.getEventsSize());
+    NotificationEvent event = rsp.getEvents().get(0);
+    assertEquals(firstEventId + 1, event.getEventId());
+    assertTrue(event.getEventTime() >= startTime);
+    assertEquals(HCatConstants.HCAT_CREATE_FUNCTION_EVENT, event.getEventType());
+    assertEquals(dbName, event.getDbName());
+    Function funcObj = JSONMessageFactory.getFunctionObj(JSONMessageFactory.getJsonTree(event));
+    assertEquals(dbName, funcObj.getDbName());
+    assertEquals(funcName, funcObj.getFunctionName());
+    assertEquals(funcClass, funcObj.getClassName());
+    assertEquals(ownerName, funcObj.getOwnerName());
+    assertEquals(FunctionType.JAVA, funcObj.getFunctionType());
+    assertEquals(1, funcObj.getResourceUrisSize());
+    assertEquals(ResourceType.JAR, funcObj.getResourceUris().get(0).getResourceType());
+    assertEquals(funcResource, funcObj.getResourceUris().get(0).getUri());
+
+    DummyRawStoreFailEvent.setEventSucceed(false);
+    func = new Function("createFunction2", dbName, "o.a.h.h.myfunc2", "me", PrincipalType.USER,
+        startTime, FunctionType.JAVA, Arrays.asList(new ResourceUri(ResourceType.JAR,
+        "file:/tmp/somewhere2")));
+    try {
+      msClient.createFunction(func);
+    } catch (Exception ex) {
+      // expected
+    }
+
+    rsp = msClient.getNextNotification(firstEventId, 0, null);
+    assertEquals(1, rsp.getEventsSize());
+  }
+
+  @Test
+  public void dropFunction() throws Exception {
+    String funcName = "dropfunctiontest";
+    String dbName = "default";
+    String ownerName = "me";
+    String funcClass = "o.a.h.h.dropFunctionTest";
+    String funcResource = "file:/tmp/somewhere";
+    Function func = new Function(funcName, dbName, funcClass, ownerName, PrincipalType.USER,
+        startTime, FunctionType.JAVA, Arrays.asList(new ResourceUri(ResourceType.JAR,
+        funcResource)));
+    msClient.createFunction(func);
+    msClient.dropFunction(dbName, funcName);
+    NotificationEventResponse rsp = msClient.getNextNotification(firstEventId, 0, null);
+    assertEquals(2, rsp.getEventsSize());
+    NotificationEvent event = rsp.getEvents().get(1);
+    assertEquals(firstEventId + 2, event.getEventId());
+    assertTrue(event.getEventTime() >= startTime);
+    assertEquals(HCatConstants.HCAT_DROP_FUNCTION_EVENT, event.getEventType());
+    assertEquals(dbName, event.getDbName());
+    Function funcObj = JSONMessageFactory.getFunctionObj(JSONMessageFactory.getJsonTree(event));
+    assertEquals(dbName, funcObj.getDbName());
+    assertEquals(funcName, funcObj.getFunctionName());
+    assertEquals(funcClass, funcObj.getClassName());
+    assertEquals(ownerName, funcObj.getOwnerName());
+    assertEquals(FunctionType.JAVA, funcObj.getFunctionType());
+    assertEquals(1, funcObj.getResourceUrisSize());
+    assertEquals(ResourceType.JAR, funcObj.getResourceUris().get(0).getResourceType());
+    assertEquals(funcResource, funcObj.getResourceUris().get(0).getUri());
+
+    func = new Function("dropfunctiontest2", dbName, "o.a.h.h.dropFunctionTest2", "me",
+        PrincipalType.USER,  startTime, FunctionType.JAVA, Arrays.asList(
+        new ResourceUri(ResourceType.JAR, "file:/tmp/somewhere2")));
+    msClient.createFunction(func);
+    DummyRawStoreFailEvent.setEventSucceed(false);
+    try {
+      msClient.dropFunction(dbName, "dropfunctiontest2");
+    } catch (Exception ex) {
+      // expected
+    }
+
+    rsp = msClient.getNextNotification(firstEventId, 0, null);
+    assertEquals(3, rsp.getEventsSize());
+  }
+
+  @Test
+  public void createIndex() throws Exception {
+    String indexName = "createIndex";
+    String dbName = "default";
+    String tableName = "createIndexTable";
+    String indexTableName = tableName + "__" + indexName + "__";
+    int startTime = (int)(System.currentTimeMillis() / 1000);
+    List<FieldSchema> cols = new ArrayList<FieldSchema>();
+    cols.add(new FieldSchema("col1", "int", ""));
+    SerDeInfo serde = new SerDeInfo("serde", "seriallib", null);
+    Map<String, String> params = new HashMap<String, String>();
+    params.put("key", "value");
+    StorageDescriptor sd = new StorageDescriptor(cols, "file:/tmp", "input", "output", false, 17,
+        serde, Arrays.asList("bucketcol"), Arrays.asList(new Order("sortcol", 1)), params);
+    Table table = new Table(tableName, dbName, "me", startTime, startTime, 0, sd, null,
+        emptyParameters, null, null, null);
+    msClient.createTable(table);
+    Index index = new Index(indexName, null, "default", tableName, startTime, startTime,
+        indexTableName, sd, emptyParameters, false);
+    Table indexTable = new Table(indexTableName, dbName, "me", startTime, startTime, 0, sd, null,
+        emptyParameters, null, null, null);
+    msClient.createIndex(index, indexTable);
+    NotificationEventResponse rsp = msClient.getNextNotification(firstEventId, 0, null);
+    assertEquals(3, rsp.getEventsSize());
+    NotificationEvent event = rsp.getEvents().get(2);
+    assertEquals(firstEventId + 3, event.getEventId());
+    assertTrue(event.getEventTime() >= startTime);
+    assertEquals(HCatConstants.HCAT_CREATE_INDEX_EVENT, event.getEventType());
+    assertEquals(dbName, event.getDbName());
+    Index indexObj = JSONMessageFactory.getIndexObj(JSONMessageFactory.getJsonTree(event));
+    assertEquals(dbName, indexObj.getDbName());
+    assertEquals(indexName, indexObj.getIndexName());
+    assertEquals(tableName, indexObj.getOrigTableName());
+    assertEquals(indexTableName, indexObj.getIndexTableName());
+
+    DummyRawStoreFailEvent.setEventSucceed(false);
+    index = new Index("createIndexTable2", null, "default", tableName, startTime, startTime,
+        "createIndexTable2__createIndexTable2__", sd, emptyParameters, false);
+    Table indexTable2 = new Table("createIndexTable2__createIndexTable2__", dbName, "me",
+        startTime, startTime, 0, sd, null, emptyParameters, null, null, null);
+    try {
+      msClient.createIndex(index, indexTable2);
+    } catch (Exception ex) {
+      // expected
+    }
+
+    rsp = msClient.getNextNotification(firstEventId, 0, null);
+    assertEquals(3, rsp.getEventsSize());
+  }
+
+  @Test
+  public void dropIndex() throws Exception {
+    String indexName = "dropIndex";
+    String dbName = "default";
+    String tableName = "dropIndexTable";
+    String indexTableName = tableName + "__" + indexName + "__";
+    int startTime = (int)(System.currentTimeMillis() / 1000);
+    List<FieldSchema> cols = new ArrayList<FieldSchema>();
+    cols.add(new FieldSchema("col1", "int", ""));
+    SerDeInfo serde = new SerDeInfo("serde", "seriallib", null);
+    Map<String, String> params = new HashMap<String, String>();
+    params.put("key", "value");
+    StorageDescriptor sd = new StorageDescriptor(cols, "file:/tmp", "input", "output", false, 17,
+        serde, Arrays.asList("bucketcol"), Arrays.asList(new Order("sortcol", 1)), params);
+    Table table = new Table(tableName, dbName, "me", startTime, startTime, 0, sd, null,
+        emptyParameters, null, null, null);
+    msClient.createTable(table);
+    Index index = new Index(indexName, null, "default", tableName, startTime, startTime,
+        indexTableName, sd, emptyParameters, false);
+    Table indexTable = new Table(indexTableName, dbName, "me", startTime, startTime, 0, sd, null,
+        emptyParameters, null, null, null);
+    msClient.createIndex(index, indexTable);
+    msClient.dropIndex(dbName, tableName, indexName, true); // drops index and indexTable
+    NotificationEventResponse rsp = msClient.getNextNotification(firstEventId, 0, null);
+    assertEquals(4, rsp.getEventsSize());
+    NotificationEvent event = rsp.getEvents().get(3);
+    assertEquals(firstEventId + 4, event.getEventId());
+    assertTrue(event.getEventTime() >= startTime);
+    assertEquals(HCatConstants.HCAT_DROP_INDEX_EVENT, event.getEventType());
+    assertEquals(dbName, event.getDbName());
+    Index indexObj = JSONMessageFactory.getIndexObj(JSONMessageFactory.getJsonTree(event));
+    assertEquals(dbName, indexObj.getDbName());
+    assertEquals(indexName.toLowerCase(), indexObj.getIndexName());
+    assertEquals(tableName.toLowerCase(), indexObj.getOrigTableName());
+    assertEquals(indexTableName.toLowerCase(), indexObj.getIndexTableName());
+
+    index = new Index("dropIndexTable2", null, "default", tableName, startTime, startTime,
+        "dropIndexTable__dropIndexTable2__", sd, emptyParameters, false);
+    Table indexTable2 = new Table("dropIndexTable__dropIndexTable2__", dbName, "me", startTime,
+        startTime, 0, sd, null, emptyParameters, null, null, null);
+    msClient.createIndex(index, indexTable2);
+    DummyRawStoreFailEvent.setEventSucceed(false);
+    try {
+      msClient.dropIndex(dbName, tableName, "dropIndex2", true); // drops index and indexTable
+    } catch (Exception ex) {
+      // expected
+    }
+
+    rsp = msClient.getNextNotification(firstEventId, 0, null);
+    assertEquals(6, rsp.getEventsSize());
+  }
+
+  @Test
+  public void alterIndex() throws Exception {
+    String indexName = "alterIndex";
+    String dbName = "default";
+    String tableName = "alterIndexTable";
+    String indexTableName = tableName + "__" + indexName + "__";
+    int startTime = (int)(System.currentTimeMillis() / 1000);
+    List<FieldSchema> cols = new ArrayList<FieldSchema>();
+    cols.add(new FieldSchema("col1", "int", ""));
+    SerDeInfo serde = new SerDeInfo("serde", "seriallib", null);
+    Map<String, String> params = new HashMap<String, String>();
+    params.put("key", "value");
+    StorageDescriptor sd = new StorageDescriptor(cols, "file:/tmp", "input", "output", false, 17,
+        serde, Arrays.asList("bucketcol"), Arrays.asList(new Order("sortcol", 1)), params);
+    Table table = new Table(tableName, dbName, "me", startTime, startTime, 0, sd, null,
+        emptyParameters, null, null, null);
+    msClient.createTable(table);
+    Index oldIndex = new Index(indexName, null, "default", tableName, startTime, startTime,
+        indexTableName, sd, emptyParameters, false);
+    Table oldIndexTable = new Table(indexTableName, dbName, "me", startTime, startTime, 0, sd, null,
+        emptyParameters, null, null, null);
+    msClient.createIndex(oldIndex, oldIndexTable); // creates index and index table
+    Index newIndex = new Index(indexName, null, "default", tableName, startTime, startTime + 1,
+        indexTableName, sd, emptyParameters, false);
+    msClient.alter_index(dbName, tableName, indexName, newIndex);
+    NotificationEventResponse rsp = msClient.getNextNotification(firstEventId, 0, null);
+    assertEquals(4, rsp.getEventsSize());
+    NotificationEvent event = rsp.getEvents().get(3);
+    assertEquals(firstEventId + 4, event.getEventId());
+    assertTrue(event.getEventTime() >= startTime);
+    assertEquals(HCatConstants.HCAT_ALTER_INDEX_EVENT, event.getEventType());
+    assertEquals(dbName, event.getDbName());
+    Index indexObj = JSONMessageFactory.getIndexObj(JSONMessageFactory.getJsonTree(event), "afterIndexObjJson");
+    assertEquals(dbName, indexObj.getDbName());
+    assertEquals(indexName, indexObj.getIndexName());
+    assertEquals(tableName, indexObj.getOrigTableName());
+    assertEquals(indexTableName, indexObj.getIndexTableName());
+    assertTrue(indexObj.getCreateTime() < indexObj.getLastAccessTime());
+
+    DummyRawStoreFailEvent.setEventSucceed(false);
+    try {
+      msClient.alter_index(dbName, tableName, indexName, newIndex);
     } catch (Exception ex) {
       // expected
     }
@@ -700,7 +976,6 @@ public class TestDbNotificationListener {
     assertEquals(firstEventId + 24, event.getEventId());
     assertEquals(HCatConstants.HCAT_ALTER_PARTITION_EVENT, event.getEventType());
     assertTrue(event.getMessage().matches(".*\"ds\":\"todaytwo\".*"));
-
    }
 
   @Test
