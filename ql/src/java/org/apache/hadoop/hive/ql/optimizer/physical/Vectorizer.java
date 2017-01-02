@@ -1561,6 +1561,10 @@ public class Vectorizer implements PhysicalPlanResolver {
       LOG.info("Cannot vectorize map work small table expression");
       return false;
     }
+    if (desc.getResidualFilterExprs() != null && !desc.getResidualFilterExprs().isEmpty()) {
+      LOG.info("Cannot vectorize outer join with complex ON clause");
+      return false;
+    }
     return true;
   }
 
@@ -1931,7 +1935,7 @@ public class Vectorizer implements PhysicalPlanResolver {
     } catch (Exception e) {
       // We should have already attempted to vectorize in validateAggregationDesc.
       if (LOG.isDebugEnabled()) {
-        LOG.debug("Vectorization of aggreation should have succeeded ", e);
+        LOG.debug("Vectorization of aggregation should have succeeded ", e);
       }
       return new Pair<Boolean,Boolean>(false, false);
     }
@@ -2497,6 +2501,7 @@ public class Vectorizer implements PhysicalPlanResolver {
       case EXTRACT:
       case EVENT:
       case HASHTABLESINK:
+      case SPARKPRUNINGSINK:
         vectorOp = OperatorFactory.getVectorOperator(
             op.getCompilationOpContext(), op.getConf(), vContext);
         break;

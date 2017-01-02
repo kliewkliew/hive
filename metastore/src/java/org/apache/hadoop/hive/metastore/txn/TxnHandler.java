@@ -33,6 +33,7 @@ import org.apache.hadoop.hive.common.classification.InterfaceStability;
 import org.apache.hadoop.hive.metastore.DatabaseProduct;
 import org.apache.hadoop.hive.metastore.HouseKeeperService;
 import org.apache.hadoop.hive.metastore.Warehouse;
+import org.apache.thrift.TException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.apache.commons.dbcp.PoolingDataSource;
@@ -515,17 +516,19 @@ abstract class TxnHandler implements TxnStore, TxnStore.MutexAPI {
     }
   }
 
-  public void abortTxn(AbortTxnRequest rqst) throws NoSuchTxnException, MetaException {
+  public void abortTxn(AbortTxnRequest rqst) throws NoSuchTxnException, MetaException, TxnAbortedException {
     long txnid = rqst.getTxnid();
     try {
       Connection dbConn = null;
+      Statement stmt = null;
       try {
         lockInternal();
         dbConn = getDbConn(Connection.TRANSACTION_READ_COMMITTED);
         if (abortTxns(dbConn, Collections.singletonList(txnid), true) != 1) {
           LOG.debug("Going to rollback");
           dbConn.rollback();
-          throw new NoSuchTxnException("No such transaction " + JavaUtils.txnIdToString(txnid));
+          stmt = dbConn.createStatement();
+          ensureValidTxn(dbConn, txnid, stmt);
         }
 
         LOG.debug("Going to commit");
@@ -537,7 +540,7 @@ abstract class TxnHandler implements TxnStore, TxnStore.MutexAPI {
         throw new MetaException("Unable to update transaction database "
           + StringUtils.stringifyException(e));
       } finally {
-        closeDbConn(dbConn);
+        close(null, stmt, dbConn);
         unlockInternal();
       }
     } catch (RetryException e) {
@@ -1509,6 +1512,7 @@ abstract class TxnHandler implements TxnStore, TxnStore.MutexAPI {
         dbConn = getDbConn(Connection.TRANSACTION_READ_COMMITTED);
         stmt = dbConn.createStatement();
         String s = "select cq_database, cq_table, cq_partition, cq_state, cq_type, cq_worker_id, " +
+          //-1 because 'null' literal doesn't work for all DBs...
           "cq_start, -1 cc_end, cq_run_as, cq_hadoop_job_id, cq_id from COMPACTION_QUEUE union all " +
           "select cc_database, cc_table, cc_partition, cc_state, cc_type, cc_worker_id, " +
           "cc_start, cc_end, cc_run_as, cc_hadoop_job_id, cc_id from COMPLETED_COMPACTIONS";
@@ -1531,14 +1535,17 @@ abstract class TxnHandler implements TxnStore, TxnStore.MutexAPI {
               //do nothing to handle RU/D if we add another status
           }
           e.setWorkerid(rs.getString(6));
-          e.setStart(rs.getLong(7));
+          long start = rs.getLong(7);
+          if(!rs.wasNull()) {
+            e.setStart(start);
+          }
           long endTime = rs.getLong(8);
           if(endTime != -1) {
             e.setEndTime(endTime);
           }
           e.setRunAs(rs.getString(9));
           e.setHadoopJobId(rs.getString(10));
-          long id = rs.getLong(11);//for debugging
+          e.setId(rs.getLong(11));
           response.addToCompacts(e);
         }
         LOG.debug("Going to rollback");
@@ -1943,12 +1950,12 @@ abstract class TxnHandler implements TxnStore, TxnStore.MutexAPI {
           }
           sendRetrySignal = true;
         } else {
-          LOG.error("Fatal error. Retry limit (" + retryLimit + ") reached. Last error: " + getMessage(e));
+          LOG.error("Fatal error in " + caller + ". Retry limit (" + retryLimit + ") reached. Last error: " + getMessage(e));
         }
       }
       else {
         //make sure we know we saw an error that we don't recognize
-        LOG.info("Non-retryable error: " + getMessage(e));
+        LOG.info("Non-retryable error in " + caller + " : " + getMessage(e));
       }
     }
     finally {
@@ -2106,6 +2113,9 @@ abstract class TxnHandler implements TxnStore, TxnStore.MutexAPI {
     }
     private boolean isTableLock() {
       return db != null && table != null && partition == null;
+    }
+    private boolean isPartitionLock() {
+      return !(isDbLock() || isTableLock());
     }
   }
 
@@ -2596,15 +2606,25 @@ abstract class TxnHandler implements TxnStore, TxnStore.MutexAPI {
    * the {@link #jumpTable} only deals with LockState/LockType.  In some cases it's not
    * sufficient.  For example, an EXCLUSIVE lock on partition should prevent SHARED_READ
    * on the table, but there is no reason for EXCLUSIVE on a table to prevent SHARED_READ
-   * on a database.
+   * on a database.  Similarly, EXCLUSIVE on a partition should not conflict with SHARED_READ on
+   * a database.  (SHARED_READ is usually acquired on a database to make sure it's not dropped
+   * while some operation is performed on that db (e.g. show tables, created table, etc)
+   * EXCLUSIVE on an object may mean it's being dropped or overwritten (for non-acid tables,
+   * an Insert uses EXCLUSIVE as well)).
    */
   private boolean ignoreConflict(LockInfo desiredLock, LockInfo existingLock) {
     return
       ((desiredLock.isDbLock() && desiredLock.type == LockType.SHARED_READ &&
           existingLock.isTableLock() && existingLock.type == LockType.EXCLUSIVE) ||
         (existingLock.isDbLock() && existingLock.type == LockType.SHARED_READ &&
-          desiredLock.isTableLock() && desiredLock.type == LockType.EXCLUSIVE))
+          desiredLock.isTableLock() && desiredLock.type == LockType.EXCLUSIVE) ||
+
+        (desiredLock.isDbLock() && desiredLock.type == LockType.SHARED_READ &&
+          existingLock.isPartitionLock() && existingLock.type == LockType.EXCLUSIVE) ||
+        (existingLock.isDbLock() && existingLock.type == LockType.SHARED_READ &&
+          desiredLock.isPartitionLock() && desiredLock.type == LockType.EXCLUSIVE))
         ||
+
       //different locks from same txn should not conflict with each other
       (desiredLock.txnId != 0 && desiredLock.txnId == existingLock.txnId) ||
       //txnId=0 means it's a select or IUD which does not write to ACID table, e.g

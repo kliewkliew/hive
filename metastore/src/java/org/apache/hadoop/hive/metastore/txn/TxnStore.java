@@ -97,7 +97,7 @@ public interface TxnStore {
    * @throws NoSuchTxnException
    * @throws MetaException
    */
-  public void abortTxn(AbortTxnRequest rqst) throws NoSuchTxnException, MetaException;
+  public void abortTxn(AbortTxnRequest rqst) throws NoSuchTxnException, MetaException, TxnAbortedException;
 
   /**
    * Abort (rollback) a list of transactions in one request.
@@ -387,4 +387,11 @@ public interface TxnStore {
       public void releaseLocks();
     }
   }
+
+  /**
+   * Once a {@link java.util.concurrent.ThreadPoolExecutor.Worker} submits a job to the cluster,
+   * it calls this to update the metadata.
+   * @param id {@link CompactionInfo#id}
+   */
+  public void setHadoopJobId(String hadoopJobId, long id);
 }

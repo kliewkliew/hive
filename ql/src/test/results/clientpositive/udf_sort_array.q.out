@@ -21,6 +21,8 @@ sort_array(array(obj1, obj2,...)) - Sorts the input array in ascending order acc
 Example:
   > SELECT sort_array(array('b', 'd', 'c', 'a')) FROM src LIMIT 1;
   'a', 'b', 'c', 'd'
+Function class:org.apache.hadoop.hive.ql.udf.generic.GenericUDFSortArray
+Function type:BUILTIN
 PREHOOK: query: -- Evaluate function against STRING valued keys
 EXPLAIN
 SELECT sort_array(array("b", "d", "c", "a")) FROM src tablesample (1 rows)

@@ -18,63 +18,10 @@
 
 package org.apache.hadoop.hive.ql.exec;
 
+import com.esotericsoftware.kryo.Kryo;
+import com.google.common.base.Preconditions;
 import com.google.common.collect.Lists;
 import com.google.common.collect.Sets;
-import java.beans.DefaultPersistenceDelegate;
-import java.beans.Encoder;
-import java.beans.Expression;
-import java.beans.Statement;
-import java.io.ByteArrayInputStream;
-import java.io.ByteArrayOutputStream;
-import java.io.DataInput;
-import java.io.EOFException;
-import java.io.File;
-import java.io.FileNotFoundException;
-import java.io.IOException;
-import java.io.InputStream;
-import java.io.OutputStream;
-import java.io.Serializable;
-import java.net.URI;
-import java.net.URISyntaxException;
-import java.net.URL;
-import java.net.URLClassLoader;
-import java.net.URLDecoder;
-import java.sql.Connection;
-import java.sql.DriverManager;
-import java.sql.PreparedStatement;
-import java.sql.SQLException;
-import java.sql.SQLFeatureNotSupportedException;
-import java.sql.SQLTransientException;
-import java.text.SimpleDateFormat;
-import java.util.ArrayList;
-import java.util.Arrays;
-import java.util.Calendar;
-import java.util.Collection;
-import java.util.Collections;
-import java.util.Enumeration;
-import java.util.HashMap;
-import java.util.HashSet;
-import java.util.Iterator;
-import java.util.LinkedHashMap;
-import java.util.LinkedList;
-import java.util.List;
-import java.util.Map;
-import java.util.Properties;
-import java.util.Random;
-import java.util.Set;
-import java.util.UUID;
-import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.ExecutionException;
-import java.util.concurrent.Future;
-import java.util.concurrent.LinkedBlockingQueue;
-import java.util.concurrent.ThreadPoolExecutor;
-import java.util.concurrent.TimeUnit;
-import java.util.regex.Matcher;
-import java.util.regex.Pattern;
-import java.util.zip.Deflater;
-import java.util.zip.DeflaterOutputStream;
-import java.util.zip.InflaterInputStream;
-
 import org.apache.commons.codec.binary.Base64;
 import org.apache.commons.lang.StringUtils;
 import org.apache.commons.lang.WordUtils;
@@ -198,8 +145,58 @@ import org.apache.hive.common.util.ReflectionUtil;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import com.esotericsoftware.kryo.Kryo;
-import com.google.common.base.Preconditions;
+import java.beans.DefaultPersistenceDelegate;
+import java.beans.Encoder;
+import java.beans.Expression;
+import java.beans.Statement;
+import java.io.ByteArrayInputStream;
+import java.io.ByteArrayOutputStream;
+import java.io.DataInput;
+import java.io.EOFException;
+import java.io.File;
+import java.io.FileNotFoundException;
+import java.io.IOException;
+import java.io.InputStream;
+import java.io.OutputStream;
+import java.io.Serializable;
+import java.net.URI;
+import java.net.URL;
+import java.net.URLClassLoader;
+import java.net.URLDecoder;
+import java.sql.Connection;
+import java.sql.DriverManager;
+import java.sql.PreparedStatement;
+import java.sql.SQLException;
+import java.sql.SQLFeatureNotSupportedException;
+import java.sql.SQLTransientException;
+import java.text.SimpleDateFormat;
+import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.Calendar;
+import java.util.Collection;
+import java.util.Enumeration;
+import java.util.HashMap;
+import java.util.HashSet;
+import java.util.Iterator;
+import java.util.LinkedHashMap;
+import java.util.LinkedList;
+import java.util.List;
+import java.util.Map;
+import java.util.Properties;
+import java.util.Random;
+import java.util.Set;
+import java.util.UUID;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ExecutionException;
+import java.util.concurrent.Future;
+import java.util.concurrent.LinkedBlockingQueue;
+import java.util.concurrent.ThreadPoolExecutor;
+import java.util.concurrent.TimeUnit;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
+import java.util.zip.Deflater;
+import java.util.zip.DeflaterOutputStream;
+import java.util.zip.InflaterInputStream;
 
 /**
  * Utilities.
@@ -218,6 +215,8 @@ public final class Utilities {
   public static String REDUCE_PLAN_NAME = "reduce.xml";
   public static String MERGE_PLAN_NAME = "merge.xml";
   public static final String INPUT_NAME = "iocontext.input.name";
+  public static final String HAS_MAP_WORK = "has.map.work";
+  public static final String HAS_REDUCE_WORK = "has.reduce.work";
   public static final String MAPRED_MAPPER_CLASS = "mapred.mapper.class";
   public static final String MAPRED_REDUCER_CLASS = "mapred.reducer.class";
   public static final String HIVE_ADDED_JARS = "hive.added.jars";
@@ -302,6 +301,9 @@ public final class Utilities {
   }
 
   public static MapWork getMapWork(Configuration conf) {
+    if (!conf.getBoolean(HAS_MAP_WORK, false)) {
+      return null;
+    }
     return (MapWork) getBaseWork(conf, MAP_PLAN_NAME);
   }
 
@@ -310,6 +312,9 @@ public final class Utilities {
   }
 
   public static ReduceWork getReduceWork(Configuration conf) {
+    if (!conf.getBoolean(HAS_REDUCE_WORK, false)) {
+      return null;
+    }
     return (ReduceWork) getBaseWork(conf, REDUCE_PLAN_NAME);
   }
 
@@ -362,6 +367,7 @@ public final class Utilities {
    */
   public static void setBaseWork(Configuration conf, String name, BaseWork work) {
     Path path = getPlanPath(conf, name);
+    setHasWork(conf, name);
     gWorkMap.get(conf).put(path, work);
   }
 
@@ -461,7 +467,7 @@ public final class Utilities {
       return gWork;
     } catch (FileNotFoundException fnf) {
       // happens. e.g.: no reduce work.
-      LOG.debug("No plan file found: " + path, fnf);
+      LOG.debug("No plan file found: " + path + "; " + fnf.getMessage());
       return null;
     } catch (Exception e) {
       String msg = "Failed to load plan: " + path;
@@ -474,6 +480,14 @@ public final class Utilities {
           in.close();
         } catch (IOException cantBlameMeForTrying) { }
       }
+    }
+  }
+
+  private static void setHasWork(Configuration conf, String name) {
+    if (MAP_PLAN_NAME.equals(name)) {
+      conf.setBoolean(HAS_MAP_WORK, true);
+    } else if (REDUCE_PLAN_NAME.equals(name)) {
+      conf.setBoolean(HAS_REDUCE_WORK, true);
     }
   }
 
@@ -539,6 +553,7 @@ public final class Utilities {
       setPlanPath(conf, hiveScratchDir);
 
       Path planPath = getPlanPath(conf, name);
+      setHasWork(conf, name);
 
       OutputStream out = null;
 
@@ -1697,7 +1712,7 @@ public final class Utilities {
     return -1;
   }
 
-  public static String getNameMessage(Exception e) {
+  public static String getNameMessage(Throwable e) {
     return e.getClass().getName() + "(" + e.getMessage() + ")";
   }
 
@@ -2289,7 +2304,7 @@ public final class Utilities {
     return isEmptyPath(job, dirPath);
   }
 
-  public static boolean isEmptyPath(JobConf job, Path dirPath) throws Exception {
+  public static boolean isEmptyPath(Configuration job, Path dirPath) throws IOException {
     FileSystem inpFs = dirPath.getFileSystem(job);
     try {
       FileStatus[] fStats = inpFs.listStatus(dirPath, FileUtils.HIDDEN_FILES_PATH_FILTER);
@@ -2974,6 +2989,8 @@ public final class Utilities {
 
       // The alias may not have any path
       Path path = null;
+      boolean hasLogged = false;
+      // Note: this copies the list because createDummyFileForEmptyPartition may modify the map.
       for (Path file : new LinkedList<Path>(work.getPathToAliases().keySet())) {
         List<String> aliases = work.getPathToAliases().get(file);
         if (aliases.contains(alias)) {
@@ -2986,13 +3003,15 @@ public final class Utilities {
           }
 
           pathsProcessed.add(path);
-
-          LOG.info("Adding input file " + path);
-          if (!skipDummy
-              && isEmptyPath(job, path, ctx)) {
-            path = createDummyFileForEmptyPartition(path, job, work,
-                 hiveScratchDir);
-
+          if (LOG.isDebugEnabled()) {
+            LOG.debug("Adding input file " + path);
+          } else if (!hasLogged) {
+            hasLogged = true;
+            LOG.info("Adding " + work.getPathToAliases().size()
+                + " inputs; the first input is " + path);
+          }
+          if (!skipDummy && isEmptyPath(job, path, ctx)) {
+            path = createDummyFileForEmptyPartition(path, job, work, hiveScratchDir);
           }
           pathsToAdd.add(path);
         }
@@ -3069,7 +3088,7 @@ public final class Utilities {
         props, oneRow);
 
     if (LOG.isInfoEnabled()) {
-      LOG.info("Changed input file " + strPath + " to empty file " + newPath);
+      LOG.info("Changed input file " + strPath + " to empty file " + newPath + " (" + oneRow + ")");
     }
 
     // update the work
@@ -3091,7 +3110,7 @@ public final class Utilities {
 
     TableDesc tableDesc = work.getAliasToPartnInfo().get(alias).getTableDesc();
     if (tableDesc.isNonNative()) {
-      // if this isn't a hive table we can't create an empty file for it.
+      // if it does not need native storage, we can't create an empty file for it.
       return null;
     }
 
@@ -3360,7 +3379,7 @@ public final class Utilities {
       }
     }
     throw new IllegalStateException("Failed to create a temp dir under "
-    + baseDir + " Giving up after " + MAX_ATTEMPS + " attemps");
+    + baseDir + " Giving up after " + MAX_ATTEMPS + " attempts");
 
   }
 

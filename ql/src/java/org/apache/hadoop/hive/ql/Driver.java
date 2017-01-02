@@ -23,6 +23,7 @@ import java.io.DataInput;
 import java.io.IOException;
 import java.io.PrintStream;
 import java.io.Serializable;
+import java.net.InetAddress;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.HashSet;
@@ -1101,7 +1102,7 @@ public class Driver implements CommandProcessor {
           throw new RuntimeException("Already have an open transaction txnid:" + txnMgr.getCurrentTxnId());
         }
         // We are writing to tables in an ACID compliant way, so we need to open a transaction
-        txnMgr.openTxn(userFromUGI);
+        txnMgr.openTxn(ctx, userFromUGI);
         initiatingTransaction = true;
       }
       else {
@@ -1731,7 +1732,8 @@ public class Driver implements CommandProcessor {
 
       SessionState ss = SessionState.get();
       hookContext = new HookContext(plan, queryState, ctx.getPathToCS(), ss.getUserName(),
-          ss.getUserIpAddress(), operationId, ss.getSessionId());
+          ss.getUserIpAddress(), InetAddress.getLocalHost().getHostAddress(), operationId, ss.getSessionId(),
+          Thread.currentThread().getName(), ss.isHiveServerQuery(), perfLogger);
       hookContext.setHookType(HookContext.HookType.PRE_EXEC_HOOK);
 
       for (Hook peh : getHooks(HiveConf.ConfVars.PREEXECHOOKS)) {
@@ -1948,7 +1950,7 @@ public class Driver implements CommandProcessor {
     } catch (CommandNeedRetryException e) {
       executionError = true;
       throw e;
-    } catch (Exception e) {
+    } catch (Throwable e) {
       executionError = true;
       if (isInterrupted()) {
         return handleInterruption("during query execution: \n" + e.getMessage());

@@ -26,7 +26,7 @@ import java.util.List;
 import java.util.Map;
 
 /**
- * JSON implementation of DropTableMessage.
+ * JSON implementation of InsertMessage
  */
 public class JSONInsertMessage extends InsertMessage {
 
@@ -40,15 +40,16 @@ public class JSONInsertMessage extends InsertMessage {
   List<String> files;
 
   @JsonProperty
-  Map<String,String> partKeyVals;
+  Map<String, String> partKeyVals;
 
   /**
    * Default constructor, needed for Jackson.
    */
-  public JSONInsertMessage() {}
+  public JSONInsertMessage() {
+  }
 
   public JSONInsertMessage(String server, String servicePrincipal, String db, String table,
-                           Map<String,String> partKeyVals, List<String> files, Long timestamp) {
+      Map<String, String> partKeyVals, List<String> files, Long timestamp) {
     this.server = server;
     this.servicePrincipal = servicePrincipal;
     this.db = db;
@@ -59,15 +60,34 @@ public class JSONInsertMessage extends InsertMessage {
     checkValid();
   }
 
+  public JSONInsertMessage(String server, String servicePrincipal, String db, String table,
+      Map<String, String> partKeyVals, List<String> files, List<String> checksums, Long timestamp) {
+    this(server, servicePrincipal, db, table, partKeyVals, files, timestamp);
+    for (int i = 0; i < files.size(); i++) {
+      if ((!checksums.isEmpty()) && (checksums.get(i) != null) && !checksums.get(i).isEmpty()) {
+        files.set(i, encodeFileUri(files.get(i), checksums.get(i)));
+      }
+    }
+  }
+
+  // TODO: this needs to be enhanced once change management based filesystem is implemented
+  // Currently using fileuri#checksum as the format
+  private String encodeFileUri(String fileUriStr, String fileChecksum) {
+    return fileUriStr + "#" + fileChecksum;
+  }
 
   @Override
-  public String getTable() { return table; }
+  public String getTable() {
+    return table;
+  }
 
   @Override
-  public String getServer() { return server; }
+  public String getServer() {
+    return server;
+  }
 
   @Override
-  public Map<String,String> getPartitionKeyValues() {
+  public Map<String, String> getPartitionKeyValues() {
     return partKeyVals;
   }
 
@@ -77,20 +97,25 @@ public class JSONInsertMessage extends InsertMessage {
   }
 
   @Override
-  public String getServicePrincipal() { return servicePrincipal; }
+  public String getServicePrincipal() {
+    return servicePrincipal;
+  }
 
   @Override
-  public String getDB() { return db; }
+  public String getDB() {
+    return db;
+  }
 
   @Override
-  public Long getTimestamp() { return timestamp; }
+  public Long getTimestamp() {
+    return timestamp;
+  }
 
   @Override
   public String toString() {
     try {
       return JSONMessageDeserializer.mapper.writeValueAsString(this);
-    }
-    catch (Exception exception) {
+    } catch (Exception exception) {
       throw new IllegalArgumentException("Could not serialize: ", exception);
     }
   }

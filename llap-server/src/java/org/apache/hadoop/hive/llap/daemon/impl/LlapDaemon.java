@@ -83,6 +83,7 @@ import com.google.common.primitives.Ints;
 public class LlapDaemon extends CompositeService implements ContainerRunner, LlapDaemonMXBean {
 
   private static final Logger LOG = LoggerFactory.getLogger(LlapDaemon.class);
+  public static final double MIN_HEADROOM_PERCENT = 0.05;
 
   private final Configuration shuffleHandlerConf;
   private final SecretManager secretManager;
@@ -112,8 +113,8 @@ public class LlapDaemon extends CompositeService implements ContainerRunner, Lla
   private final AtomicReference<Integer> shufflePort = new AtomicReference<>();
 
   public LlapDaemon(Configuration daemonConf, int numExecutors, long executorMemoryBytes,
-      boolean ioEnabled, boolean isDirectCache, long ioMemoryBytes, String[] localDirs, int srvPort,
-      int mngPort, int shufflePort, int webPort, String appName) {
+    boolean ioEnabled, boolean isDirectCache, long ioMemoryBytes, String[] localDirs, int srvPort,
+    int mngPort, int shufflePort, int webPort, String appName, final long headRoomBytes) {
     super("LlapDaemon");
 
     printAsciiArt();
@@ -141,37 +142,53 @@ public class LlapDaemon extends CompositeService implements ContainerRunner, Lla
     }
     String hostName = MetricsUtils.getHostName();
     try {
-      daemonId = new DaemonId(UserGroupInformation.getCurrentUser().getShortUserName(),
-          LlapUtil.generateClusterName(daemonConf), hostName, appName, System.currentTimeMillis());
+      // re-login with kerberos. This makes sure all daemons have the same login user.
+      if (UserGroupInformation.isSecurityEnabled()) {
+        final String daemonPrincipal = HiveConf.getVar(daemonConf, ConfVars.LLAP_KERBEROS_PRINCIPAL);
+        final String daemonKeytab = HiveConf.getVar(daemonConf, ConfVars.LLAP_KERBEROS_KEYTAB_FILE);
+        LlapUtil.loginWithKerberosAndUpdateCurrentUser(daemonPrincipal, daemonKeytab);
+      }
+      String currentUser = UserGroupInformation.getCurrentUser().getShortUserName();
+      LOG.info("Starting daemon as user: {}", currentUser);
+      daemonId = new DaemonId(currentUser, LlapUtil.generateClusterName(daemonConf),
+        hostName, appName, System.currentTimeMillis());
     } catch (IOException ex) {
       throw new RuntimeException(ex);
     }
 
-
     this.maxJvmMemory = getTotalHeapSize();
     this.llapIoEnabled = ioEnabled;
-    this.executorMemoryPerInstance = executorMemoryBytes;
+    Preconditions.checkArgument(headRoomBytes < executorMemoryBytes, "LLAP daemon headroom size should be less " +
+      "than daemon max memory size. headRoomBytes: " + headRoomBytes + " executorMemoryBytes: " + executorMemoryBytes);
+    final long minHeadRoomBytes = (long) (executorMemoryBytes * MIN_HEADROOM_PERCENT);
+    final long headroom = headRoomBytes < minHeadRoomBytes ? minHeadRoomBytes : headRoomBytes;
+    this.executorMemoryPerInstance = executorMemoryBytes - headroom;
     this.ioMemoryPerInstance = ioMemoryBytes;
     this.numExecutors = numExecutors;
     this.localDirs = localDirs;
+
 
     int waitQueueSize = HiveConf.getIntVar(
         daemonConf, ConfVars.LLAP_DAEMON_TASK_SCHEDULER_WAIT_QUEUE_SIZE);
     boolean enablePreemption = HiveConf.getBoolVar(
         daemonConf, ConfVars.LLAP_DAEMON_TASK_SCHEDULER_ENABLE_PREEMPTION);
     LOG.warn("Attempting to start LlapDaemonConf with the following configuration: " +
-        "numExecutors=" + numExecutors +
+        "maxJvmMemory=" + maxJvmMemory + " (" + LlapUtil.humanReadableByteCount(maxJvmMemory) + ")" +
+        ", requestedExecutorMemory=" + executorMemoryBytes +
+        " (" + LlapUtil.humanReadableByteCount(executorMemoryBytes) + ")" +
+        ", llapIoCacheSize=" + ioMemoryBytes + " (" + LlapUtil.humanReadableByteCount(ioMemoryBytes) + ")" +
+        ", headRoomMemory=" + headroom + " (" + LlapUtil.humanReadableByteCount(headroom) + ")" +
+        ", adjustedExecutorMemory=" + executorMemoryPerInstance +
+        " (" + LlapUtil.humanReadableByteCount(executorMemoryPerInstance) + ")" +
+        ", numExecutors=" + numExecutors +
+        ", llapIoEnabled=" + ioEnabled +
+        ", llapIoCacheIsDirect=" + isDirectCache +
         ", rpcListenerPort=" + srvPort +
         ", mngListenerPort=" + mngPort +
         ", webPort=" + webPort +
         ", outputFormatSvcPort=" + outputFormatServicePort +
         ", workDirs=" + Arrays.toString(localDirs) +
         ", shufflePort=" + shufflePort +
-        ", executorMemory=" + executorMemoryBytes +
-        ", llapIoEnabled=" + ioEnabled +
-        ", llapIoCacheIsDirect=" + isDirectCache +
-        ", llapIoCacheSize=" + ioMemoryBytes +
-        ", jvmAvailableMemory=" + maxJvmMemory +
         ", waitQueueSize= " + waitQueueSize +
         ", enablePreemption= " + enablePreemption);
 
@@ -179,9 +196,8 @@ public class LlapDaemon extends CompositeService implements ContainerRunner, Lla
         executorMemoryBytes + (ioEnabled && isDirectCache == false ? ioMemoryBytes : 0);
     // TODO: this check is somewhat bogus as the maxJvmMemory != Xmx parameters (see annotation in LlapServiceDriver)
     Preconditions.checkState(maxJvmMemory >= memRequired,
-        "Invalid configuration. Xmx value too small. maxAvailable=" + maxJvmMemory +
-            ", configured(exec + io if enabled)=" +
-            memRequired);
+        "Invalid configuration. Xmx value too small. maxAvailable=" + LlapUtil.humanReadableByteCount(maxJvmMemory) +
+            ", configured(exec + io if enabled)=" + LlapUtil.humanReadableByteCount(memRequired));
 
     this.shuffleHandlerConf = new Configuration(daemonConf);
     this.shuffleHandlerConf.setInt(ShuffleHandler.SHUFFLE_PORT_CONFIG_KEY, shufflePort);
@@ -230,7 +246,7 @@ public class LlapDaemon extends CompositeService implements ContainerRunner, Lla
     }
     this.metrics = LlapDaemonExecutorMetrics.create(displayName, sessionId, numExecutors,
         Ints.toArray(intervalList));
-    this.metrics.setMemoryPerInstance(executorMemoryBytes);
+    this.metrics.setMemoryPerInstance(executorMemoryPerInstance);
     this.metrics.setCacheMemoryPerInstance(ioMemoryBytes);
     this.metrics.setJvmMaxMemory(maxJvmMemory);
     this.metrics.setWaitQueueSize(waitQueueSize);
@@ -239,7 +255,7 @@ public class LlapDaemon extends CompositeService implements ContainerRunner, Lla
     LOG.info("Started LlapMetricsSystem with displayName: " + displayName +
         " sessionId: " + sessionId);
 
-    this.amReporter = new AMReporter(srvAddress, new QueryFailedHandlerProxy(), daemonConf);
+    this.amReporter = new AMReporter(srvAddress, new QueryFailedHandlerProxy(), daemonConf, daemonId);
 
     SecretManager sm = null;
     if (UserGroupInformation.isSecurityEnabled()) {
@@ -256,7 +272,7 @@ public class LlapDaemon extends CompositeService implements ContainerRunner, Lla
       throw new RuntimeException(e);
     }
     this.containerRunner = new ContainerRunnerImpl(daemonConf, numExecutors, waitQueueSize,
-        enablePreemption, localDirs, this.shufflePort, srvAddress, executorMemoryBytes, metrics,
+        enablePreemption, localDirs, this.shufflePort, srvAddress, executorMemoryPerInstance, metrics,
         amReporter, executorClassLoader, daemonId, fsUgiFactory);
     addIfService(containerRunner);
 
@@ -444,14 +460,15 @@ public class LlapDaemon extends CompositeService implements ContainerRunner, Lla
       int webPort = HiveConf.getIntVar(daemonConf, ConfVars.LLAP_DAEMON_WEB_PORT);
       long executorMemoryBytes = HiveConf.getIntVar(
           daemonConf, ConfVars.LLAP_DAEMON_MEMORY_PER_INSTANCE_MB) * 1024l * 1024l;
-
+      long headroomBytes = HiveConf.getIntVar(
+        daemonConf, ConfVars.LLAP_DAEMON_HEADROOM_MEMORY_PER_INSTANCE_MB) * 1024l * 1024l;
       long ioMemoryBytes = HiveConf.getSizeVar(daemonConf, ConfVars.LLAP_IO_MEMORY_MAX_SIZE);
       boolean isDirectCache = HiveConf.getBoolVar(daemonConf, ConfVars.LLAP_ALLOCATOR_DIRECT);
       boolean isLlapIo = HiveConf.getBoolVar(daemonConf, HiveConf.ConfVars.LLAP_IO_ENABLED, true);
       LlapDaemon.initializeLogging(daemonConf);
       llapDaemon = new LlapDaemon(daemonConf, numExecutors, executorMemoryBytes, isLlapIo,
           isDirectCache, ioMemoryBytes, localDirs, rpcPort, mngPort, shufflePort, webPort,
-          appName);
+          appName, headroomBytes);
 
       LOG.info("Adding shutdown hook for LlapDaemon");
       ShutdownHookManager.addShutdownHook(new CompositeServiceShutdownHook(llapDaemon), 1);

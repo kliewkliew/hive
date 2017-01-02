@@ -127,7 +127,7 @@ public class HiveSchemaTool {
     System.exit(1);
   }
 
-  private Connection getConnectionToMetastore(boolean printInfo)
+  Connection getConnectionToMetastore(boolean printInfo)
       throws HiveMetaException {
     return HiveSchemaHelper.getConnectionToMetastore(userName,
         passWord, printInfo, hiveConf);
@@ -152,9 +152,14 @@ public class HiveSchemaTool {
 
   }
 
-  // read schema version from metastore
   private String getMetaStoreSchemaVersion(Connection metastoreConn)
       throws HiveMetaException {
+    return getMetaStoreSchemaVersion(metastoreConn, false);
+  }
+
+  // read schema version from metastore
+  private String getMetaStoreSchemaVersion(Connection metastoreConn,
+      boolean checkDuplicatedVersion) throws HiveMetaException {
     String versionQuery;
     if (getDbCommandParser(dbType).needsQuotedIdentifier()) {
       versionQuery = "select t.\"SCHEMA_VERSION\" from \"VERSION\" t";
@@ -167,25 +172,22 @@ public class HiveSchemaTool {
         throw new HiveMetaException("Didn't find version data in metastore");
       }
       String currentSchemaVersion = res.getString(1);
+      if (checkDuplicatedVersion && res.next()) {
+        throw new HiveMetaException("Multiple versions were found in metastore.");
+      }
       return currentSchemaVersion;
     } catch (SQLException e) {
       throw new HiveMetaException("Failed to get schema version.", e);
     }
-    finally {
-      try {
-        metastoreConn.close();
-      } catch (SQLException e) {
-        System.err.println("Failed to close the metastore connection");
-        e.printStackTrace(System.err);
-      }
-    }
   }
 
-  boolean validateLocations(String defaultLocPrefix) throws HiveMetaException {
+  boolean validateLocations(Connection conn, String defaultLocPrefix) throws HiveMetaException {
+    System.out.println("Validating database/table/partition locations");
     boolean rtn;
-    rtn = checkMetaStoreDBLocation(defaultLocPrefix);
-    rtn = checkMetaStoreTableLocation(defaultLocPrefix) && rtn;
-    rtn = checkMetaStorePartitionLocation(defaultLocPrefix) && rtn;
+    rtn = checkMetaStoreDBLocation(conn, defaultLocPrefix);
+    rtn = checkMetaStoreTableLocation(conn, defaultLocPrefix) && rtn;
+    rtn = checkMetaStorePartitionLocation(conn, defaultLocPrefix) && rtn;
+    System.out.println((rtn ? "Succeeded" : "Failed") + " in database/table/partition location validation");
     return rtn;
   }
 
@@ -195,24 +197,22 @@ public class HiveSchemaTool {
   }
 
   // read schema version from metastore
-  private boolean checkMetaStoreDBLocation(String locHeader)
+  private boolean checkMetaStoreDBLocation(Connection conn, String locHeader)
       throws HiveMetaException {
     String defaultPrefix = locHeader;
     String dbLoc;
     boolean isValid = true;
     int numOfInvalid = 0;
-    Connection metastoreConn = getConnectionToMetastore(true);
     if (getDbCommandParser(dbType).needsQuotedIdentifier()) {
       dbLoc = "select dbt.\"DB_ID\", dbt.\"NAME\", dbt.\"DB_LOCATION_URI\" from \"DBS\" dbt";
     } else {
       dbLoc = "select dbt.DB_ID, dbt.NAME, dbt.DB_LOCATION_URI from DBS dbt";
     }
-    String locValue;
-    String dbName;
-    try(Statement stmt = metastoreConn.createStatement();
+
+    try(Statement stmt = conn.createStatement();
         ResultSet res = stmt.executeQuery(dbLoc)) {
       while (res.next()) {
-        locValue = res.getString(3);
+        String locValue = res.getString(3);
         if (locValue == null) {
           System.err.println("NULL Location for DB with " + getNameOrID(res,2,1));
           numOfInvalid++;
@@ -243,14 +243,6 @@ public class HiveSchemaTool {
     } catch (SQLException e) {
       throw new HiveMetaException("Failed to get DB Location Info.", e);
     }
-    finally {
-      try {
-        metastoreConn.close();
-      } catch (SQLException e) {
-        System.err.println("Failed to close the metastore connection");
-        e.printStackTrace(System.err);
-      }
-    }
     if (numOfInvalid > 0) {
       isValid = false;
       System.err.println("Total number of invalid DB locations is: "+ numOfInvalid);
@@ -258,12 +250,11 @@ public class HiveSchemaTool {
     return isValid;
   }
 
-  private boolean checkMetaStoreTableLocation(String locHeader)
+  private boolean checkMetaStoreTableLocation(Connection conn, String locHeader)
       throws HiveMetaException {
     String defaultPrefix = locHeader;
     String tabLoc, tabIDRange;
     boolean isValid = true;
-    Connection metastoreConn = getConnectionToMetastore(true);
     int numOfInvalid = 0;
     if (getDbCommandParser(dbType).needsQuotedIdentifier()) {
       tabIDRange = "select max(\"TBL_ID\"), min(\"TBL_ID\") from \"TBLS\" ";
@@ -273,18 +264,18 @@ public class HiveSchemaTool {
 
     if (getDbCommandParser(dbType).needsQuotedIdentifier()) {
       tabLoc = "select tbl.\"TBL_ID\", tbl.\"TBL_NAME\", sd.\"LOCATION\", dbt.\"DB_ID\", dbt.\"NAME\" from \"TBLS\" tbl inner join " +
-    "\"SDS\" sd on tbl.\"SD_ID\" = sd.\"SD_ID\" and tbl.\"TBL_ID\" >= ? and tbl.\"TBL_ID\"<= ? " +
-    "inner join \"DBS\" dbt on tbl.\"DB_ID\" = dbt.\"DB_ID\" ";
+    "\"SDS\" sd on tbl.\"SD_ID\" = sd.\"SD_ID\" and tbl.\"TBL_TYPE\" != '" + TableType.VIRTUAL_VIEW +
+    "' and tbl.\"TBL_ID\" >= ? and tbl.\"TBL_ID\"<= ? " + "inner join \"DBS\" dbt on tbl.\"DB_ID\" = dbt.\"DB_ID\" ";
     } else {
-      tabLoc = "select tbl.TBL_ID, tbl.TBL_NAME, sd.LOCATION, dbt.DB_ID, dbt.NAME from TBLS tbl join SDS sd on tbl.SD_ID = sd.SD_ID and tbl.TBL_ID >= ? and tbl.TBL_ID <= ?  inner join DBS dbt on tbl.DB_ID = dbt.DB_ID";
+      tabLoc = "select tbl.TBL_ID, tbl.TBL_NAME, sd.LOCATION, dbt.DB_ID, dbt.NAME from TBLS tbl join SDS sd on tbl.SD_ID = sd.SD_ID and tbl.TBL_TYPE !='"
+      + TableType.VIRTUAL_VIEW + "' and tbl.TBL_ID >= ? and tbl.TBL_ID <= ?  inner join DBS dbt on tbl.DB_ID = dbt.DB_ID";
     }
-    String locValue;
-    String tabName;
-    long maxID = 0, minID = 0, curID;
+
+    long maxID = 0, minID = 0;
     long rtnSize = 2000;
 
     try {
-      Statement stmt = metastoreConn.createStatement();
+      Statement stmt = conn.createStatement();
       ResultSet res = stmt.executeQuery(tabIDRange);
       if (res.next()) {
         maxID = res.getLong(1);
@@ -292,14 +283,13 @@ public class HiveSchemaTool {
       }
       res.close();
       stmt.close();
-      curID = minID;
-      PreparedStatement pStmt = metastoreConn.prepareStatement(tabLoc);
+      PreparedStatement pStmt = conn.prepareStatement(tabLoc);
       while (minID <= maxID) {
         pStmt.setLong(1, minID);
         pStmt.setLong(2, minID + rtnSize);
         res = pStmt.executeQuery();
         while (res.next()) {
-          locValue = res.getString(3);
+          String locValue = res.getString(3);
           if (locValue == null) {
             System.err.println("In DB with " + getNameOrID(res,5,4));
             System.err.println("NULL Location for TABLE with " + getNameOrID(res,2,1));
@@ -338,14 +328,6 @@ public class HiveSchemaTool {
     } catch (SQLException e) {
       throw new HiveMetaException("Failed to get Table Location Info.", e);
     }
-    finally {
-      try {
-        metastoreConn.close();
-      } catch (SQLException e) {
-        System.err.println("Failed to close the metastore connection");
-        e.printStackTrace(System.err);
-      }
-    }
     if (numOfInvalid > 0) {
       isValid = false;
       System.err.println("Total number of invalid TABLE locations is: "+ numOfInvalid);
@@ -353,13 +335,12 @@ public class HiveSchemaTool {
     return isValid;
   }
 
-  private boolean checkMetaStorePartitionLocation(String locHeader)
+  private boolean checkMetaStorePartitionLocation(Connection conn, String locHeader)
       throws HiveMetaException {
     String defaultPrefix = locHeader;
     String partLoc, partIDRange;
     boolean isValid = true;
     int numOfInvalid = 0;
-    Connection metastoreConn = getConnectionToMetastore(true);
     if (getDbCommandParser(dbType).needsQuotedIdentifier()) {
       partIDRange = "select max(\"PART_ID\"), min(\"PART_ID\") from \"PARTITIONS\" ";
     } else {
@@ -376,13 +357,12 @@ public class HiveSchemaTool {
           + "inner join SDS sd on pt.SD_ID = sd.SD_ID and pt.PART_ID >= ? and pt.PART_ID <= ?  "
           + "inner join TBLS tbl on tbl.TBL_ID = pt.TBL_ID inner join DBS dbt on tbl.DB_ID = dbt.DB_ID ";
     }
-    String locValue;
-    String tabName;
-    long maxID = 0, minID = 0, curID;
+
+    long maxID = 0, minID = 0;
     long rtnSize = 2000;
 
     try {
-      Statement stmt = metastoreConn.createStatement();
+      Statement stmt = conn.createStatement();
       ResultSet res = stmt.executeQuery(partIDRange);
       if (res.next()) {
         maxID = res.getLong(1);
@@ -390,14 +370,13 @@ public class HiveSchemaTool {
       }
       res.close();
       stmt.close();
-      curID = minID;
-      PreparedStatement pStmt = metastoreConn.prepareStatement(partLoc);
+      PreparedStatement pStmt = conn.prepareStatement(partLoc);
       while (minID <= maxID) {
         pStmt.setLong(1, minID);
         pStmt.setLong(2, minID + rtnSize);
         res = pStmt.executeQuery();
         while (res.next()) {
-          locValue = res.getString(3);
+          String locValue = res.getString(3);
           if (locValue == null) {
             System.err.println("In DB with " + getNameOrID(res,7,6) + ", TABLE with " + getNameOrID(res,5,4));
             System.err.println("NULL Location for PARTITION with " + getNameOrID(res,2,1));
@@ -433,14 +412,6 @@ public class HiveSchemaTool {
       pStmt.close();
     } catch (SQLException e) {
       throw new HiveMetaException("Failed to get Partiton Location Info.", e);
-    }
-    finally {
-      try {
-        metastoreConn.close();
-      } catch (SQLException e) {
-        System.err.println("Failed to close the metastore connection");
-        e.printStackTrace(System.err);
-      }
     }
     if (numOfInvalid > 0) {
       isValid = false;
@@ -574,15 +545,28 @@ public class HiveSchemaTool {
   }
 
   public void doValidate() throws HiveMetaException {
-    System.out.print("Starting metastore validation");
-    validateSequences();
-    validateSchemaTables();
-    validateLocations(null);
-    validateColumnNullValues();
-    System.out.print("Done with metastore validation");
+    System.out.println("Starting metastore validation");
+    Connection conn = getConnectionToMetastore(false);
+    try {
+      validateSchemaVersions(conn);
+      validateSequences(conn);
+      validateSchemaTables(conn);
+      validateLocations(conn, null);
+      validateColumnNullValues(conn);
+    } finally {
+      if (conn != null) {
+        try {
+          conn.close();
+        } catch (SQLException e) {
+          throw new HiveMetaException("Failed to close metastore connection", e);
+        }
+      }
+    }
+
+    System.out.println("Done with metastore validation");
   }
 
-  boolean validateSequences() throws HiveMetaException {
+  boolean validateSequences(Connection conn) throws HiveMetaException {
     Map<String, Pair<String, String>> seqNameToTable =
         new ImmutableMap.Builder<String, Pair<String, String>>()
         .put("MDatabase", Pair.of("DBS", "DB_ID"))
@@ -602,7 +586,7 @@ public class HiveSchemaTool {
         .build();
 
     System.out.println("Validating sequence number for SEQUENCE_TABLE");
-    Connection conn = getConnectionToMetastore(true);
+
     boolean isValid = true;
     try {
       Statement stmt = conn.createStatement();
@@ -629,33 +613,43 @@ public class HiveSchemaTool {
           }
       }
 
+      System.out.println((isValid ? "Succeeded" :"Failed") + " in sequence number validation for SEQUENCE_TABLE");
       return isValid;
     } catch(SQLException e) {
         throw new HiveMetaException("Failed to validate sequence number for SEQUENCE_TABLE", e);
-    } finally {
-      if (conn != null) {
-        try {
-          conn.close();
-        } catch (SQLException e) {
-          throw new HiveMetaException("Failed to close metastore connection", e);
-        }
-      }
     }
   }
 
-  boolean validateSchemaTables() throws HiveMetaException {
+  boolean validateSchemaVersions(Connection conn) throws HiveMetaException {
+    System.out.println("Validating schema version");
+    try {
+      String newSchemaVersion = getMetaStoreSchemaVersion(conn, true);
+      assertCompatibleVersion(MetaStoreSchemaInfo.getHiveSchemaVersion(), newSchemaVersion);
+    } catch (HiveMetaException hme) {
+      if (hme.getMessage().contains("Metastore schema version is not compatible")
+        || hme.getMessage().contains("Multiple versions were found in metastore")
+        || hme.getMessage().contains("Didn't find version data in metastore")) {
+        System.out.println("Failed in schema version validation: " + hme.getMessage());
+          return false;
+        } else {
+          throw hme;
+        }
+    }
+    System.out.println("Succeeded in schema version validation.");
+    return true;
+  }
+
+  boolean validateSchemaTables(Connection conn) throws HiveMetaException {
     ResultSet rs              = null;
     DatabaseMetaData metadata = null;
     List<String> dbTables     = new ArrayList<String>();
     List<String> schemaTables = new ArrayList<String>();
     List<String> subScripts   = new ArrayList<String>();
-    Connection hmsConn        = getConnectionToMetastore(false);
-    String version            = getMetaStoreSchemaVersion(hmsConn);
-    hmsConn                   = getConnectionToMetastore(false);
+    String version            = getMetaStoreSchemaVersion(conn);
 
     System.out.println("Validating tables in the schema for version " + version);
     try {
-      metadata       = hmsConn.getMetaData();
+      metadata       = conn.getMetaData();
       String[] types = {"TABLE"};
       rs             = metadata.getTables(null, null, "%", types);
       String table   = null;
@@ -675,15 +669,6 @@ public class HiveSchemaTool {
           throw new HiveMetaException("Failed to close resultset", e);
         }
       }
-
-      if (hmsConn != null) {
-        try {
-          hmsConn.close();
-
-        } catch (SQLException e) {
-          throw new HiveMetaException("Failed to close metastore connection", e);
-        }
-      }
     }
 
     // parse the schema file to determine the tables that are expected to exist
@@ -692,28 +677,28 @@ public class HiveSchemaTool {
     String schemaFile = baseDir + "/oracle/hive-schema-" + version + ".oracle.sql";
 
     try {
-      LOG.info("Parsing schema script " + schemaFile);
+      LOG.debug("Parsing schema script " + schemaFile);
       subScripts.addAll(findCreateTable(schemaFile, schemaTables));
       while (subScripts.size() > 0) {
         schemaFile = baseDir + "/oracle/" + subScripts.remove(0);
-        LOG.info("Parsing subscript " + schemaFile);
+        LOG.debug("Parsing subscript " + schemaFile);
         subScripts.addAll(findCreateTable(schemaFile, schemaTables));
       }
     } catch (Exception e) {
       return false;
     }
 
-    System.out.println("Expected (from schema definition) " + schemaTables.size() +
-        " tables, Found (from HMS metastore) " + dbTables.size() + " tables");
-
     // now diff the lists
+    int schemaSize = schemaTables.size();
     schemaTables.removeAll(dbTables);
     if (schemaTables.size() > 0) {
-      System.out.println(schemaTables.size() + " tables [ " + Arrays.toString(schemaTables.toArray())
-          + " ] are missing from the database schema.");
+      System.out.println("Found " + schemaSize + " tables in schema definition, " +
+          schemaTables.size() + " tables [ " + Arrays.toString(schemaTables.toArray())
+          + " ] are missing from the metastore database schema.");
+      System.out.println("Schema table validation failed!!!");
       return false;
     } else {
-      System.out.println("Schema table validation successful");
+      System.out.println("Succeeded in schema table validation");
       return true;
     }
   }
@@ -749,9 +734,8 @@ public class HiveSchemaTool {
     return subs;
   }
 
-  boolean validateColumnNullValues() throws HiveMetaException {
+  boolean validateColumnNullValues(Connection conn) throws HiveMetaException {
     System.out.println("Validating columns for incorrect NULL values");
-    Connection conn = getConnectionToMetastore(true);
     boolean isValid = true;
     try {
       Statement stmt = conn.createStatement();
@@ -768,15 +752,10 @@ public class HiveSchemaTool {
          System.err.println("Value of SD_ID in TBLS should not be NULL: hive table - " + tableName + " tableId - " + tableId + " tableType - " + tableType);
       }
 
+      System.out.println((isValid ? "Succeeded" : "Failed") + " in column validation for incorrect NULL values");
       return isValid;
     } catch(SQLException e) {
         throw new HiveMetaException("Failed to validate columns for incorrect NULL values", e);
-    } finally {
-      try {
-        conn.close();
-      } catch (SQLException e) {
-        throw new HiveMetaException("Failed to close metastore connection", e);
-      }
     }
   }
 

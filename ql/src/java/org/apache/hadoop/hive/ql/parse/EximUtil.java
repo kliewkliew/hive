@@ -19,9 +19,9 @@
 package org.apache.hadoop.hive.ql.parse;
 
 import com.google.common.base.Function;
+
 import org.apache.commons.lang.StringUtils;
 import org.apache.hadoop.fs.PathFilter;
-import org.apache.hadoop.hive.common.FileUtils;
 import org.apache.hadoop.hive.metastore.api.Database;
 import org.apache.hadoop.hive.ql.Context;
 import org.apache.hadoop.hive.ql.exec.Task;
@@ -31,6 +31,7 @@ import org.apache.hadoop.hive.ql.metadata.Hive;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.apache.hadoop.fs.FSDataInputStream;
+import org.apache.hadoop.fs.FileChecksum;
 import org.apache.hadoop.fs.FileSystem;
 import org.apache.hadoop.fs.Path;
 import org.apache.hadoop.hive.conf.HiveConf;
@@ -50,6 +51,7 @@ import org.json.JSONException;
 import org.json.JSONObject;
 
 import javax.annotation.Nullable;
+
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.io.OutputStream;
@@ -73,7 +75,10 @@ import java.util.TreeMap;
  */
 public class EximUtil {
 
-  public static final String METADATA_NAME="_metadata";
+  public static final String METADATA_NAME = "_metadata";
+  public static final String FILES_NAME = "_files";
+  public static final String DATA_PATH_NAME = "data";
+  public static final String URI_FRAGMENT_SEPARATOR = "#";
 
   private static final Logger LOG = LoggerFactory.getLogger(EximUtil.class);
 
@@ -154,40 +159,36 @@ public class EximUtil {
       String scheme = uri.getScheme();
       String authority = uri.getAuthority();
       String path = uri.getPath();
+      FileSystem fs = FileSystem.get(uri, conf);
+
       LOG.info("Path before norm :" + path);
       // generate absolute path relative to home directory
       if (!path.startsWith("/")) {
         if (testMode) {
-          path = (new Path(System.getProperty("test.tmp.dir"),
-              path)).toUri().getPath();
+          path = (new Path(System.getProperty("test.tmp.dir"), path)).toUri().getPath();
         } else {
-          path = (new Path(new Path("/user/" + System.getProperty("user.name")),
-              path)).toUri().getPath();
-        }
-      }
-      // set correct scheme and authority
-      if (StringUtils.isEmpty(scheme)) {
-        if (testMode) {
-          scheme = "pfile";
-        } else {
-          scheme = "hdfs";
+          path =
+              (new Path(new Path("/user/" + System.getProperty("user.name")), path)).toUri()
+                  .getPath();
         }
       }
 
-      // if scheme is specified but not authority then use the default
-      // authority
+      // Get scheme from FileSystem
+      scheme = fs.getScheme();
+
+      // if scheme is specified but not authority then use the default authority
       if (StringUtils.isEmpty(authority)) {
         URI defaultURI = FileSystem.get(conf).getUri();
         authority = defaultURI.getAuthority();
       }
 
       LOG.info("Scheme:" + scheme + ", authority:" + authority + ", path:" + path);
-      Collection<String> eximSchemes = conf.getStringCollection(
-          HiveConf.ConfVars.HIVE_EXIM_URI_SCHEME_WL.varname);
+      Collection<String> eximSchemes =
+          conf.getStringCollection(HiveConf.ConfVars.HIVE_EXIM_URI_SCHEME_WL.varname);
       if (!eximSchemes.contains(scheme)) {
         throw new SemanticException(
-            ErrorMsg.INVALID_PATH.getMsg(
-                "only the following file systems accepted for export/import : "
+            ErrorMsg.INVALID_PATH
+                .getMsg("only the following file systems accepted for export/import : "
                     + conf.get(HiveConf.ConfVars.HIVE_EXIM_URI_SCHEME_WL.varname)));
       }
 
@@ -197,7 +198,7 @@ public class EximUtil {
         throw new SemanticException(ErrorMsg.INVALID_PATH.getMsg(), e);
       }
     } catch (IOException e) {
-      throw new SemanticException(ErrorMsg.IO_ERROR.getMsg(), e);
+      throw new SemanticException(ErrorMsg.IO_ERROR.getMsg() + ": " + e.getMessage(), e);
     }
   }
 
@@ -210,29 +211,31 @@ public class EximUtil {
     }
   }
 
-  public static String relativeToAbsolutePath(HiveConf conf, String location) throws SemanticException {
-    boolean testMode = conf.getBoolVar(HiveConf.ConfVars.HIVETESTMODE);
-    if (testMode) {
-      URI uri = new Path(location).toUri();
-      String scheme = uri.getScheme();
-      String authority = uri.getAuthority();
-      String path = uri.getPath();
-      if (!path.startsWith("/")) {
-          path = (new Path(System.getProperty("test.tmp.dir"),
-              path)).toUri().getPath();
+  public static String relativeToAbsolutePath(HiveConf conf, String location)
+      throws SemanticException {
+    try {
+      boolean testMode = conf.getBoolVar(HiveConf.ConfVars.HIVETESTMODE);
+      if (testMode) {
+        URI uri = new Path(location).toUri();
+        FileSystem fs = FileSystem.get(uri, conf);
+        String scheme = fs.getScheme();
+        String authority = uri.getAuthority();
+        String path = uri.getPath();
+        if (!path.startsWith("/")) {
+          path = (new Path(System.getProperty("test.tmp.dir"), path)).toUri().getPath();
+        }
+        try {
+          uri = new URI(scheme, authority, path, null, null);
+        } catch (URISyntaxException e) {
+          throw new SemanticException(ErrorMsg.INVALID_PATH.getMsg(), e);
+        }
+        return uri.toString();
+      } else {
+        // no-op for non-test mode for now
+        return location;
       }
-      if (StringUtils.isEmpty(scheme)) {
-          scheme = "pfile";
-      }
-      try {
-        uri = new URI(scheme, authority, path, null, null);
-      } catch (URISyntaxException e) {
-        throw new SemanticException(ErrorMsg.INVALID_PATH.getMsg(), e);
-      }
-      return uri.toString();
-    } else {
-      //no-op for non-test mode for now
-      return location;
+    } catch (IOException e) {
+      throw new SemanticException(ErrorMsg.IO_ERROR.getMsg() + ": " + e.getMessage(), e);
     }
   }
 
@@ -280,6 +283,7 @@ public class EximUtil {
     if (replicationSpec == null){
       replicationSpec = new ReplicationSpec(); // instantiate default values if not specified
     }
+
     if (tableHandle == null){
       replicationSpec.setNoop(true);
     }
@@ -351,10 +355,6 @@ public class EximUtil {
     }
     jgen.writeEndObject();
     jgen.close(); // JsonGenerator owns the OutputStream, so it closes it when we call close.
-  }
-
-  private static void write(OutputStream out, String s) throws IOException {
-    out.write(s.getBytes("UTF-8"));
   }
 
   /**
@@ -573,4 +573,20 @@ public class EximUtil {
       }
     };
   }
+
+  public static String getCMEncodedFileName(String fileURIStr, String fileChecksum) {
+    // The checksum is set as the fragment portion of the file uri
+    return fileURIStr + URI_FRAGMENT_SEPARATOR + fileChecksum;
+  }
+
+  public static String getCMDecodedFileName(String encodedFileURIStr) {
+    String[] uriAndFragment = encodedFileURIStr.split(URI_FRAGMENT_SEPARATOR);
+    return uriAndFragment[0];
+  }
+
+  public static FileChecksum getCMDecodedChecksum(String encodedFileURIStr) {
+    // TODO: Implement this as part of HIVE-15490
+    return null;
+  }
+
 }
