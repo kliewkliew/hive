@@ -2631,6 +2631,9 @@ public class HiveConf extends Configuration {
     HIVE_SERVER2_THRIFT_RESULTSET_COMPRESSOR("hive.server2.thrift.resultset.compressor", "",
         "A CompDe that will be used for the session.\n " +
         "This is determined by negotiation during OpenSession."),
+    HIVE_SERVER2_THRIFT_RESULTSET_COMPRESSOR_VERSION(HIVE_SERVER2_THRIFT_RESULTSET_COMPRESSOR + ".version", "",
+        "The version of the CompDe that will be used for the session.\n " +
+        "This is determined by negotiation during OpenSession."),
 
     HIVE_SERVER2_XSRF_FILTER_ENABLED("hive.server2.xsrf.filter.enabled",false,
         "If enabled, HiveServer2 will block any requests made to it over http " +

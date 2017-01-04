@@ -28,30 +28,44 @@ import org.apache.hadoop.hive.serde2.thrift.ColumnBuffer;
 
 @InterfaceAudience.Private
 @InterfaceStability.Unstable
+/**
+ * CompDe is the interface used to compress or decompress a set of ColumnBuffer.
+ * It is used to compress results in ThriftJDBCBinarySerDe to send to remote
+ * clients.
+ *
+ */
 public interface CompDe {
 
   /**
-   * Initialize the plug-in by overlaying the input configuration map
-   * onto the plug-in's default configuration.
-   *
-   * @param config Overlay configuration map.
-   *
-   * @return True if initialization was successful.
+   * Table descriptor keys.
    */
-  public boolean init(Map<String, String> config);
+  public static String confName = "compde.name";
+  public static String confVersion = "compde.version";
+  public static String confParams = "compde.params";
 
   /**
-   * Get the configuration settings of the CompDe after it has been initialized.
-   *
-   * @return The CompDe configuration.
+   * Negotiate the server and client plug-in parameters.
+   * parameters.
+   * @param serverParams The server's default parameters for this plug-in.
+   * @param clientParams The client's requested parameters for this plug-in.
+   * @throws Exception if the plug-in failed to initialize.
    */
-  public Map<String, String> getConfig();
+  public Map<String,String> getParams(
+      Map<String,String> serverParams,
+      Map<String,String> clientParams)
+          throws Exception;
+
+  /**
+   * Initialize the plug-in with parameters.
+   * @param params
+   * @throws Exception if the plug-in failed to initialize.
+   */
+  public void init(Map<String,String> params)
+      throws Exception;
 
   /**
    * Compress a set of columns.
-   *
    * @param colSet The set of columns to be compressed.
-   *
    * @return ByteBuffer representing the compressed set.
    * @throws Exception
    */
@@ -61,12 +75,10 @@ public interface CompDe {
   /**
    * Decompress a set of columns from a ByteBuffer and update the position of
    * the buffer.
-   *
    * @param input     A ByteBuffer with `position` indicating the starting point
    *                  of the compressed chunk.
    * @param chunkSize The length of the compressed chunk to be decompressed from
    *                  the input buffer.
-   *
    * @return The set of columns.
    * @throws Exception
    */
@@ -74,16 +86,20 @@ public interface CompDe {
       throws Exception;
 
   /**
-   * Plugin name.
-   *
+   * Provide a namespace for the plug-in.
+   * @return The vendor name.
+   */
+  public String getVendor();
+
+  /**
+   * Provide a name for the plug-in.
    * @return The plug-in name.
    */
   public String getName();
 
   /**
-   * Provide a namespace for the plug-in.
-   *
-   * @return The vendor name.
+   * Provide the version of the plug-in.
+   * @return The plug-in version.
    */
-  public String getVendor();
+  public String getVersion();
 }

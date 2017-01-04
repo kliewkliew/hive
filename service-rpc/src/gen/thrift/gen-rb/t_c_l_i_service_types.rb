@@ -979,15 +979,17 @@ class TOpenSessionResp
   STATUS = 1
   SERVERPROTOCOLVERSION = 2
   SESSIONHANDLE = 3
-  COMPRESSORCONFIGURATION = 4
+  COMPRESSORPARAMETERS = 4
   COMPRESSORNAME = 5
+  COMPRESSORVERSION = 6
 
   FIELDS = {
     STATUS => {:type => ::Thrift::Types::STRUCT, :name => 'status', :class => ::TStatus},
     SERVERPROTOCOLVERSION => {:type => ::Thrift::Types::I32, :name => 'serverProtocolVersion', :default =>     8, :enum_class => ::TProtocolVersion},
     SESSIONHANDLE => {:type => ::Thrift::Types::STRUCT, :name => 'sessionHandle', :class => ::TSessionHandle, :optional => true},
-    COMPRESSORCONFIGURATION => {:type => ::Thrift::Types::MAP, :name => 'compressorConfiguration', :key => {:type => ::Thrift::Types::STRING}, :value => {:type => ::Thrift::Types::STRING}, :optional => true},
-    COMPRESSORNAME => {:type => ::Thrift::Types::STRING, :name => 'compressorName', :optional => true}
+    COMPRESSORPARAMETERS => {:type => ::Thrift::Types::MAP, :name => 'compressorParameters', :key => {:type => ::Thrift::Types::STRING}, :value => {:type => ::Thrift::Types::STRING}, :optional => true},
+    COMPRESSORNAME => {:type => ::Thrift::Types::STRING, :name => 'compressorName', :optional => true},
+    COMPRESSORVERSION => {:type => ::Thrift::Types::STRING, :name => 'compressorVersion', :optional => true}
   }
 
   def struct_fields; FIELDS; end

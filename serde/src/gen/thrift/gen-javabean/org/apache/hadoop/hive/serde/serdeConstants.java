@@ -58,10 +58,6 @@ public class serdeConstants {
 
   public static final String SERIALIZATION_ENCODING = "serialization.encoding";
 
-  public static final String COMPDE_NAME = "compde.name";
-
-  public static final String COMPDE_CONFIG = "compde.config";
-
   public static final String FIELD_DELIM = "field.delim";
 
   public static final String COLLECTION_DELIM = "colelction.delim";

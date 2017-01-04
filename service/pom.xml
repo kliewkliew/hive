@@ -67,6 +67,11 @@
       <version>${commons-cli.version}</version>
     </dependency>
     <dependency>
+      <groupId>org.apache.commons</groupId>
+      <artifactId>commons-lang3</artifactId>
+      <version>${commons-lang3.version}</version>
+    </dependency>
+    <dependency>
       <groupId>net.sf.jpam</groupId>
       <artifactId>jpam</artifactId>
       <version>${jpam.version}</version>

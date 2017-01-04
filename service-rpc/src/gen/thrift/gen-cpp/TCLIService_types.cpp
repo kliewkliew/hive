@@ -4814,14 +4814,19 @@ void TOpenSessionResp::__set_sessionHandle(const TSessionHandle& val) {
 __isset.sessionHandle = true;
 }
 
-void TOpenSessionResp::__set_compressorConfiguration(const std::map<std::string, std::string> & val) {
-  this->compressorConfiguration = val;
-__isset.compressorConfiguration = true;
+void TOpenSessionResp::__set_compressorParameters(const std::map<std::string, std::string> & val) {
+  this->compressorParameters = val;
+__isset.compressorParameters = true;
 }
 
 void TOpenSessionResp::__set_compressorName(const std::string& val) {
   this->compressorName = val;
 __isset.compressorName = true;
+}
+
+void TOpenSessionResp::__set_compressorVersion(const std::string& val) {
+  this->compressorVersion = val;
+__isset.compressorVersion = true;
 }
 
 uint32_t TOpenSessionResp::read(::apache::thrift::protocol::TProtocol* iprot) {
@@ -4876,7 +4881,7 @@ uint32_t TOpenSessionResp::read(::apache::thrift::protocol::TProtocol* iprot) {
       case 4:
         if (ftype == ::apache::thrift::protocol::T_MAP) {
           {
-            this->compressorConfiguration.clear();
+            this->compressorParameters.clear();
             uint32_t _size193;
             ::apache::thrift::protocol::TType _ktype194;
             ::apache::thrift::protocol::TType _vtype195;
@@ -4886,12 +4891,12 @@ uint32_t TOpenSessionResp::read(::apache::thrift::protocol::TProtocol* iprot) {
             {
               std::string _key198;
               xfer += iprot->readString(_key198);
-              std::string& _val199 = this->compressorConfiguration[_key198];
+              std::string& _val199 = this->compressorParameters[_key198];
               xfer += iprot->readString(_val199);
             }
             xfer += iprot->readMapEnd();
           }
-          this->__isset.compressorConfiguration = true;
+          this->__isset.compressorParameters = true;
         } else {
           xfer += iprot->skip(ftype);
         }
@@ -4900,6 +4905,14 @@ uint32_t TOpenSessionResp::read(::apache::thrift::protocol::TProtocol* iprot) {
         if (ftype == ::apache::thrift::protocol::T_STRING) {
           xfer += iprot->readString(this->compressorName);
           this->__isset.compressorName = true;
+        } else {
+          xfer += iprot->skip(ftype);
+        }
+        break;
+      case 6:
+        if (ftype == ::apache::thrift::protocol::T_STRING) {
+          xfer += iprot->readString(this->compressorVersion);
+          this->__isset.compressorVersion = true;
         } else {
           xfer += iprot->skip(ftype);
         }
@@ -4938,12 +4951,12 @@ uint32_t TOpenSessionResp::write(::apache::thrift::protocol::TProtocol* oprot) c
     xfer += this->sessionHandle.write(oprot);
     xfer += oprot->writeFieldEnd();
   }
-  if (this->__isset.compressorConfiguration) {
-    xfer += oprot->writeFieldBegin("compressorConfiguration", ::apache::thrift::protocol::T_MAP, 4);
+  if (this->__isset.compressorParameters) {
+    xfer += oprot->writeFieldBegin("compressorParameters", ::apache::thrift::protocol::T_MAP, 4);
     {
-      xfer += oprot->writeMapBegin(::apache::thrift::protocol::T_STRING, ::apache::thrift::protocol::T_STRING, static_cast<uint32_t>(this->compressorConfiguration.size()));
+      xfer += oprot->writeMapBegin(::apache::thrift::protocol::T_STRING, ::apache::thrift::protocol::T_STRING, static_cast<uint32_t>(this->compressorParameters.size()));
       std::map<std::string, std::string> ::const_iterator _iter200;
-      for (_iter200 = this->compressorConfiguration.begin(); _iter200 != this->compressorConfiguration.end(); ++_iter200)
+      for (_iter200 = this->compressorParameters.begin(); _iter200 != this->compressorParameters.end(); ++_iter200)
       {
         xfer += oprot->writeString(_iter200->first);
         xfer += oprot->writeString(_iter200->second);
@@ -4957,6 +4970,11 @@ uint32_t TOpenSessionResp::write(::apache::thrift::protocol::TProtocol* oprot) c
     xfer += oprot->writeString(this->compressorName);
     xfer += oprot->writeFieldEnd();
   }
+  if (this->__isset.compressorVersion) {
+    xfer += oprot->writeFieldBegin("compressorVersion", ::apache::thrift::protocol::T_STRING, 6);
+    xfer += oprot->writeString(this->compressorVersion);
+    xfer += oprot->writeFieldEnd();
+  }
   xfer += oprot->writeFieldStop();
   xfer += oprot->writeStructEnd();
   return xfer;
@@ -4967,8 +4985,9 @@ void swap(TOpenSessionResp &a, TOpenSessionResp &b) {
   swap(a.status, b.status);
   swap(a.serverProtocolVersion, b.serverProtocolVersion);
   swap(a.sessionHandle, b.sessionHandle);
-  swap(a.compressorConfiguration, b.compressorConfiguration);
+  swap(a.compressorParameters, b.compressorParameters);
   swap(a.compressorName, b.compressorName);
+  swap(a.compressorVersion, b.compressorVersion);
   swap(a.__isset, b.__isset);
 }
 
@@ -4976,16 +4995,18 @@ TOpenSessionResp::TOpenSessionResp(const TOpenSessionResp& other201) {
   status = other201.status;
   serverProtocolVersion = other201.serverProtocolVersion;
   sessionHandle = other201.sessionHandle;
-  compressorConfiguration = other201.compressorConfiguration;
+  compressorParameters = other201.compressorParameters;
   compressorName = other201.compressorName;
+  compressorVersion = other201.compressorVersion;
   __isset = other201.__isset;
 }
 TOpenSessionResp& TOpenSessionResp::operator=(const TOpenSessionResp& other202) {
   status = other202.status;
   serverProtocolVersion = other202.serverProtocolVersion;
   sessionHandle = other202.sessionHandle;
-  compressorConfiguration = other202.compressorConfiguration;
+  compressorParameters = other202.compressorParameters;
   compressorName = other202.compressorName;
+  compressorVersion = other202.compressorVersion;
   __isset = other202.__isset;
   return *this;
 }
@@ -4995,8 +5016,9 @@ void TOpenSessionResp::printTo(std::ostream& out) const {
   out << "status=" << to_string(status);
   out << ", " << "serverProtocolVersion=" << to_string(serverProtocolVersion);
   out << ", " << "sessionHandle="; (__isset.sessionHandle ? (out << to_string(sessionHandle)) : (out << "<null>"));
-  out << ", " << "compressorConfiguration="; (__isset.compressorConfiguration ? (out << to_string(compressorConfiguration)) : (out << "<null>"));
+  out << ", " << "compressorParameters="; (__isset.compressorParameters ? (out << to_string(compressorParameters)) : (out << "<null>"));
   out << ", " << "compressorName="; (__isset.compressorName ? (out << to_string(compressorName)) : (out << "<null>"));
+  out << ", " << "compressorVersion="; (__isset.compressorVersion ? (out << to_string(compressorVersion)) : (out << "<null>"));
   out << ")";
 }
 

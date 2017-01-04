@@ -584,10 +584,13 @@ struct TOpenSessionResp {
   3: optional TSessionHandle sessionHandle
 
   // The CompDe configuration settings for this session.
-  4: optional map<string, string> compressorConfiguration
+  4: optional map<string, string> compressorParameters
 
   // The name of the CompDe for this session.
   5: optional string compressorName
+
+  // The version of the CompDe for this session.
+  6: optional string compressorVersion
 }
 
 

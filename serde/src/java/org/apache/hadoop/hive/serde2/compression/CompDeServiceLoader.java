@@ -20,10 +20,12 @@ package org.apache.hadoop.hive.serde2.compression;
 
 import java.util.Iterator;
 import java.util.ServiceLoader;
-import java.util.concurrent.ConcurrentHashMap;
 
+import org.apache.commons.lang3.tuple.ImmutablePair;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+
+import com.google.common.collect.ImmutableMap;
 
 /**
  * Load classes that implement CompDe when starting up, and serve them at run
@@ -32,57 +34,54 @@ import org.slf4j.LoggerFactory;
  */
 public class CompDeServiceLoader {
   private static CompDeServiceLoader instance;
+
   // Map CompDe names to classes so we don't have to read the META-INF file for every session.
-  private ConcurrentHashMap<String, Class<? extends CompDe>> compressorTable
-    = new ConcurrentHashMap<String, Class<? extends CompDe>>();
-  public static final Logger LOG = LoggerFactory.getLogger(CompDeServiceLoader.class);
+  private ImmutableMap<ImmutablePair<String,String>, Class<? extends CompDe>> compdeTable;
+
+  private static final Logger LOG = LoggerFactory.getLogger(CompDeServiceLoader.class);
 
   /**
    * Get the singleton instance or initialize the CompDeServiceLoader.
-   *
    * @return A singleton instance of CompDeServiceLoader.
    */
   public static synchronized CompDeServiceLoader getInstance() {
     if (instance == null) {
-      Iterator<CompDe> compressors = ServiceLoader.load(CompDe.class).iterator();
+      Iterator<CompDe> compdes = ServiceLoader.load(CompDe.class).iterator();
       instance = new CompDeServiceLoader();
-      while (compressors.hasNext()) {
-        CompDe compressor = compressors.next();
-        instance.compressorTable.put(
-            compressor.getVendor() + "." + compressor.getName(),
-            compressor.getClass());
+      ImmutableMap.Builder<ImmutablePair<String,String>, Class<? extends CompDe>> compdeMapBuilder =
+          new ImmutableMap.Builder<>();
+      while (compdes.hasNext()) {
+        CompDe compde = compdes.next();
+        compdeMapBuilder.put(
+            ImmutablePair.of(
+                compde.getVendor() + "." + compde.getName(),
+                compde.getVersion()),
+            compde.getClass());
       }
+      instance.compdeTable = compdeMapBuilder.build();
     }
     return instance;
   }
 
   /**
-   * Get the CompDe if the compressor class was loaded from CLASSPATH.
-   *
-   * @param compDeName
-   *          The compressor name qualified by the vendor namespace.
-   *
-   * @return A CompDe implementation object
+   * Get a new instance of the CompDe.
+   * @param compdeName The compressor name qualified by the vendor namespace.
+   * ie. hive.snappy
+   * @param version The plug-in version.
+   * @return A CompDe implementation object.
+   * @throws Exception if the plug-in cannot be instantiated.
    */
-  public CompDe getCompDe(String compDeName) {
+  public CompDe getCompde(String compdeName, String version) throws Exception {
     try {
-      return compressorTable.get(compDeName).newInstance();
+      ImmutablePair<String,String> requestedCompde =
+          ImmutablePair.of(compdeName, version);
+      CompDe compde = compdeTable.get(requestedCompde).newInstance();
+      LOG.debug("Instantiated CompDe plugin for " + compdeName);
+      return compde;
     } catch (Exception e) {
-      LOG.warn("Plug-in not found for " + compDeName + " CompDe");
-      return null;
+      LOG.debug("CompDe plug-in cannot be instantiated for " + compdeName);
+      throw e;
     }
-  }
-
-  /**
-   * Does the server have a plugin for the specified name?
-   *
-   * @param compDeName
-   *          The compressor name qualified by the vendor namespace.
-   *
-   * @return
-   */
-  public boolean hasCompDe(String compDeName) {
-    return compressorTable.containsKey(compDeName);
   }
 
 }

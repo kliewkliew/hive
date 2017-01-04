@@ -42,26 +42,26 @@ import org.iq80.snappy.Snappy;
 public class SnappyCompDe implements CompDe {
 
   /**
-   * Initialize the plug-in by overlaying the input configuration map
-   * onto the plug-in's default configuration.
-   *
-   * @param config Overlay configuration map.
-   *
-   * @return True is initialization was successful.
+   * Negotiate the server and client plug-in parameters.
+   * parameters.
+   * @param serverParams The server's default parameters for this plug-in.
+   * @param clientParams The client's requested parameters for this plug-in.
+   * @throws Exception if the plug-in failed to initialize.
    */
-  @Override
-  public boolean init(Map<String, String> config) {
-    return true;
+  public Map<String, String> getParams(
+      Map<String,String> serverParams,
+      Map<String,String> clientParams)
+          throws Exception {
+    return serverParams;
   }
 
   /**
    * Get the configuration settings of the CompDe after it has been initialized.
-   *
    * @return The CompDe configuration.
    */
   @Override
-  public Map<String, String> getConfig() {
-    return new HashMap<String, String>();
+  public void init(Map<String,String> params) {
+    return;
   }
 
   /**
@@ -84,7 +84,7 @@ public class SnappyCompDe implements CompDe {
       throws IOException, SerDeException {
 
     // Many compression libraries let you avoid allocation of intermediate arrays.
-    // To use these API, we preallocate the output container.
+    // To use these API, we pre-compute the size of the output container.
 
     // Reserve space for the header.
     int[] dataType = new int[colSet.length];
@@ -298,7 +298,7 @@ public class SnappyCompDe implements CompDe {
    * @return The number of bytes written.
    * @throws IOException on failure to write compressed data.
    */
-  private int writeBoxedBytes(List<Byte> boxedVals, ByteBuffer output) throws IOException {
+  private int writeBoxedBytes(List<Byte> boxedVals, ByteBuffer output)throws IOException {
     return writePrimitives(ArrayUtils.toPrimitive(boxedVals.toArray(new Byte[0])), output);
   }
   private int writeBoxedShorts(List<Short> boxedVals, ByteBuffer output) throws IOException {
@@ -534,8 +534,16 @@ public class SnappyCompDe implements CompDe {
   }
 
   /**
-   * Plugin name.
-   *
+   * Provide a namespace for the plug-in.
+   * @return The vendor name.
+   */
+  @Override
+  public String getVendor() {
+    return "hive";
+  }
+
+  /**
+   * Provide a name for the plug-in.
    * @return The plug-in name.
    */
   @Override
@@ -544,13 +552,11 @@ public class SnappyCompDe implements CompDe {
   }
 
   /**
-   * Provide a namespace for the plug-in.
-   *
-   * @return The vendor name.
+   * Provide the version of the plug-in.
+   * @return The plug-in version.
    */
-  @Override
-  public String getVendor() {
-    return "hive";
+  public String getVersion() {
+    return "1.0.0";
   }
 
 }

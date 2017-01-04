@@ -76,17 +76,23 @@ public class ThriftJDBCBinarySerDe extends AbstractSerDe {
 
   @Override
   public void initialize(Configuration conf, Properties tbl) throws SerDeException {
-    if (tbl.containsKey(serdeConstants.COMPDE_NAME)) {
-      String compDeName = tbl.getProperty(serdeConstants.COMPDE_NAME, null);
-      if (CompDeServiceLoader.getInstance().hasCompDe(compDeName)) {
-        compDe = CompDeServiceLoader.getInstance().getCompDe(compDeName);
-        if (tbl.containsKey(serdeConstants.COMPDE_CONFIG)) {
-          Map<String, String> compDeConfig = (Map<String, String>) tbl.get("compde.config");
-          compDe.init(compDeConfig);
+    if (tbl.containsKey(CompDe.confName)
+        && tbl.containsKey(CompDe.confVersion)) {
+      String compdeName = tbl.getProperty(CompDe.confName, null);
+      String compdeVersion = tbl.getProperty(CompDe.confVersion, null);
+      try {
+        CompDe compde = CompDeServiceLoader.getInstance()
+            .getCompde(compdeName, compdeVersion);
+        if (tbl.containsKey(CompDe.confParams)) {
+          @SuppressWarnings("unchecked")
+          Map<String, String> compdeConfig = (Map<String, String>) tbl.get(CompDe.confParams);
+          compde.init(compdeConfig);
         }
         else {
-          compDe.init(new HashMap<String, String>());
+          compde.init(new HashMap<String, String>());
         }
+      } catch (Exception e) {
+        throw new SerDeException(e);
       }
     }
 

@@ -54,22 +54,29 @@ public class TestCompDeNegotiation {
         "org.apache.hadoop.hive.ql.security.authorization.DefaultHiveAuthorizationProvider");
     baseConf.setBoolean("datanucleus.schema.autoCreateTables", true);
 
-    // Set the compresspr lists and compressor configs used for negotiation
+    // Set the compressor lists and compressor configs used for negotiation
 
     noCompDes = new HiveConf(baseConf);
 
     clientSingleCompDe = new HiveConf(baseConf);
     clientSingleCompDe.set(clientCompressorListVarName(), "compde3");
+    clientSingleCompDe.set(clientCompdeParamPrefix("compde3") + ".version", "1.0");
     serverSingleCompDe = new HiveConf(baseConf);
     serverSingleCompDe.setVar(ConfVars.HIVE_SERVER2_THRIFT_RESULTSET_COMPRESSOR_LIST, "compde3");
 
     clientMultiCompDes1 = new HiveConf(baseConf);
     clientMultiCompDes1.set(clientCompressorListVarName(), "compde1,compde2,compde3,compde4");
+    clientMultiCompDes1.set(clientCompdeParamPrefix("compde1") + ".version", "1.0");
+    clientMultiCompDes1.set(clientCompdeParamPrefix("compde2") + ".version", "1.0");
+    clientMultiCompDes1.set(clientCompdeParamPrefix("compde3") + ".version", "1.0");
+    clientMultiCompDes1.set(clientCompdeParamPrefix("compde4") + ".version", "1.0");
     serverMultiCompDes1 = new HiveConf(baseConf);
     serverMultiCompDes1.setVar(ConfVars.HIVE_SERVER2_THRIFT_RESULTSET_COMPRESSOR_LIST, "compde1,compde2,compde3,compde4");
 
     clientMultiCompDes2 = new HiveConf(baseConf);
     clientMultiCompDes2.set(clientCompressorListVarName(), "compde2, compde4");
+    clientMultiCompDes2.set(clientCompdeParamPrefix("compde2") + ".version", "1.0");
+    clientMultiCompDes2.set(clientCompdeParamPrefix("compde4") + ".version", "1.0");
     serverMultiCompDes2 = new HiveConf(baseConf);
     serverMultiCompDes2.setVar(ConfVars.HIVE_SERVER2_THRIFT_RESULTSET_COMPRESSOR_LIST, "compde2, compde4");
 
@@ -81,27 +88,32 @@ public class TestCompDeNegotiation {
 
     clientCompDeConf = new HiveConf(baseConf);
     clientCompDeConf.set(clientCompressorListVarName(), "compde3");
-    clientCompDeConf.set(clientCompDeConfigPrefix("compde3") + ".test2", "clientVal2");//overrides server
-    clientCompDeConf.set(clientCompDeConfigPrefix("compde3") + ".test3", "clientVal3");
-    clientCompDeConf.set(clientCompDeConfigPrefix("compde3") + ".test5", "clientVal5");//overriden by plug-in
+    clientCompDeConf.set(clientCompdeParamPrefix("compde3") + ".version", "1.0");
+    clientCompDeConf.set(clientCompdeParamPrefix("compde3") + ".test2", "clientVal2");//overrides server
+    clientCompDeConf.set(clientCompdeParamPrefix("compde3") + ".test3", "clientVal3");
+    clientCompDeConf.set(clientCompdeParamPrefix("compde3") + ".test5", "clientVal5");//overriden by plug-in
   }
 
-  private String noCompDeConfigPrefix(String compDeName) {
+  private static String noCompDeConfigPrefix(String compDeName) {
     return ConfVars.HIVE_SERVER2_THRIFT_RESULTSET_COMPRESSOR.varname + "." + compDeName;
   }
   // The JDBC driver prefixes all configuration names before sending the request and the server expects these prefixes
-  private String clientCompressorListVarName() {
+  private static String clientCompressorListVarName() {
     return "set:hiveconf:" + ConfVars.HIVE_SERVER2_THRIFT_RESULTSET_COMPRESSOR_LIST.varname;
   }
-  private String clientCompDeConfigPrefix(String compDeName) {
+  private static String clientCompdeParamPrefix(String compDeName) {
     return "set:hiveconf:" + ConfVars.HIVE_SERVER2_THRIFT_RESULTSET_COMPRESSOR.varname + "." + compDeName;
   }
 
   public class MockServiceWithoutCompDes extends EmbeddedThriftBinaryCLIService {
     @Override
     // Pretend that we have no CompDe plug-ins
-    protected Map<String, String> initCompDe(String compDeName, Map<String, String> compDeConfig) {
-      return null;
+    protected Map<String, String> initCompde(
+        String compdeName,
+        String version,
+        Map<String, String> serverParams,
+        Map<String, String> clientParams) throws Exception {
+      throw new Exception("No supported compdes");
     }
   }
 
@@ -133,12 +145,16 @@ public class TestCompDeNegotiation {
   public class MockServiceWithCompDes extends EmbeddedThriftBinaryCLIService {
     @Override
     // Pretend that we have plug-ins for all CompDes except "compde1"
-    protected Map<String, String> initCompDe(String compDeName, Map<String, String> compDeConfig) {
-      if (compDeName.equals("compde1")) {
-        return null;
+    protected Map<String, String> initCompde(
+        String compdeName,
+        String version,
+        Map<String, String> serverParams,
+        Map<String, String> clientParams) throws Exception {
+      if (compdeName.equals("compde1")) {
+        throw new Exception("compde1 not supported");
       }
       else {
-        return compDeConfig;
+        return serverParams;
       }
     }
   }
@@ -224,22 +240,31 @@ public class TestCompDeNegotiation {
   public class MockWithCompDeConfig extends EmbeddedThriftBinaryCLIService {
     @Override
     // Mock a plug-in with an `init` function.
-    protected Map<String, String> initCompDe(String compDeName, Map<String, String> compDeConfig) {
-      compDeConfig.put(noCompDeConfigPrefix("compde3") + ".test4", "compDeVal4");//overrides server
-      compDeConfig.put(noCompDeConfigPrefix("compde3") + ".test5", "compDeVal5");//overrides client
-      compDeConfig.put(noCompDeConfigPrefix("compde3") + ".test6", "compDeVal6");
-      return compDeConfig;
+    protected Map<String, String> initCompde(
+        String compdeName,
+        String version,
+        Map<String, String> serverParams,
+        Map<String, String> clientParams) {
+      Map<String,String> finalParams = serverParams;
+      finalParams.putAll(clientParams);
+      finalParams.put(noCompDeConfigPrefix("compde3") + ".test4", "compDeVal4");//overrides server
+      finalParams.put(noCompDeConfigPrefix("compde3") + ".test5", "compDeVal5");//overrides client
+      finalParams.put(noCompDeConfigPrefix("compde3") + ".test6", "compDeVal6");
+      return finalParams;
     }
   }
 
   @Test
-  // Ensure that the server combines the server default CompDe configuration with the client overrides and lets the plug-in `init` function create the final configuration.
+  // Ensure that the server allows the plug-in to combine the server's default
+  // CompDe parameters with the client overrides and returns the final
+  // configuration.
   public void testConfig() throws TException {
     Map<String, String> expectedConf = new HashMap<String, String>();
     expectedConf.put(noCompDeConfigPrefix("compde3") + ".test1", "serverVal1");
     expectedConf.put(noCompDeConfigPrefix("compde3") + ".test2", "clientVal2");
-    //expectedConf.put(noCompDeConfigPrefix("compde3") + ".test3", "clientVal3"); //TODO: fix this bug after modifying Thrift message structure to allow for cleaner negotiation code on server
+    expectedConf.put(noCompDeConfigPrefix("compde3") + ".test3", "clientVal3");
     expectedConf.put(noCompDeConfigPrefix("compde3") + ".test4", "compDeVal4");
+    expectedConf.put(noCompDeConfigPrefix("compde3") + ".version", "1.0");
     expectedConf.put(noCompDeConfigPrefix("compde3") + ".test5", "compDeVal5");
     expectedConf.put(noCompDeConfigPrefix("compde3") + ".test6", "compDeVal6");
 
@@ -251,6 +276,6 @@ public class TestCompDeNegotiation {
 
     TOpenSessionResp resp = service.OpenSession(req);
     assertEquals("compde3", resp.getCompressorName());
-    assertEquals(expectedConf, resp.getCompressorConfiguration());
+    assertEquals(expectedConf, resp.getCompressorParameters());
   }
 }

@@ -48,7 +48,7 @@ public class TestSnappyCompDe {
   ColumnBuffer columnStr;
 
   @Before
-  public void init() {
+  public void init() throws Exception {
     ByteBuffer firstRow = ByteBuffer.wrap(new byte[]{2, 33, 7, 75, 5});
     ByteBuffer secondRow = ByteBuffer.wrap(new byte[]{3, 21, 6});
     ByteBuffer thirdRow = ByteBuffer.wrap(new byte[]{52, 25, 74, 74, 64});

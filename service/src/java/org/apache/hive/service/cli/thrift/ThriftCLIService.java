@@ -33,8 +33,10 @@ import javax.security.auth.login.LoginException;
 
 import org.apache.hadoop.hive.conf.HiveConf;
 import org.apache.hadoop.hive.conf.HiveConf.ConfVars;
+import org.apache.hadoop.hive.ql.session.SessionState;
 import org.apache.hadoop.hive.serde2.compression.CompDe;
 import org.apache.hadoop.hive.serde2.compression.CompDeServiceLoader;
+import org.apache.commons.lang3.tuple.ImmutableTriple;
 import org.apache.hadoop.hive.common.ServerUtils;
 import org.apache.hadoop.hive.shims.HadoopShims.KerberosNameShim;
 import org.apache.hadoop.hive.shims.ShimLoader;
@@ -315,43 +317,33 @@ public abstract class ThriftCLIService extends AbstractService implements TCLISe
     TOpenSessionResp resp = new TOpenSessionResp();
     try {
       if (req.isSetConfiguration()) {
-        String[] serverCompDes =
-            HiveConf.getTrimmedStringsVar(hiveConf, ConfVars.HIVE_SERVER2_THRIFT_RESULTSET_COMPRESSOR_LIST);
+        Map<String,String> reqConfMap = req.getConfiguration();
 
-        List<String> clientCompDes = new ArrayList<String>();
-        if (req.getConfiguration().containsKey("set:hiveconf:" + ConfVars.HIVE_SERVER2_THRIFT_RESULTSET_COMPRESSOR_LIST.varname)
-            && !req.getConfiguration().get("set:hiveconf:" + ConfVars.HIVE_SERVER2_THRIFT_RESULTSET_COMPRESSOR_LIST.varname).isEmpty()) {
-          HiveConf tempConf = new HiveConf();
-          tempConf.setVar(ConfVars.HIVE_SERVER2_THRIFT_RESULTSET_COMPRESSOR_LIST, req.getConfiguration().get("set:hiveconf:" + ConfVars.HIVE_SERVER2_THRIFT_RESULTSET_COMPRESSOR_LIST.varname));
-          clientCompDes =
-              Arrays.asList(HiveConf.getTrimmedStringsVar(tempConf, ConfVars.HIVE_SERVER2_THRIFT_RESULTSET_COMPRESSOR_LIST));
-        }
-
-        // CompDe negotiation
-        req.getConfiguration().remove("set:hiveconf:" + ConfVars.HIVE_SERVER2_THRIFT_RESULTSET_COMPRESSOR.varname);
-        for (String compDeName : serverCompDes) {
-          if (clientCompDes.contains(compDeName)) {
-            // Client configuration overrides server defaults
-            Map<String, String> compDeConfig =
-                hiveConf.getValByRegex(ConfVars.HIVE_SERVER2_THRIFT_RESULTSET_COMPRESSOR + "\\." + compDeName + "\\.[\\w|\\d]+");
-            for (Entry<String, String> entry : compDeConfig.entrySet()) {
-              if (req.getConfiguration().containsKey("set:hiveconf:" + entry.getKey())) {
-                compDeConfig.put(entry.getKey(), req.getConfiguration().get("set:hiveconf:" + entry.getKey()));
-              }
-            }
-
-            Map<String, String> compDeResponse = initCompDe(compDeName, compDeConfig);
-
-            if (compDeResponse != null) {
-              LOG.info("Initialized CompDe plugin for " + compDeName);
-              resp.setCompressorConfiguration(compDeResponse);
-              resp.setCompressorName(compDeName);
-              // SessionState is initialized based on TOpenSessionRequest
-              req.getConfiguration().put("set:hiveconf:" + ConfVars.HIVE_SERVER2_THRIFT_RESULTSET_COMPRESSOR.varname, compDeName);
-              req.getConfiguration().putAll(compDeResponse);
-              break;
-            }
+        reqConfMap.remove(
+            ConfVars.HIVE_SERVER2_THRIFT_RESULTSET_COMPRESSOR.varname);
+        if (reqConfMap.containsKey("set:hiveconf:"
+              + ConfVars.HIVE_SERVER2_THRIFT_RESULTSET_COMPRESSOR_LIST.varname))
+        {
+          HiveConf clientConf = new HiveConf();
+          for (Entry<String,String> entry : reqConfMap.entrySet()) {
+            clientConf.set(
+                entry.getKey().replace("set:hiveconf:", ""),
+                entry.getValue());
           }
+          ImmutableTriple<String,String,Map<String,String>> compdeNameVersionParams =
+              negotiateCompde(hiveConf, clientConf);
+          // Set the response for the client.
+          resp.setCompressorName(compdeNameVersionParams.left);
+          resp.setCompressorVersion(compdeNameVersionParams.middle);
+          resp.setCompressorParameters(compdeNameVersionParams.right);
+          // SessionState is initialized based on TOpenSessionRequest.
+          reqConfMap.put(
+              ConfVars.HIVE_SERVER2_THRIFT_RESULTSET_COMPRESSOR.varname,
+              compdeNameVersionParams.left);
+          reqConfMap.putAll(compdeNameVersionParams.right);
+          reqConfMap.put(
+              ConfVars.HIVE_SERVER2_THRIFT_RESULTSET_COMPRESSOR_VERSION.varname,
+              compdeNameVersionParams.middle);
         }
       }
 
@@ -371,18 +363,100 @@ public abstract class ThriftCLIService extends AbstractService implements TCLISe
     return resp;
   }
 
-  protected Map<String, String> initCompDe(String compDeName, Map<String, String> compDeConfig) {
-    if (CompDeServiceLoader.getInstance().hasCompDe(compDeName)) {
-      CompDe compDe = CompDeServiceLoader.getInstance().getCompDe(compDeName);
-      if (compDe.init(compDeConfig)) {
-        return compDe.getConfig();
-      }
-      else {
-        return null;
+  /**
+   * Find the first CompDe in in the server's list that the client supports and
+   * can be initialized on the server.
+   * @param serverConf
+   * @param clientConf
+   * @return the name and parameter map of the negotiated plug-in.
+   */
+  private ImmutableTriple<String,String,Map<String,String>> negotiateCompde(
+      HiveConf serverConf,
+      HiveConf clientConf) {
+    List<String> serverCompdes = Arrays.asList(
+        HiveConf.getTrimmedStringsVar(
+            serverConf,
+            ConfVars.HIVE_SERVER2_THRIFT_RESULTSET_COMPRESSOR_LIST));
+    List<String> clientCompdes = Arrays.asList(
+        HiveConf.getTrimmedStringsVar(
+            clientConf,
+            ConfVars.HIVE_SERVER2_THRIFT_RESULTSET_COMPRESSOR_LIST));
+
+    // CompDe negotiation
+    for (String compdeName : serverCompdes) {
+      if (clientCompdes.contains(compdeName)) {
+        Map<String,String> serverCompdeParams =
+            getParamsForCompde(serverConf, compdeName);
+        Map<String,String> clientCompdeParams =
+            getParamsForCompde(clientConf, compdeName);
+
+        try {
+          String clientCompdeVersion = clientCompdeParams.get(
+              ConfVars.HIVE_SERVER2_THRIFT_RESULTSET_COMPRESSOR_VERSION.varname);
+          LOG.debug(String.format("Client requests %s %s", compdeName, clientCompdeVersion));
+
+          Map<String,String> compdeResponse =
+              initCompde(
+                  compdeName, clientCompdeVersion,
+                  serverCompdeParams, clientCompdeParams);
+
+          return ImmutableTriple.of(compdeName, clientCompdeVersion, compdeResponse);
+        } catch (Exception e) {
+          continue;
+        }
       }
     }
-    else {
-      return null;
+    return null;
+  }
+
+  /**
+   * Get the parameters for the specified CompDe plug-in from the HiveConf.
+   * @param hiveConf
+   * @param compdeName
+   * @return a map of plug-in parameters.
+   */
+  protected static Map<String,String> getParamsForCompde(
+      HiveConf hiveConf,
+      String compdeName) {
+    String pattern = String.format(
+        "%s\\.%s\\.[\\w|\\d]+",
+        ConfVars.HIVE_SERVER2_THRIFT_RESULTSET_COMPRESSOR,
+        compdeName);
+    return hiveConf.getValByRegex(pattern);
+  }
+
+  /**
+   * Initialize a CompDe plug-in with requested parameters from the server and
+   * the client.
+   * @param compdeName
+   * @param serverParams
+   * @param clientParams
+   * @return The configuration map as finalized by the plug-in or null if the
+   * plug-in cannot be initialized with the given parameters.
+   */
+  protected Map<String, String> initCompde(
+      String compdeName,
+      String version,
+      Map<String, String> serverParams,
+      Map<String, String> clientParams)
+          throws Exception {
+    try {
+      CompDe compDe = CompDeServiceLoader.getInstance()
+          .getCompde(compdeName, version);
+      Map<String,String> pluginParams =
+          compDe.getParams(serverParams, clientParams);
+      compDe.init(pluginParams);
+      LOG.info(String.format(
+          "Initialized CompDe plugin for %s %s",
+          compdeName, version));
+      LOG.debug(compdeName + " params: " + pluginParams.toString());
+      return pluginParams;
+    }
+    catch (Exception e) {
+      LOG.debug(String.format(
+          "Failed to initialize CompDe plugin for %s %s",
+          compdeName, version));
+      throw e;
     }
   }
 

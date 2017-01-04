@@ -215,6 +215,7 @@ import org.apache.hadoop.hive.serde2.NoOpFetchFormatter;
 import org.apache.hadoop.hive.serde2.NullStructSerDe;
 import org.apache.hadoop.hive.serde2.SerDeException;
 import org.apache.hadoop.hive.serde2.SerDeUtils;
+import org.apache.hadoop.hive.serde2.compression.CompDe;
 import org.apache.hadoop.hive.serde2.lazy.LazySimpleSerDe;
 import org.apache.hadoop.hive.serde2.objectinspector.ConstantObjectInspector;
 import org.apache.hadoop.hive.serde2.objectinspector.ObjectInspector;
@@ -6982,6 +6983,17 @@ public class SemanticAnalyzer extends BaseSemanticAnalyzer {
               table_desc=
                          PlanUtils.getDefaultQueryOutputTableDesc(cols, colTypes, fileFormat,
                            ThriftJDBCBinarySerDe.class);
+              String compdeName = SessionState.get().getConf()
+                  .getVar(ConfVars.HIVE_SERVER2_THRIFT_RESULTSET_COMPRESSOR);
+              String compdeVersion = SessionState.get().getConf()
+                  .getVar(ConfVars.HIVE_SERVER2_THRIFT_RESULTSET_COMPRESSOR_VERSION);
+              if (!compdeName.isEmpty() && !compdeVersion.isEmpty()) {
+                table_desc.getProperties().put(CompDe.confName, compdeName);
+                table_desc.getProperties().put(CompDe.confVersion, compdeVersion);
+                table_desc.getProperties().put(CompDe.confParams,
+                    SessionState.get().getConf()
+                    .getValByRegex(ConfVars.HIVE_SERVER2_THRIFT_RESULTSET_COMPRESSOR + "\\." + compdeName + "\\.[\\w|\\d]+"));
+              }
               // Set the fetch formatter to be a no-op for the ListSinkOperator, since we'll
               // write out formatted thrift objects to SequenceFile
               conf.set(SerDeUtils.LIST_SINK_OUTPUT_FORMATTER, NoOpFetchFormatter.class.getName());
@@ -7231,14 +7243,6 @@ public class SemanticAnalyzer extends BaseSemanticAnalyzer {
     try {
       Deserializer deserializer = table_desc.getDeserializerClass()
           .newInstance();
-
-      String compDeName = SessionState.get().getConf().getVar(ConfVars.HIVE_SERVER2_THRIFT_RESULTSET_COMPRESSOR);
-      if (!compDeName.isEmpty()) {
-        table_desc.getProperties().put(serdeConstants.COMPDE_NAME, compDeName);
-        table_desc.getProperties().put(serdeConstants.COMPDE_CONFIG,
-            SessionState.get().getConf().getValByRegex(ConfVars.HIVE_SERVER2_THRIFT_RESULTSET_COMPRESSOR + "\\." + compDeName + "\\.[\\w|\\d]+"));
-      }
-
       SerDeUtils.initializeSerDe(deserializer, conf, table_desc.getProperties(), null);
       oi = (StructObjectInspector) deserializer.getObjectInspector();
     } catch (Exception e) {

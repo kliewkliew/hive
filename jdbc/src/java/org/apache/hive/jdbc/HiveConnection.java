@@ -660,15 +660,17 @@ public class HiveConnection implements java.sql.Connection {
       TOpenSessionResp openResp = client.OpenSession(openReq);
 
       // Server initialized CompDe
-      if (openResp.isSetCompressorName() && CompDeServiceLoader.getInstance().hasCompDe(openResp.getCompressorName())) {
-        CompDe testCompDe = CompDeServiceLoader.getInstance().getCompDe(openResp.getCompressorName());
-        // And the client initialized properly with the same config
-        if (testCompDe.init(openResp.getCompressorConfiguration())
-            && testCompDe.getConfig().equals(openResp.getCompressorConfiguration())) {
+      if (openResp.isSetCompressorName())
+      {
+        try {
+          CompDe testCompDe = CompDeServiceLoader.getInstance()
+              .getCompde(openResp.getCompressorName(), openResp.getCompressorVersion());
+          testCompDe.init(openResp.getCompressorParameters());
           sessCompDe = testCompDe;
         }
-        else {
-          openReq.getConfiguration().remove("set:hiveconf:" + ConfVars.HIVE_SERVER2_THRIFT_RESULTSET_COMPRESSOR_LIST.varname);
+        catch (Exception e) {
+          openReq.getConfiguration().remove(
+              "set:hiveconf:" + ConfVars.HIVE_SERVER2_THRIFT_RESULTSET_COMPRESSOR_LIST.varname);
           openResp = client.OpenSession(openReq);
         }
       }
