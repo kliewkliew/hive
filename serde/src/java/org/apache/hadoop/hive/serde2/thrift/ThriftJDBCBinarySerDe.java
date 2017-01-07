@@ -131,9 +131,9 @@ public class ThriftJDBCBinarySerDe extends AbstractSerDe {
   private Writable serializeBatch() throws SerDeException {
     output.reset();
 
-    if (compDe != null) {
+    if (compde != null) {
       try {
-        protocol.writeBinary(compDe.compress(columnBuffers));
+        protocol.writeBinary(compde.compress(columnBuffers));
       } catch (Exception e) {
         throw new SerDeException(e);
       }
