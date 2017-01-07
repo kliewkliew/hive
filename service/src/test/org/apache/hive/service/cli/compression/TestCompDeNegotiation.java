@@ -260,11 +260,11 @@ public class TestCompDeNegotiation {
   // configuration.
   public void testConfig() throws TException {
     Map<String, String> expectedConf = new HashMap<String, String>();
+    expectedConf.put(noCompDeConfigPrefix("compde3") + ".version", "1.0");
     expectedConf.put(noCompDeConfigPrefix("compde3") + ".test1", "serverVal1");
     expectedConf.put(noCompDeConfigPrefix("compde3") + ".test2", "clientVal2");
     expectedConf.put(noCompDeConfigPrefix("compde3") + ".test3", "clientVal3");
     expectedConf.put(noCompDeConfigPrefix("compde3") + ".test4", "compDeVal4");
-    expectedConf.put(noCompDeConfigPrefix("compde3") + ".version", "1.0");
     expectedConf.put(noCompDeConfigPrefix("compde3") + ".test5", "compDeVal5");
     expectedConf.put(noCompDeConfigPrefix("compde3") + ".test6", "compDeVal6");
 
@@ -272,7 +272,7 @@ public class TestCompDeNegotiation {
     service.init(serverCompDeConf);
 
     TOpenSessionReq req = new TOpenSessionReq();
-    req.setConfiguration(clientCompDeConf.getValByRegex(noCompDeConfigPrefix("compde3") + ".*"));
+    req.setConfiguration(clientCompDeConf.getValByRegex(".*compressor.*"));
 
     TOpenSessionResp resp = service.OpenSession(req);
     assertEquals("compde3", resp.getCompressorName());
