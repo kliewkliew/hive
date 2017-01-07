@@ -245,8 +245,8 @@ public class TestCompDeNegotiation {
         String version,
         HiveConf serverConf,
         HiveConf clientConf) {
-      Map<String,String> finalParams = serverConf.getValByRegex(".*");
-      finalParams.putAll(clientConf.getValByRegex(".*"));
+      Map<String,String> finalParams = serverConf.getValByRegex(noCompDeConfigPrefix(compdeName) + ".*");
+      finalParams.putAll(clientConf.getValByRegex(noCompDeConfigPrefix(compdeName) + ".*"));
       finalParams.put(noCompDeConfigPrefix("compde3") + ".test4", "compDeVal4");//overrides server
       finalParams.put(noCompDeConfigPrefix("compde3") + ".test5", "compDeVal5");//overrides client
       finalParams.put(noCompDeConfigPrefix("compde3") + ".test6", "compDeVal6");
@@ -272,7 +272,7 @@ public class TestCompDeNegotiation {
     service.init(serverCompDeConf);
 
     TOpenSessionReq req = new TOpenSessionReq();
-    req.setConfiguration(clientCompDeConf.getValByRegex(".*"));
+    req.setConfiguration(clientCompDeConf.getValByRegex(noCompDeConfigPrefix("compde3") + ".*"));
 
     TOpenSessionResp resp = service.OpenSession(req);
     assertEquals("compde3", resp.getCompressorName());
