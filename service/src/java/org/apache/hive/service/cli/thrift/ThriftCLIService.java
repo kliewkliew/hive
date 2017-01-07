@@ -431,7 +431,7 @@ public abstract class ThriftCLIService extends AbstractService implements TCLISe
       HiveConf hiveConf,
       String compdeName) {
     String versionKey = String.format(
-        "%s\\.%s\\.%s",
+        "%s.%s.%s",
         ConfVars.HIVE_SERVER2_THRIFT_RESULTSET_COMPRESSOR,
         compdeName, "version");
     return hiveConf.get(versionKey);
