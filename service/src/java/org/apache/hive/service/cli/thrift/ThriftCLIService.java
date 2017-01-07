@@ -332,18 +332,20 @@ public abstract class ThriftCLIService extends AbstractService implements TCLISe
           }
           ImmutableTriple<String,String,Map<String,String>> compdeNameVersionParams =
               negotiateCompde(hiveConf, clientConf);
-          // Set the response for the client.
-          resp.setCompressorName(compdeNameVersionParams.left);
-          resp.setCompressorVersion(compdeNameVersionParams.middle);
-          resp.setCompressorParameters(compdeNameVersionParams.right);
-          // SessionState is initialized based on TOpenSessionRequest.
-          reqConfMap.put(
-              ConfVars.HIVE_SERVER2_THRIFT_RESULTSET_COMPRESSOR.varname,
-              compdeNameVersionParams.left);
-          reqConfMap.putAll(compdeNameVersionParams.right);
-          reqConfMap.put(
-              ConfVars.HIVE_SERVER2_THRIFT_RESULTSET_COMPRESSOR_VERSION.varname,
-              compdeNameVersionParams.middle);
+          if (null != compdeNameVersionParams) {
+            // Set the response for the client.
+            resp.setCompressorName(compdeNameVersionParams.left);
+            resp.setCompressorVersion(compdeNameVersionParams.middle);
+            resp.setCompressorParameters(compdeNameVersionParams.right);
+            // SessionState is initialized based on TOpenSessionRequest.
+            reqConfMap.put(
+                ConfVars.HIVE_SERVER2_THRIFT_RESULTSET_COMPRESSOR.varname,
+                compdeNameVersionParams.left);
+            reqConfMap.putAll(compdeNameVersionParams.right);
+            reqConfMap.put(
+                ConfVars.HIVE_SERVER2_THRIFT_RESULTSET_COMPRESSOR_VERSION.varname,
+                compdeNameVersionParams.middle);
+          }
         }
       }
 
