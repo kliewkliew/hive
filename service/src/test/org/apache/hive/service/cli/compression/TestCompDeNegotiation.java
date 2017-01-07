@@ -111,8 +111,8 @@ public class TestCompDeNegotiation {
     protected Map<String, String> initCompde(
         String compdeName,
         String version,
-        Map<String, String> serverParams,
-        Map<String, String> clientParams) throws Exception {
+        HiveConf serverConf,
+        HiveConf clientConf) throws Exception {
       throw new Exception("No supported compdes");
     }
   }
@@ -148,13 +148,13 @@ public class TestCompDeNegotiation {
     protected Map<String, String> initCompde(
         String compdeName,
         String version,
-        Map<String, String> serverParams,
-        Map<String, String> clientParams) throws Exception {
+        HiveConf serverConf,
+        HiveConf clientConf) throws Exception {
       if (compdeName.equals("compde1")) {
         throw new Exception("compde1 not supported");
       }
       else {
-        return serverParams;
+        return serverConf.getValByRegex(".*");
       }
     }
   }
@@ -243,10 +243,10 @@ public class TestCompDeNegotiation {
     protected Map<String, String> initCompde(
         String compdeName,
         String version,
-        Map<String, String> serverParams,
-        Map<String, String> clientParams) {
-      Map<String,String> finalParams = serverParams;
-      finalParams.putAll(clientParams);
+        HiveConf serverConf,
+        HiveConf clientConf) {
+      Map<String,String> finalParams = serverConf.getValByRegex(".*");
+      finalParams.putAll(clientConf.getValByRegex(".*"));
       finalParams.put(noCompDeConfigPrefix("compde3") + ".test4", "compDeVal4");//overrides server
       finalParams.put(noCompDeConfigPrefix("compde3") + ".test5", "compDeVal5");//overrides client
       finalParams.put(noCompDeConfigPrefix("compde3") + ".test6", "compDeVal6");

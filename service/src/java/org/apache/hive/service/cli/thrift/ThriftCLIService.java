@@ -385,22 +385,18 @@ public abstract class ThriftCLIService extends AbstractService implements TCLISe
     // CompDe negotiation
     for (String compdeName : serverCompdes) {
       if (clientCompdes.contains(compdeName)) {
-        Map<String,String> serverCompdeParams =
-            getParamsForCompde(serverConf, compdeName);
-        Map<String,String> clientCompdeParams =
-            getParamsForCompde(clientConf, compdeName);
 
         try {
-          String clientCompdeVersion = clientCompdeParams.get(
-              ConfVars.HIVE_SERVER2_THRIFT_RESULTSET_COMPRESSOR_VERSION.varname);
-          LOG.debug(String.format("Client requests %s %s", compdeName, clientCompdeVersion));
+          String clientCompdeVersion =
+              getVersionForCompde(clientConf, compdeName);
 
           Map<String,String> compdeResponse =
               initCompde(
                   compdeName, clientCompdeVersion,
-                  serverCompdeParams, clientCompdeParams);
+                  serverConf, clientConf);
 
-          return ImmutableTriple.of(compdeName, clientCompdeVersion, compdeResponse);
+          return ImmutableTriple.of(
+              compdeName, clientCompdeVersion, compdeResponse);
         } catch (Exception e) {
           continue;
         }
@@ -415,7 +411,7 @@ public abstract class ThriftCLIService extends AbstractService implements TCLISe
    * @param compdeName
    * @return a map of plug-in parameters.
    */
-  protected static Map<String,String> getParamsForCompde(
+  private static Map<String,String> getParamsForCompde(
       HiveConf hiveConf,
       String compdeName) {
     String pattern = String.format(
@@ -423,6 +419,22 @@ public abstract class ThriftCLIService extends AbstractService implements TCLISe
         ConfVars.HIVE_SERVER2_THRIFT_RESULTSET_COMPRESSOR,
         compdeName);
     return hiveConf.getValByRegex(pattern);
+  }
+
+  /**
+   * Get the client-requested version of the specified CompDe plug-in.
+   * @param hiveConf
+   * @param compdeName
+   * @return the version string.
+   */
+  private static String getVersionForCompde(
+      HiveConf hiveConf,
+      String compdeName) {
+    String versionKey = String.format(
+        "%s\\.%s\\.%s",
+        ConfVars.HIVE_SERVER2_THRIFT_RESULTSET_COMPRESSOR,
+        compdeName, "version");
+    return hiveConf.get(versionKey);
   }
 
   /**
@@ -437,14 +449,18 @@ public abstract class ThriftCLIService extends AbstractService implements TCLISe
   protected Map<String, String> initCompde(
       String compdeName,
       String version,
-      Map<String, String> serverParams,
-      Map<String, String> clientParams)
+      HiveConf serverConf,
+      HiveConf clientConf)
           throws Exception {
+    Map<String,String> serverCompdeParams =
+        getParamsForCompde(serverConf, compdeName);
+    Map<String,String> clientCompdeParams =
+        getParamsForCompde(clientConf, compdeName);
     try {
       CompDe compDe = CompDeServiceLoader.getInstance()
           .getCompde(compdeName, version);
       Map<String,String> pluginParams =
-          compDe.getParams(serverParams, clientParams);
+          compDe.getParams(serverCompdeParams, clientCompdeParams);
       compDe.init(pluginParams);
       LOG.info(String.format(
           "Initialized CompDe plugin for %s %s",
