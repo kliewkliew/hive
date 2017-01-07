@@ -71,7 +71,7 @@ public class ThriftJDBCBinarySerDe extends AbstractSerDe {
   private int MAX_BUFFERED_ROWS;
   private int count;
   private StructObjectInspector rowObjectInspector;
-  private CompDe compDe;
+  private CompDe compde;
 
 
   @Override
@@ -81,12 +81,12 @@ public class ThriftJDBCBinarySerDe extends AbstractSerDe {
       String compdeName = tbl.getProperty(CompDe.confName, null);
       String compdeVersion = tbl.getProperty(CompDe.confVersion, null);
       try {
-        CompDe compde = CompDeServiceLoader.getInstance()
+        compde = CompDeServiceLoader.getInstance()
             .getCompde(compdeName, compdeVersion);
         if (tbl.containsKey(CompDe.confParams)) {
           @SuppressWarnings("unchecked")
-          Map<String, String> compdeConfig = (Map<String, String>) tbl.get(CompDe.confParams);
-          compde.init(compdeConfig);
+          Map<String, String> compdeParams = (Map<String, String>) tbl.get(CompDe.confParams);
+          compde.init(compdeParams);
         }
         else {
           compde.init(new HashMap<String, String>());
