@@ -31,6 +31,7 @@ import java.util.List;
 import java.util.concurrent.locks.ReentrantLock;
 
 import org.apache.hadoop.hive.common.type.HiveDecimal;
+import org.apache.hadoop.hive.serde2.compression.CompDe;
 import org.apache.hive.service.cli.RowSet;
 import org.apache.hive.service.cli.RowSetFactory;
 import org.apache.hive.service.cli.TableSchema;
@@ -78,6 +79,7 @@ public class HiveQueryResultSet extends HiveBaseResultSet {
   private boolean fetchFirst = false;
 
   private final TProtocolVersion protocol;
+  private final CompDe compde;
 
   public static class Builder {
 
@@ -193,6 +195,7 @@ public class HiveQueryResultSet extends HiveBaseResultSet {
     normalizedColumnNames = new ArrayList<String>();
     columnTypes = new ArrayList<String>();
     columnAttributes = new ArrayList<JdbcColumnAttributes>();
+    compde = ((HiveConnection) builder.connection).getCompde();
     if (builder.retrieveSchema) {
       retrieveSchema();
     } else {
@@ -373,7 +376,7 @@ public class HiveQueryResultSet extends HiveBaseResultSet {
         Utils.verifySuccessWithInfo(fetchResp.getStatus());
 
         TRowSet results = fetchResp.getResults();
-        fetchedRows = RowSetFactory.create(results, protocol);
+        fetchedRows = RowSetFactory.create(results, protocol, compde);
         fetchedRowsItr = fetchedRows.iterator();
       }
 

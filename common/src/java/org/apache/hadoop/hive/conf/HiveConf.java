@@ -2623,6 +2623,18 @@ public class HiveConf extends Configuration {
     HIVE_SERVER2_RESULTSET_DEFAULT_FETCH_SIZE("hive.server2.resultset.default.fetch.size", 10000,
         "The number of rows sent in one Fetch RPC call by the server to the client, if not\n" +
         "specified by the client."),
+
+    // ResultSet compression settings
+    HIVE_SERVER2_THRIFT_RESULTSET_COMPRESSOR_LIST("hive.server2.thrift.resultset.compressor.list", "",
+        "A list of compressors ordered by the server's preference.\n " +
+        "This list will be used to negotiate a CompDe for each session."),
+    HIVE_SERVER2_THRIFT_RESULTSET_COMPRESSOR("hive.server2.thrift.resultset.compressor", "",
+        "A CompDe that will be used for the session.\n " +
+        "This is determined by negotiation during OpenSession."),
+    HIVE_SERVER2_THRIFT_RESULTSET_COMPRESSOR_VERSION(HIVE_SERVER2_THRIFT_RESULTSET_COMPRESSOR + ".version", "",
+        "The version of the CompDe that will be used for the session.\n " +
+        "This is determined by negotiation during OpenSession."),
+
     HIVE_SERVER2_XSRF_FILTER_ENABLED("hive.server2.xsrf.filter.enabled",false,
         "If enabled, HiveServer2 will block any requests made to it over http " +
         "if an X-XSRF-HEADER header is not present"),

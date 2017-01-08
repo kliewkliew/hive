@@ -32,6 +32,7 @@ import java.util.TreeMap;
 
 import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.hive.conf.HiveConf;
+import org.apache.hadoop.hive.conf.HiveConf.ConfVars;
 import org.apache.hadoop.hive.conf.HiveVariableSource;
 import org.apache.hadoop.hive.conf.VariableSubstitution;
 import org.apache.hadoop.hive.metastore.api.FieldSchema;
@@ -226,7 +227,8 @@ public class SetProcessor implements CommandProcessor {
           message.append("' FAILED in validation : ").append(fail).append('.');
           throw new IllegalArgumentException(message.toString());
         }
-      } else if (!removedConfigs.contains(key) && key.startsWith("hive.")) {
+      } else if (!removedConfigs.contains(key) && key.startsWith("hive.")
+          && !key.startsWith(ConfVars.HIVE_SERVER2_THRIFT_RESULTSET_COMPRESSOR.varname) ) {
         throw new IllegalArgumentException("hive configuration " + key + " does not exists.");
       }
     }

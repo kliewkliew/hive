@@ -3614,7 +3614,9 @@ class TOpenSessionResp:
    - status
    - serverProtocolVersion
    - sessionHandle
-   - configuration
+   - compressorParameters
+   - compressorName
+   - compressorVersion
   """
 
   thrift_spec = (
@@ -3622,14 +3624,18 @@ class TOpenSessionResp:
     (1, TType.STRUCT, 'status', (TStatus, TStatus.thrift_spec), None, ), # 1
     (2, TType.I32, 'serverProtocolVersion', None,     8, ), # 2
     (3, TType.STRUCT, 'sessionHandle', (TSessionHandle, TSessionHandle.thrift_spec), None, ), # 3
-    (4, TType.MAP, 'configuration', (TType.STRING,None,TType.STRING,None), None, ), # 4
+    (4, TType.MAP, 'compressorParameters', (TType.STRING,None,TType.STRING,None), None, ), # 4
+    (5, TType.STRING, 'compressorName', None, None, ), # 5
+    (6, TType.STRING, 'compressorVersion', None, None, ), # 6
   )
 
-  def __init__(self, status=None, serverProtocolVersion=thrift_spec[2][4], sessionHandle=None, configuration=None,):
+  def __init__(self, status=None, serverProtocolVersion=thrift_spec[2][4], sessionHandle=None, compressorParameters=None, compressorName=None, compressorVersion=None,):
     self.status = status
     self.serverProtocolVersion = serverProtocolVersion
     self.sessionHandle = sessionHandle
-    self.configuration = configuration
+    self.compressorParameters = compressorParameters
+    self.compressorName = compressorName
+    self.compressorVersion = compressorVersion
 
   def read(self, iprot):
     if iprot.__class__ == TBinaryProtocol.TBinaryProtocolAccelerated and isinstance(iprot.trans, TTransport.CReadableTransport) and self.thrift_spec is not None and fastbinary is not None:
@@ -3659,13 +3665,23 @@ class TOpenSessionResp:
           iprot.skip(ftype)
       elif fid == 4:
         if ftype == TType.MAP:
-          self.configuration = {}
+          self.compressorParameters = {}
           (_ktype135, _vtype136, _size134 ) = iprot.readMapBegin()
           for _i138 in xrange(_size134):
             _key139 = iprot.readString()
             _val140 = iprot.readString()
-            self.configuration[_key139] = _val140
+            self.compressorParameters[_key139] = _val140
           iprot.readMapEnd()
+        else:
+          iprot.skip(ftype)
+      elif fid == 5:
+        if ftype == TType.STRING:
+          self.compressorName = iprot.readString()
+        else:
+          iprot.skip(ftype)
+      elif fid == 6:
+        if ftype == TType.STRING:
+          self.compressorVersion = iprot.readString()
         else:
           iprot.skip(ftype)
       else:
@@ -3690,13 +3706,21 @@ class TOpenSessionResp:
       oprot.writeFieldBegin('sessionHandle', TType.STRUCT, 3)
       self.sessionHandle.write(oprot)
       oprot.writeFieldEnd()
-    if self.configuration is not None:
-      oprot.writeFieldBegin('configuration', TType.MAP, 4)
-      oprot.writeMapBegin(TType.STRING, TType.STRING, len(self.configuration))
-      for kiter141,viter142 in self.configuration.items():
+    if self.compressorParameters is not None:
+      oprot.writeFieldBegin('compressorParameters', TType.MAP, 4)
+      oprot.writeMapBegin(TType.STRING, TType.STRING, len(self.compressorParameters))
+      for kiter141,viter142 in self.compressorParameters.items():
         oprot.writeString(kiter141)
         oprot.writeString(viter142)
       oprot.writeMapEnd()
+      oprot.writeFieldEnd()
+    if self.compressorName is not None:
+      oprot.writeFieldBegin('compressorName', TType.STRING, 5)
+      oprot.writeString(self.compressorName)
+      oprot.writeFieldEnd()
+    if self.compressorVersion is not None:
+      oprot.writeFieldBegin('compressorVersion', TType.STRING, 6)
+      oprot.writeString(self.compressorVersion)
       oprot.writeFieldEnd()
     oprot.writeFieldStop()
     oprot.writeStructEnd()
@@ -3714,7 +3738,9 @@ class TOpenSessionResp:
     value = (value * 31) ^ hash(self.status)
     value = (value * 31) ^ hash(self.serverProtocolVersion)
     value = (value * 31) ^ hash(self.sessionHandle)
-    value = (value * 31) ^ hash(self.configuration)
+    value = (value * 31) ^ hash(self.compressorParameters)
+    value = (value * 31) ^ hash(self.compressorName)
+    value = (value * 31) ^ hash(self.compressorVersion)
     return value
 
   def __repr__(self):
