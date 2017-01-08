@@ -439,7 +439,7 @@ public class HiveConf extends Configuration {
     REPLDIR("hive.repl.rootdir","/user/hive/repl/",
         "HDFS root dir for all replication dumps."),
     REPLCMENABLED("hive.repl.cm.enabled", false,
-        "Turn on ChangeManager, so delete files will goes to cmrootdir."),
+        "Turn on ChangeManager, so delete files will go to cmrootdir."),
     REPLCMDIR("hive.repl.cmrootdir","/user/hive/cmroot/",
         "Root dir for ChangeManager, used for deleted files."),
     REPLCMRETIAN("hive.repl.cm.retain","24h",
@@ -2969,6 +2969,12 @@ public class HiveConf extends Configuration {
     LLAP_ZKSM_KERBEROS_KEYTAB_FILE("hive.llap.zk.sm.keytab.file", "",
         "The path to the Kerberos Keytab file containing the principal to use to talk to\n" +
         "ZooKeeper for ZooKeeper SecretManager."),
+    LLAP_WEBUI_SPNEGO_KEYTAB_FILE("hive.llap.webui.spnego.keytab", "",
+        "The path to the Kerberos Keytab file containing the LLAP WebUI SPNEGO principal.\n" +
+        "Typical value would look like /etc/security/keytabs/spnego.service.keytab."),
+    LLAP_WEBUI_SPNEGO_PRINCIPAL("hive.llap.webui.spnego.principal", "",
+        "The LLAP WebUI SPNEGO service principal. Configured similarly to\n" +
+        "hive.server2.webui.spnego.principal"),
     LLAP_FS_KERBEROS_PRINCIPAL("hive.llap.task.principal", "",
         "The name of the principal to use to run tasks. By default, the clients are required\n" +
         "to provide tokens to access HDFS/etc."),
@@ -3579,8 +3585,7 @@ public class HiveConf extends Configuration {
       result = !name.equals("spark.app.name");
     } else if (name.startsWith("yarn")) { // YARN property in Spark on YARN mode.
       String sparkMaster = get("spark.master");
-      if (sparkMaster != null &&
-        (sparkMaster.equals("yarn-client") || sparkMaster.equals("yarn-cluster"))) {
+      if (sparkMaster != null && sparkMaster.startsWith("yarn")) {
         result = true;
       }
     } else if (name.startsWith("hive.spark")) { // Remote Spark Context property.
