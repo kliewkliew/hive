@@ -133,7 +133,7 @@ public class HiveConnection implements java.sql.Connection {
   private int loginTimeout = 0;
   private TProtocolVersion protocol;
   private int fetchSize = HiveStatement.DEFAULT_FETCH_SIZE;
-  private CompDe sessCompDe;
+  private CompDe sessCompde;
   private String initFile = null;
 
   public HiveConnection(String uri, Properties info) throws SQLException {
@@ -663,10 +663,10 @@ public class HiveConnection implements java.sql.Connection {
       if (openResp.isSetCompressorName())
       {
         try {
-          CompDe testCompDe = CompDeServiceLoader.getInstance()
+          CompDe testCompde = CompDeServiceLoader.getInstance()
               .getCompde(openResp.getCompressorName(), openResp.getCompressorVersion());
-          testCompDe.init(openResp.getCompressorParameters());
-          sessCompDe = testCompDe;
+          testCompde.init(openResp.getCompressorParameters());
+          sessCompde = testCompde;
         }
         catch (Exception e) {
           openReq.getConfiguration().remove(
@@ -1017,8 +1017,8 @@ public class HiveConnection implements java.sql.Connection {
     throw new SQLException("Method not supported");
   }
 
-  public CompDe getCompDe() {
-    return sessCompDe;
+  public CompDe getCompde() {
+    return sessCompde;
   }
 
   /*
