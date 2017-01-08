@@ -23,7 +23,7 @@ import org.apache.hive.service.rpc.thrift.TRowSet;
 
 import static org.apache.hive.service.rpc.thrift.TProtocolVersion.HIVE_CLI_SERVICE_PROTOCOL_V6;
 
-import org.apache.hadoop.hive.serde2.compression.CompDe;
+import org.apache.hadoop.hive.serde2.thrift.CompDe;
 
 public class RowSetFactory {
 

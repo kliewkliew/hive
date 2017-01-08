@@ -17,14 +17,13 @@
  */
 
 
-package org.apache.hadoop.hive.serde2.compression;
+package org.apache.hadoop.hive.serde2.thrift;
 
 import java.nio.ByteBuffer;
 import java.util.Map;
 
 import org.apache.hadoop.classification.InterfaceAudience;
 import org.apache.hadoop.classification.InterfaceStability;
-import org.apache.hadoop.hive.serde2.thrift.ColumnBuffer;
 
 @InterfaceAudience.Private
 @InterfaceStability.Unstable

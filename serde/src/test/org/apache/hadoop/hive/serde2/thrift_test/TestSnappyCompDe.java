@@ -16,10 +16,9 @@
  * limitations under the License.
  */
 
-package org.apache.hadoop.hive.serde2.compression;
+package org.apache.hadoop.hive.serde2.thrift_test;
 
 import org.apache.commons.lang3.StringUtils;
-import org.apache.hadoop.hive.serde2.compression.SnappyCompDe;
 import org.apache.hadoop.hive.serde2.thrift.ColumnBuffer;
 import org.apache.hive.service.rpc.thrift.*;
 

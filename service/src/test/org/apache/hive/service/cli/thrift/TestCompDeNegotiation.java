@@ -16,7 +16,7 @@
  * limitations under the License.
  */
 
-package org.apache.hive.service.cli.compression;
+package org.apache.hive.service.cli.thrift;
 
 import static org.junit.Assert.*;
 

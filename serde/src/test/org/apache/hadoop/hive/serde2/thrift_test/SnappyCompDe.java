@@ -16,7 +16,7 @@
  * limitations under the License.
  */
 
-package org.apache.hadoop.hive.serde2.compression;
+package org.apache.hadoop.hive.serde2.thrift_test;
 
 import java.io.IOException;
 import java.nio.ByteBuffer;
@@ -36,6 +36,7 @@ import java.util.Map;
 import org.apache.commons.lang3.ArrayUtils;
 import org.apache.hadoop.hive.serde2.SerDeException;
 import org.apache.hadoop.hive.serde2.thrift.ColumnBuffer;
+import org.apache.hadoop.hive.serde2.thrift.CompDe;
 import org.apache.hive.service.rpc.thrift.*;
 import org.iq80.snappy.Snappy;
 
