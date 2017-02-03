@@ -18,7 +18,6 @@
 
 package org.apache.hadoop.hive.serde2.thrift;
 
-import java.nio.ByteBuffer;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.HashMap;
@@ -76,14 +75,14 @@ public class ThriftJDBCBinarySerDe extends AbstractSerDe {
   public void initialize(Configuration conf, Properties tbl) throws SerDeException {
     if (tbl.containsKey(CompDe.confName)
         && tbl.containsKey(CompDe.confVersion)) {
-      String compdeName = tbl.getProperty(CompDe.confName, null);
-      String compdeVersion = tbl.getProperty(CompDe.confVersion, null);
+      final String compdeName = tbl.getProperty(CompDe.confName, null);
+      final String compdeVersion = tbl.getProperty(CompDe.confVersion, null);
       try {
         compde = CompDeServiceLoader.getInstance()
             .getCompde(compdeName, compdeVersion);
         if (tbl.containsKey(CompDe.confParams)) {
           @SuppressWarnings("unchecked")
-          Map<String, String> compdeParams = (Map<String, String>) tbl.get(CompDe.confParams);
+          final Map<String, String> compdeParams = (Map<String, String>) tbl.get(CompDe.confParams);
           compde.init(compdeParams);
         }
         else {

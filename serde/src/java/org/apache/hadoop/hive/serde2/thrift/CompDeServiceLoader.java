@@ -36,9 +36,13 @@ public class CompDeServiceLoader {
   private static CompDeServiceLoader instance;
 
   // Map CompDe names to classes so we don't have to read the META-INF file for every session.
-  private ImmutableMap<ImmutablePair<String,String>, Class<? extends CompDe>> compdeTable;
+  private final ImmutableMap<ImmutablePair<String,String>, Class<? extends CompDe>> compdeTable;
 
   private static final Logger LOG = LoggerFactory.getLogger(CompDeServiceLoader.class);
+  
+  private CompDeServiceLoader(final ImmutableMap<ImmutablePair<String,String>, Class<? extends CompDe>> compdeTable) {
+	  this.compdeTable = compdeTable;
+  }
 
   /**
    * Get the singleton instance or initialize the CompDeServiceLoader.
@@ -46,19 +50,18 @@ public class CompDeServiceLoader {
    */
   public static synchronized CompDeServiceLoader getInstance() {
     if (instance == null) {
-      Iterator<CompDe> compdes = ServiceLoader.load(CompDe.class).iterator();
-      instance = new CompDeServiceLoader();
-      ImmutableMap.Builder<ImmutablePair<String,String>, Class<? extends CompDe>> compdeMapBuilder =
-          new ImmutableMap.Builder<>();
+    	final Iterator<CompDe> compdes = ServiceLoader.load(CompDe.class).iterator();
+    	final ImmutableMap.Builder<ImmutablePair<String,String>, Class<? extends CompDe>> compdeMapBuilder =
+    	  new ImmutableMap.Builder<>();
       while (compdes.hasNext()) {
-        CompDe compde = compdes.next();
+        final CompDe compde = compdes.next();
         compdeMapBuilder.put(
             ImmutablePair.of(
                 compde.getVendor() + "." + compde.getName(),
                 compde.getVersion()),
             compde.getClass());
       }
-      instance.compdeTable = compdeMapBuilder.build();
+      instance = new CompDeServiceLoader(compdeMapBuilder.build());
     }
     return instance;
   }
@@ -71,11 +74,11 @@ public class CompDeServiceLoader {
    * @return A CompDe implementation object.
    * @throws Exception if the plug-in cannot be instantiated.
    */
-  public CompDe getCompde(String compdeName, String version) throws Exception {
+  public CompDe getCompde(final String compdeName, final String version) throws Exception {
     try {
-      ImmutablePair<String,String> requestedCompde =
+      final ImmutablePair<String,String> requestedCompde =
           ImmutablePair.of(compdeName, version);
-      CompDe compde = compdeTable.get(requestedCompde).newInstance();
+      final CompDe compde = compdeTable.get(requestedCompde).newInstance();
       LOG.debug("Instantiated CompDe plugin for " + compdeName);
       return compde;
     } catch (Exception e) {

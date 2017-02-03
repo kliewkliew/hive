@@ -7003,9 +7003,9 @@ public class SemanticAnalyzer extends BaseSemanticAnalyzer {
               table_desc=
                          PlanUtils.getDefaultQueryOutputTableDesc(cols, colTypes, fileFormat,
                            ThriftJDBCBinarySerDe.class);
-              String compdeName = SessionState.get().getConf()
+              final String compdeName = SessionState.get().getConf()
                   .getVar(ConfVars.HIVE_SERVER2_THRIFT_RESULTSET_COMPRESSOR);
-              String compdeVersion = SessionState.get().getConf()
+              final String compdeVersion = SessionState.get().getConf()
                   .getVar(ConfVars.HIVE_SERVER2_THRIFT_RESULTSET_COMPRESSOR_VERSION);
               if (!compdeName.isEmpty() && !compdeVersion.isEmpty()) {
                 table_desc.getProperties().put(CompDe.confName, compdeName);

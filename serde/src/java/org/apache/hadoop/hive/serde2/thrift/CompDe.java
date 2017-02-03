@@ -38,9 +38,9 @@ public interface CompDe {
   /**
    * Table descriptor keys.
    */
-  public static String confName = "compde.name";
-  public static String confVersion = "compde.version";
-  public static String confParams = "compde.params";
+  public final static String confName = "compde.name";
+  public final static String confVersion = "compde.version";
+  public final static String confParams = "compde.params";
 
   /**
    * Negotiate the server and client plug-in parameters.
@@ -50,8 +50,8 @@ public interface CompDe {
    * @throws Exception if the plug-in failed to initialize.
    */
   public Map<String,String> getParams(
-      Map<String,String> serverParams,
-      Map<String,String> clientParams)
+      final Map<String,String> serverParams,
+      final Map<String,String> clientParams)
           throws Exception;
 
   /**
@@ -59,7 +59,7 @@ public interface CompDe {
    * @param params
    * @throws Exception if the plug-in failed to initialize.
    */
-  public void init(Map<String,String> params)
+  public void init(final Map<String,String> params)
       throws Exception;
 
   /**
@@ -68,7 +68,7 @@ public interface CompDe {
    * @return ByteBuffer representing the compressed set.
    * @throws Exception
    */
-  public ByteBuffer compress(ColumnBuffer[] colSet)
+  public ByteBuffer compress(final ColumnBuffer[] colSet)
       throws Exception;
 
   /**
@@ -81,7 +81,7 @@ public interface CompDe {
    * @return The set of columns.
    * @throws Exception
    */
-  public ColumnBuffer[] decompress(ByteBuffer input, int chunkSize)
+  public ColumnBuffer[] decompress(final ByteBuffer input, int chunkSize)
       throws Exception;
 
   /**

@@ -317,7 +317,7 @@ public abstract class ThriftCLIService extends AbstractService implements TCLISe
     TOpenSessionResp resp = new TOpenSessionResp();
     try {
       if (req.isSetConfiguration()) {
-        Map<String,String> reqConfMap = req.getConfiguration();
+        final Map<String,String> reqConfMap = req.getConfiguration();
 
         reqConfMap.remove(
             ConfVars.HIVE_SERVER2_THRIFT_RESULTSET_COMPRESSOR.varname);
@@ -325,12 +325,12 @@ public abstract class ThriftCLIService extends AbstractService implements TCLISe
               + ConfVars.HIVE_SERVER2_THRIFT_RESULTSET_COMPRESSOR_LIST.varname))
         {
           HiveConf clientConf = new HiveConf();
-          for (Entry<String,String> entry : reqConfMap.entrySet()) {
+          for (final Entry<String,String> entry : reqConfMap.entrySet()) {
             clientConf.set(
                 entry.getKey().replace("set:hiveconf:", ""),
                 entry.getValue());
           }
-          ImmutableTriple<String,String,Map<String,String>> compdeNameVersionParams =
+          final ImmutableTriple<String,String,Map<String,String>> compdeNameVersionParams =
               negotiateCompde(hiveConf, clientConf);
           if (null != compdeNameVersionParams) {
             // Set the response for the client.
